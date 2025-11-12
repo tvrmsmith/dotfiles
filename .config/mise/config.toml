@@ -1,0 +1,11 @@
+[tools]
+dotnet = "latest"
+go = "1.25.1"
+node = "latest"
+opentofu = "latest"
+ruby = "3.4.7"
+terraform = "latest"
+
+[settings]
+
+[settings.node]
