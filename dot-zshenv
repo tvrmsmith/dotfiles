@@ -12,6 +12,12 @@ export NVIM_APPNAME="nvim-LazyVim"
 export EDITOR="vim"
 export VISUAL="nvim"
 
-LOCAL=".zshenv.local"
+# Bat setting
+export BAT_THEME=""
+export BAT_THEME_LIGHT="tokyonight_day"
+export BAT_THEME_DARK="tokyonight_night"
+export BAT_STYLE="full,-grid,-header-filesize,-header-filename"
+
+LOCAL="$HOME/.zshenv.local"
 [ -f "$LOCAL" ] && source "$LOCAL"
 
