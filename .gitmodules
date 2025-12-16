@@ -13,3 +13,6 @@
 [submodule "dot-warp/themes"]
   path = dot-warp/themes
   url = https://github.com/warpdotdev/themes.git
+[submodule "bat-into-tokyonight"]
+	path = bat-into-tokyonight
+	url = https://github.com/0xTadash1/bat-into-tokyonight
