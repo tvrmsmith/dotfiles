@@ -1,0 +1,3 @@
+theme = Horizon
+keybind = shift+enter=text:\x1b\r
+font-family = "JetBrains Mono" 
