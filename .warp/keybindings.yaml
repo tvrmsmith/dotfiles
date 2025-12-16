@@ -1,0 +1,10 @@
+---
+"editor_view:cursor_at_buffer_start": alt-cmd-h
+"terminal:select_next_block": alt-cmd-j
+"workspace:increase_font_size": ctrl-alt-shift-cmd-+
+"editor_view:cursor_at_buffer_end": alt-cmd-l
+"terminal:scroll_to_top_of_selected_block": ctrl-shift-cmd-K
+"workspace:rename_active_tab": f4
+"workspace:decrease_font_size": ctrl-alt-shift-cmd-_
+"terminal:scroll_to_bottom_of_selected_block": ctrl-shift-cmd-J
+"terminal:select_previous_block": alt-cmd-k
