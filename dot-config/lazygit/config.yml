@@ -1,2 +1,6 @@
 services:
   "github-personal": "github:github.com"
+git:
+  pagers:
+    - colorArg: always
+      pager: delta --paging=never --line-numbers --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}"
