@@ -34,9 +34,12 @@ autoload -U bashcompinit && bashcompinit
 
 eval "$(mise activate zsh)" # this sets up interactive sessions
 
-source $CONSOLO_DOCKER_DEV_DIR/.helpers/compose.sh
-source $CONSOLO_DOCKER_DEV_DIR/.helpers/git.sh
-source $CONSOLO_DOCKER_DEV_DIR/.helpers/system.sh
+if [ -d "$CONSOLO_DOCKER_DEV_DIR/.helpers" ]; then
+  source $CONSOLO_DOCKER_DEV_DIR/.helpers/compose.sh
+  source $CONSOLO_DOCKER_DEV_DIR/.helpers/git.sh
+  source $CONSOLO_DOCKER_DEV_DIR/.helpers/system.sh
+fi
+
 source <(just --completions bash)
 
 if command -v zoxide > /dev/null; then
