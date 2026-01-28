@@ -43,10 +43,20 @@ install_gnu_stow() {
   echo "GNU Stow installation attempt complete."
 }
 
+init_submodules() {
+  # Initialize and update git submodules with shallow cloning
+  if [ -f .gitmodules ]; then
+    echo "Initializing git submodules with shallow cloning..."
+    git submodule update --init --recursive --depth 1
+    echo "Submodules initialized."
+  fi
+}
+
 setup_dotfiles() {
   stow --dotfiles -t "$HOME"
 }
 
 install_gnu_stow
+init_submodules
 setup_dotfiles
 echo "Dot files installed."
