@@ -16,3 +16,7 @@
 [submodule "bat-into-tokyonight"]
 	path = bat-into-tokyonight
 	url = https://github.com/0xTadash1/bat-into-tokyonight
+[submodule "ralph"]
+	path = ralph
+	url = git@github-personal:tvrmsmith/ralph.git
+	shallow = true

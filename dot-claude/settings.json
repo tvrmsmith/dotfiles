@@ -1,0 +1,39 @@
+{
+  "env": {
+    "CLAUDE_CODE_USE_VERTEX": "1",
+    "CLOUD_ML_REGION": "us-east5",
+    "ANTHROPIC_VERTEX_PROJECT_ID": "wsh-dev-vertex-wsky"
+  },
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "terminal-notifier -title \"🔔 Claude Code\" -message \"Claude needs your input\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "terminal-notifier -title \"✅ Claude Code\" -message \"The task has been completed\""
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "shared@wellsky-plugins": true,
+    "bug-fix@wellsky-plugins": true,
+    "unit-gen@wellsky-plugins": true,
+    "atlassian@claude-plugins-official": true,
+    "commit-commands@claude-plugins-official": true
+  },
+  "alwaysThinkingEnabled": true
+}
