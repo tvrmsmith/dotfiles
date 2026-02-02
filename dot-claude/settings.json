@@ -4,6 +4,19 @@
     "CLOUD_ML_REGION": "us-east5",
     "ANTHROPIC_VERTEX_PROJECT_ID": "wsh-dev-vertex-wsky"
   },
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(docker build:*)",
+      "Bash(git add:*)",
+      "Bash(grep:*)",
+      "Bash(docker run:*)",
+      "Bash(docker logs:*)",
+      "Bash(curl:*)",
+      "Bash(docker stop:*)"
+    ],
+    "defaultMode": "default"
+  },
   "hooks": {
     "Notification": [
       {
@@ -33,7 +46,13 @@
     "bug-fix@wellsky-plugins": true,
     "unit-gen@wellsky-plugins": true,
     "atlassian@claude-plugins-official": true,
-    "commit-commands@claude-plugins-official": true
+    "commit-commands@claude-plugins-official": true,
+    "humanlayer@wellsky-plugins": true
   },
-  "alwaysThinkingEnabled": true
+  "syntaxHighlightingDisabled": false,
+  "alwaysThinkingEnabled": true,
+  "statusLine": {
+    "type": "command",
+    "command": "claude-powerline --theme=tokyo-night --style=powerline"
+  }
 }
