@@ -15,11 +15,11 @@ This is a personal dotfiles repository that manages shell configurations, applic
 
 This script:
 1. Installs GNU Stow if not present
-2. Runs `stow --dotfiles -t "$HOME"` to symlink all `dot-*` files to `~/.`
+2. Runs `stow --dotfiles -t "$HOME" .` to symlink all `dot-*` files to `~/.`
 
 **Manual stow:**
 ```bash
-stow --dotfiles -t "$HOME"
+stow --dotfiles -t "$HOME" .
 ```
 
 ## Repository Structure
@@ -102,4 +102,4 @@ When editing dotfiles:
 
 When adding new config directories:
 - Create as `dot-<name>` in repository root or under `dot-config/`
-- Run `stow --dotfiles -t "$HOME"` to create symlinks
+- Run `stow --dotfiles -t "$HOME" .` to create symlinks
