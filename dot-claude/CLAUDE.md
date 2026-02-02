@@ -23,3 +23,12 @@ git push -u origin <branch-name>
 
 **For work repositories (non-tvrmsmith):**
 - Use `github.com` directly (default behavior)
+
+## Tool Preferences
+
+### Search Tools
+
+**Prefer ripgrep (`rg`) over `grep`:**
+- When searching for patterns in files, use `rg` instead of `grep`
+- Ripgrep is faster, has better defaults, and respects `.gitignore`
+- Use the Grep tool which is built on ripgrep, or use `rg` via Bash when needed
