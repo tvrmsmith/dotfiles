@@ -25,9 +25,13 @@ zinit ice as"command" from"gh-r" \
 zinit light starship/starship
 
 zinit ice wait lucid
-zinit snippet OMZP::gcloud
 
 ### End of Zinit's installer chunk
+
+if type brew &>/dev/null; then
+  FPATH="$(brew --prefix)/share/zsh/site-functions:${FPATH}"
+fi
+
 autoload -Uz compinit
 compinit
 autoload -U bashcompinit && bashcompinit
@@ -42,7 +46,7 @@ fi
 
 source <(just --completions bash)
 
-if command -v zoxide > /dev/null; then
+if command -v zoxide > /dev/null && [ -z "$CLAUDECODE" ]; then
   eval "$(zoxide init zsh --cmd cd)"
 fi
 
