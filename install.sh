@@ -1,44 +1,30 @@
 #!/bin/bash
 
 install_gnu_stow() {
-	# Update package lists and install GNU Stow based on the detected distribution.
+	# Install GNU Stow using whatever package manager is available
 
-	if [ -f /etc/os-release ]; then
-		. /etc/os-release
-		OS=$NAME
-	elif type lsb_release >/dev/null 2>&1; then
-		OS=$(lsb_release -si)
-	else
-		OS=$(uname -s)
-	fi
-
-	echo "Detected OS: $OS"
-
-	case "$OS" in
-	"Ubuntu" | "Debian GNU/Linux" | "Linux Mint")
+	if command -v brew >/dev/null 2>&1; then
+		echo "Installing Stow using Homebrew..."
+		brew install stow
+	elif command -v apt >/dev/null 2>&1; then
 		echo "Installing Stow using apt..."
 		sudo apt update
 		sudo apt install -y stow
-		;;
-	"Fedora" | "CentOS Linux" | "Red Hat Enterprise Linux" | "Rocky Linux" | "AlmaLinux")
+	elif command -v dnf >/dev/null 2>&1; then
 		echo "Installing Stow using dnf..."
 		sudo dnf install -y stow
-		;;
-	"Arch Linux")
+	elif command -v pacman >/dev/null 2>&1; then
 		echo "Installing Stow using pacman..."
 		sudo pacman -Syu --noconfirm stow
-		;;
-	"macOS")
-		echo "Installing Stow using Homebrew..."
-		/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-		brew install stow
-		;;
-	*)
-		echo "Unsupported operating system. Please install GNU Stow manually."
-		echo "Refer to your distribution's documentation for instructions."
+	elif command -v yum >/dev/null 2>&1; then
+		echo "Installing Stow using yum..."
+		sudo yum install -y stow
+	else
+		echo "No supported package manager found."
+		echo "Please install GNU Stow manually."
+		echo "Supported package managers: brew, apt, dnf, pacman, yum"
 		exit 1
-		;;
-	esac
+	fi
 
 	echo "GNU Stow installation attempt complete."
 }
@@ -53,7 +39,7 @@ init_submodules() {
 }
 
 setup_dotfiles() {
-	stow --dotfiles --adopt -t "$HOME" "$HOME/dotfiles"
+	stow --dotfiles --adopt -t "$HOME" .
 }
 
 install_gnu_stow
