@@ -24,7 +24,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "terminal-notifier -title \"🔔 Claude Code\" -message \"Claude needs your input\""
+            "command": "$HOME/.claude/hooks/send-teams-notification.sh notification"
           }
         ]
       }
@@ -35,11 +35,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "terminal-notifier -title \"✅ Claude Code\" -message \"The task has been completed\""
+            "command": "$HOME/.claude/hooks/send-teams-notification.sh stop"
           }
         ]
       }
     ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "claude-powerline --theme=tokyo-night --style=powerline"
   },
   "enabledPlugins": {
     "shared@wellsky-plugins": true,
@@ -47,12 +51,31 @@
     "unit-gen@wellsky-plugins": true,
     "atlassian@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true,
-    "humanlayer@wellsky-plugins": true
+    "humanlayer@wellsky-plugins": true,
+    "warp@claude-code-warp": false,
+    "claude-notifications-go@claude-notifications-go": true
   },
   "syntaxHighlightingDisabled": false,
   "alwaysThinkingEnabled": true,
-  "statusLine": {
-    "type": "command",
-    "command": "claude-powerline --theme=tokyo-night --style=powerline"
+  "extraKnownMarketplaces": {
+    "wellsky-plugins": {
+      "source": {
+        "source": "git",
+        "url": "git@github.com:mediwareinc/wellsky-claude-code-plugins.git"
+      },
+      "autoUpdate": true
+    },
+    "claude-code-warp": {
+      "source": {
+        "source": "github",
+        "repo": "warpdotdev/claude-code-warp"
+      }
+    },
+    "claude-notifications-go": {
+      "source": {
+        "source": "github",
+        "repo": "777genius/claude-notifications-go"
+      }
+    }
   }
 }
