@@ -71,5 +71,7 @@ alias gauth="gcloud auth application-default login"
 
 alias logdy='logdy --no-analytics --port=8090'
 
-alias ls='eza -l -a --icons --group-directories-first'
+if command -v eza &>/dev/null; then
+  alias ls='eza -l -a --icons --group-directories-first'
+fi
 
