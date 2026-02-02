@@ -27,3 +27,5 @@
 	diffFilter = delta --color-only
 [merge]
 	conflictStyle = zdiff3
+[pull]
+	rebase = true

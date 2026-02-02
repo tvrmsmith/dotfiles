@@ -7,3 +7,8 @@ fi
 # Source the Lazyman .nvimsbind for nvims key binding
 # shellcheck source=.config/nvim-Lazyman/.nvimsbind
 [ -f ~/.config/nvim-Lazyman/.nvimsbind ] && source ~/.config/nvim-Lazyman/.nvimsbind
+
+source /Users/trevor.smith/dev/wellsky/consolo.docker-dev/.helpers/compose.sh
+source /Users/trevor.smith/dev/wellsky/consolo.docker-dev/.helpers/git.sh
+source /Users/trevor.smith/dev/wellsky/consolo.docker-dev/.helpers/system.sh
+source <(just --completions bash)
