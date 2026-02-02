@@ -3,6 +3,12 @@
 install_gnu_stow() {
 	# Install GNU Stow using whatever package manager is available
 
+	# Check if stow is already installed
+	if command -v stow >/dev/null 2>&1; then
+		echo "GNU Stow is already installed."
+		return
+	fi
+
 	if command -v brew >/dev/null 2>&1; then
 		echo "Installing Stow using Homebrew..."
 		brew install stow
