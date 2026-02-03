@@ -2,4 +2,5 @@ theme = TokyoNight
 keybind = shift+enter=text:\x1b\r
 font-family = "JetBrainsMono Nerd Font"
 font-size = 12
-font-thicken = true 
+font-thicken = true
+font-thicken-strength = 125
