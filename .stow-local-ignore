@@ -1,0 +1,24 @@
+# Stow ignore file - files matching these patterns won't be symlinked
+# Uses Perl regex syntax
+
+# Repository metadata and documentation
+^/CLAUDE\.md$
+^/README\.md$
+^/README$
+^/LICENSE$
+
+# Installation and scripts
+^/install\.sh$
+
+# Version control
+^/\.git
+^/\.gitignore$
+^/\.gitmodules$
+
+# Editor and IDE
+^/\.idea
+^/\.vscode
+^/\.DS_Store$
+
+# Stow-related
+^/\.stow-.*
