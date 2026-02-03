@@ -5,6 +5,12 @@
 EVENT_TYPE="$1"  # "notification" or "stop"
 WEBHOOK_URL="${TEAMS_PERSONAL_NOTIFICATIONS_WEBHOOK_URL}"
 
+# Only send notifications if explicitly enabled via environment variable
+# Set CLAUDE_TEAMS_NOTIFY=1 or CLAUDE_TEAMS_NOTIFY=true when running Claude in docker
+if [ "$CLAUDE_TEAMS_NOTIFY" != "1" ] && [ "$CLAUDE_TEAMS_NOTIFY" != "true" ]; then
+    exit 0
+fi
+
 if [ -z "$WEBHOOK_URL" ]; then
     echo "Warning: TEAMS_PERSONAL_NOTIFICATIONS_WEBHOOK_URL not set" >&2
     exit 0
