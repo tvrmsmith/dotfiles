@@ -50,6 +50,15 @@ The repository contains several submodules:
 - `dot-warp/themes` - Warp terminal themes
 - `bat-into-tokyonight` - Bat theme generator
 
+### Stow Ignore File
+The `.stow-local-ignore` file controls which files are excluded from symlinking:
+- Repository metadata: `CLAUDE.md`, `README.md`, `LICENSE`
+- Installation scripts: `install.sh`
+- Version control files: `.git`, `.gitignore`, `.gitmodules`
+- Editor/IDE directories: `.idea`, `.vscode`
+
+Only files with the `dot-` prefix (and not in the ignore list) are symlinked to the home directory.
+
 ## Key Environment Variables
 
 From `dot-zshenv`:
