@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 install_gnu_stow() {
 	# Install GNU Stow using whatever package manager is available
 
@@ -37,15 +40,15 @@ install_gnu_stow() {
 
 init_submodules() {
 	# Initialize and update git submodules with shallow cloning
-	if [ -f .gitmodules ]; then
+	if [ -f "$SCRIPT_DIR/.gitmodules" ]; then
 		echo "Initializing git submodules with shallow cloning..."
-		git submodule update --init --recursive --depth 1
+		git -C "$SCRIPT_DIR" submodule update --init --recursive --depth 1
 		echo "Submodules initialized."
 	fi
 }
 
 setup_dotfiles() {
-	stow --dotfiles --adopt -t "$HOME" .
+	stow --dotfiles --adopt -d "$SCRIPT_DIR" -t "$HOME" .
 }
 
 install_gnu_stow
