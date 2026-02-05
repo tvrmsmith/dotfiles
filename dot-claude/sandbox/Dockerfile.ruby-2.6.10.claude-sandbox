@@ -1,0 +1,101 @@
+# Dockerfile for Claude Code Docker Sandbox
+# Extends the mise-enabled Claude Code sandbox template with Ruby
+
+FROM claude-sandbox-mise:latest
+
+# Build argument for Ruby version
+ARG RUBY_VERSION=2.6.10
+
+# Run all setup as root
+USER root
+
+# Set shell options for better error handling
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Install system dependencies for Ruby
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+  apt-get update && \
+  apt-get --no-install-recommends install -y \
+  # Build tools for compiling Ruby and gems
+  build-essential \
+  gcc-14 \
+  g++-14 \
+  autoconf \
+  bison \
+  patch \
+  rustc \
+  libssl-dev \
+  libreadline-dev \
+  zlib1g-dev \
+  libxml2-dev \
+  libxslt1-dev \
+  libpq-dev \
+  libsqlite3-dev \
+  libyaml-dev \
+  libgdbm6 \
+  libffi-dev \
+  libgdbm-dev \
+  libncurses5-dev \
+  # Database clients
+  postgresql-client \
+  # Development utilities
+  vim \
+  less \
+  zsh \
+  # Additional tools
+  imagemagick \
+  shared-mime-info \
+  unzip \
+  && \
+  # Install OpenSSL 1.1.1w from source for Ruby 2.6 compatibility
+  curl -LO https://www.openssl.org/source/openssl-1.1.1w.tar.gz && \
+  tar zxvf openssl-1.1.1w.tar.gz && \
+  (cd openssl-1.1.1w && CC=gcc-14 ./config --prefix=/usr/local/openssl-1.1.1w --openssldir=/usr/local/openssl-1.1.1w && make -j$(nproc) && make install) && \
+  rm -rf /usr/local/openssl-1.1.1w/certs && \
+  ln -s /etc/ssl/certs /usr/local/openssl-1.1.1w/certs && \
+  rm -rf openssl-1.1.1w openssl-1.1.1w.tar.gz
+
+# Install Ruby using mise
+RUN mise trust && \
+  CC=gcc-14 \
+  CXX=g++-14 \
+  RUBY_CONFIGURE_OPTS="--disable-install-doc --with-openssl-dir=/usr/local/openssl-1.1.1w" \
+  CFLAGS="-O2 -fcommon" \
+  CXXFLAGS="-O2" \
+  RUBY_CFLAGS="-O2 -fcommon" \
+  optflags="-O2" \
+  warnflags="" \
+  MAKE_OPTS="-j$(nproc)" \
+  mise install ruby@${RUBY_VERSION} && \
+  mise use -g ruby@${RUBY_VERSION}
+
+# Set up Ruby gem environment (mise shims already in PATH from base image)
+ENV GEM_HOME=/usr/local/bundle \
+  BUNDLE_PATH=/usr/local/bundle \
+  BUNDLE_APP_CONFIG=/usr/local/bundle \
+  PATH=/usr/local/bundle/bin:$PATH
+
+# Install latest bundler version compatible with Ruby version
+RUN RUBY_MAJOR_MINOR=$(echo ${RUBY_VERSION} | cut -d. -f1,2) && \
+  gem uninstall bundler -x || true && \
+  if [ "${RUBY_MAJOR_MINOR}" = "2.6" ]; then \
+  gem install bundler -v '~> 2.4.0'; \
+  elif [ "${RUBY_MAJOR_MINOR}" = "2.7" ]; then \
+  gem install bundler -v '~> 2.5.0'; \
+  else \
+  gem install bundler; \
+  fi && \
+  mkdir -p "$GEM_HOME" && chmod 777 "$GEM_HOME"
+
+# Create helper script for bundle exec
+RUN printf '#!/bin/bash\nbundle exec "$@"' > /usr/local/bin/b && chmod 755 /usr/local/bin/b
+
+# Configure git to allow operations in mounted volumes
+RUN git config --global --add safe.directory '*'
+
+COPY . /home/agent/.claude
+
+# Switch to agent user for Claude Code operations
+USER agent
