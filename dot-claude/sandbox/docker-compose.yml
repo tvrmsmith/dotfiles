@@ -1,0 +1,18 @@
+services:
+  # Base mise-enabled Claude Code sandbox
+  claude-sandbox-mise:
+    build:
+      context: .
+      dockerfile: Dockerfile.claude-sandbox.mise
+    image: claude-sandbox-mise:latest
+    container_name: claude-sandbox-mise
+
+  # Ruby 2.6.10 sandbox (extends mise sandbox)
+  claude-sandbox-ruby-2-6-10:
+    build:
+      context: .
+      dockerfile: Dockerfile.claude-sandbox.ruby-2.6.10
+    image: claude-sandbox-ruby-2.6.10:latest
+    container_name: claude-sandbox-ruby-2-6-10
+    depends_on:
+      - claude-sandbox-mise
