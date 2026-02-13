@@ -6,6 +6,8 @@ elif [[ -x "/usr/local/bin/brew" ]]; then
   eval "$(/usr/local/bin/brew shellenv)"
 fi
 
+export PATH="$(brew --prefix)/share/google-cloud-sdk/bin:$PATH"
+
 if command -v mise &>/dev/null; then
   eval "$(mise activate zsh --shims)" # this sets up non-interactive sessions
 fi

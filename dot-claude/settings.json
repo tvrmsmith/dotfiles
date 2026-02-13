@@ -2,7 +2,6 @@
   "env": {
     "CLAUDE_CODE_USE_VERTEX": "1",
     "CLOUD_ML_REGION": "us-east5",
-    "ANTHROPIC_VERTEX_PROJECT_ID": "wsh-dev-vertex-wsky"
   },
   "permissions": {
     "allow": [
@@ -18,6 +17,17 @@
     "defaultMode": "default"
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/set-warp-tab-title.sh"
+          }
+        ]
+      }
+    ],
     "Notification": [
       {
         "matcher": "",
@@ -49,21 +59,21 @@
     "shared@wellsky-plugins": true,
     "bug-fix@wellsky-plugins": true,
     "unit-gen@wellsky-plugins": true,
-    "atlassian@claude-plugins-official": true,
+    "atlassian@claude-plugins-official": false,
     "commit-commands@claude-plugins-official": true,
     "humanlayer@wellsky-plugins": true,
     "warp@claude-code-warp": false,
-    "claude-notifications-go@claude-notifications-go": true
+    "claude-notifications-go@claude-notifications-go": true,
+    "ralph-skills@ralph-marketplace": true,
+    "superpowers@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true
   },
-  "syntaxHighlightingDisabled": false,
-  "alwaysThinkingEnabled": true,
   "extraKnownMarketplaces": {
     "wellsky-plugins": {
       "source": {
         "source": "git",
         "url": "git@github.com:mediwareinc/wellsky-claude-code-plugins.git"
-      },
-      "autoUpdate": true
+      }
     },
     "claude-code-warp": {
       "source": {
@@ -77,5 +87,7 @@
         "repo": "777genius/claude-notifications-go"
       }
     }
-  }
+  },
+  "syntaxHighlightingDisabled": false,
+  "alwaysThinkingEnabled": true
 }
