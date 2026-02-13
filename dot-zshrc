@@ -75,3 +75,22 @@ if command -v eza &>/dev/null; then
   alias ls='eza -l -a --icons --group-directories-first'
 fi
 
+# Update Warp tab title for Claude Code sessions
+_update_claude_tab_title() {
+  # Only run in Warp and when in a Claude Code session
+  if [ "$TERM_PROGRAM" = "WarpTerminal" ] && [ -n "$CLAUDECODE" ]; then
+    local session_name_file="$PWD/.claude/session-name"
+    if [ -f "$session_name_file" ]; then
+      local session_name=$(cat "$session_name_file" 2>/dev/null)
+      if [ -n "$session_name" ]; then
+        printf "\033]0;Claude: %s\007" "$session_name"
+      fi
+    fi
+  fi
+}
+
+# Add to precmd_functions so it runs before each prompt
+if [ -n "$CLAUDECODE" ] && [ "$TERM_PROGRAM" = "WarpTerminal" ]; then
+  precmd_functions+=(_update_claude_tab_title)
+fi
+
