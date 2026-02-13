@@ -1,6 +1,7 @@
 services:
   "github-personal": "github:github.com"
 git:
+  overrideGpg: true
   pagers:
     - colorArg: always
       pager: ~/.config/lazygit/delta.sh --paging=never --line-numbers --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}"

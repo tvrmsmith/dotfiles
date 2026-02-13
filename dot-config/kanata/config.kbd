@@ -1,6 +1,9 @@
 ;; defsrc is still necessary
 (defcfg
   process-unmapped-keys yes
+  macos-dev-names-exclude (
+    "Crosses BT"
+  )
 )
 
 (defsrc
