@@ -3,8 +3,11 @@ export XDG_CONFIG_HOME="$HOME/.config"
 export XDG_STATE_HOME="$HOME/.local/state"
 export EZA_CONFIG_DIR="$XDG_DATA_HOME/eza"
 
-export PATH="$HOME/.local/bin:$PATH"
-export DISABLE_AUTOUPDATER=1
+export PATH="$HOME/.local/bin:$HOME/dev/ralph/scripts:$PATH"
+
+export CLAUDE_CODE_USE_VERTEX="1"
+export CLOUD_ML_REGION="us-east5",
+export ANTHROPIC_VERTEX_PROJECT_ID="wsh-dev-vertex-wsky"
 
 export NVM_DIR="$HOME/.nvm"
 
