@@ -1,5 +1,13 @@
-[include]
-  path = ~/.gitconfig.local
+[gpg]
+	format = ssh
+[gpg "ssh"]
+	program = /Applications/1Password.app/Contents/MacOS/op-ssh-sign
+[commit]
+	gpgsign = true
+[user]
+	signingkey = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDCVsIviMhYuKXaXPDnU47cBmR3h2eiKq59GmS+uFvPe
+	name = Trevor Smith
+	email = trevor.smith@wellsky.com
 [alias]
 	up = pull --rebase
 [merge "ours"]
