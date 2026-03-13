@@ -94,4 +94,4 @@ fi
 
 alias lg='lazygit'
 
-alias nono-claude='nono run --allow-cwd --override-deny ~/.config/gcloud --read ~/.config/gcloud --read ~/.ssh/1Password --read ~/.gitignore --write ~/.local/share/mise --profile claude-code -- claude'
+alias nono-claude='nono run --allow-cwd --override-deny ~/.config/gcloud --read ~/.config/gcloud --read ~/.ssh/1Password --read-file ~/.gitignore --write $XDG_DATA_HOME/mise --write $XDG_CACHE_HOME/mise --write $XDG_STATE_HOME/mise --profile claude-code -- claude'
