@@ -1,0 +1,21 @@
+{
+  "meta": {
+    "name": "claude-code-mise",
+    "description": "Claude Code profile with mise runtime manager and gcloud access"
+  },
+  "extends": "claude-code",
+  "filesystem": {
+    "allow": [
+      "$XDG_DATA_HOME/mise",
+      "$XDG_CACHE_HOME/mise",
+      "$XDG_STATE_HOME/mise"
+    ],
+    "read": [
+      "$HOME/.config/gcloud",
+      "$HOME/.ssh/1Password"
+    ],
+    "read_file": [
+      "$HOME/.gitignore"
+    ]
+  }
+}

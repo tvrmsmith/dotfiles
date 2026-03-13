@@ -1,0 +1,15 @@
+{
+  "meta": {
+    "name": "claude-code-csharp",
+    "description": "Claude Code profile with mise and NuGet package access for C# development"
+  },
+  "extends": "claude-code-mise",
+  "filesystem": {
+    "allow": [
+      "$HOME/.nuget/packages",
+      "$XDG_DATA_HOME/NuGet/v3-cache",
+      "$XDG_DATA_HOME/NuGet/plugins-cache",
+      "/tmp/NuGetScratch"
+    ]
+  }
+}
