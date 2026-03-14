@@ -7,8 +7,7 @@
   "filesystem": {
     "allow": [
       "$HOME/.nuget/packages",
-      "$XDG_DATA_HOME/NuGet/v3-cache",
-      "$XDG_DATA_HOME/NuGet/plugins-cache",
+      "$XDG_DATA_HOME/NuGet",
       "/tmp/NuGetScratch"
     ]
   }
