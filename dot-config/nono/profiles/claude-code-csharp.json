@@ -6,7 +6,7 @@
   "extends": "claude-code-mise",
   "filesystem": {
     "allow": [
-      "$HOME/.nuget/packages",
+      "$HOME/.nuget",
       "$XDG_DATA_HOME/NuGet",
       "/tmp/NuGetScratch"
     ]
