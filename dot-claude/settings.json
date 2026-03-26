@@ -1,8 +1,9 @@
 {
   "env": {
+    "ANTHROPIC_VERTEX_PROJECT_ID": "wsh-dev-vertex-wsky",
     "CLAUDE_CODE_USE_VERTEX": "1",
     "CLOUD_ML_REGION": "us-east5",
-    "ANTHROPIC_VERTEX_PROJECT_ID": "wsh-dev-vertex-wsky"
+    "SUPERSET_DEBUG_HOOKS": "1"
   },
   "permissions": {
     "allow": [
@@ -13,40 +14,107 @@
       "Bash(docker run:*)",
       "Bash(docker logs:*)",
       "Bash(curl:*)",
-      "Bash(docker stop:*)"
+      "Bash(docker stop:*)",
+      "Bash(git *)",
+      "Bash(npm test*)",
+      "Bash(npm run *)",
+      "Bash(cargo test*)",
+      "Bash(cargo build*)",
+      "Bash(cargo clippy*)",
+      "Bash(cargo fmt*)",
+      "Bash(node --test*)",
+      "Bash(gh *)",
+      "Bash(ls *)",
+      "Bash(pwd)",
+      "Bash(which *)"
+    ],
+    "deny": [
+      "Bash(sudo *)",
+      "Bash(rm -rf /)",
+      "Bash(rm -rf ~)",
+      "Bash(chmod -R 777 *)",
+      "Bash(mkfs*)",
+      "Bash(dd if=*)",
+      "Bash(curl * | sh)",
+      "Bash(curl * | bash)",
+      "Bash(wget * | sh)",
+      "Bash(npm -g *)",
+      "Bash(npm install -g *)",
+      "Bash(pip install --user *)"
     ],
     "defaultMode": "default"
   },
+  "model": "claude-opus-4-6",
   "hooks": {
-    "SessionStart": [
+    "PreToolUse": [
       {
-        "matcher": "startup",
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.claude/hooks/set-warp-tab-title.sh"
+            "command": "bash \"/Users/trevor.smith/.wellsky-claude/hooks/pre-commit-claudemd-review.sh\""
           }
         ]
       }
     ],
-    "Notification": [
+    "PostToolUseFailure": [
       {
-        "matcher": "",
+        "matcher": "Read|Write|Edit|Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.claude/hooks/send-teams-notification.sh notification"
+            "command": "$HOME/.claude/hooks/nono-hook.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
           }
         ]
       }
     ],
     "Stop": [
       {
-        "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.claude/hooks/send-teams-notification.sh stop"
+            "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
           }
         ]
       }
@@ -54,26 +122,41 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "claude-powerline --theme=tokyo-night --style=powerline"
+    "command": "mise exec node@25 -- claude-powerline --theme=tokyo-night --style=powerline"
   },
   "enabledPlugins": {
-    "shared@wellsky-plugins": true,
-    "bug-fix@wellsky-plugins": true,
-    "unit-gen@wellsky-plugins": true,
+    "agent-teams@agent-messenger": true,
+    "architect@wellsky-plugins": true,
     "atlassian@claude-plugins-official": false,
-    "commit-commands@claude-plugins-official": true,
-    "humanlayer@wellsky-plugins": true,
-    "warp@claude-code-warp": false,
+    "bug-fix@wellsky-plugins": true,
+    "chrome-devtools-mcp@chrome-devtools-plugins": true,
+    "claude-code-setup@claude-plugins-official": true,
     "claude-notifications-go@claude-notifications-go": true,
+    "code-review@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": true,
+    "commit-commands@claude-plugins-official": true,
+    "csharp-lsp@claude-plugins-official": true,
+    "humanlayer@wellsky-plugins": true,
+    "pr-review-toolkit@claude-plugins-official": true,
+    "product-management@wellsky-plugins": true,
     "ralph-skills@ralph-marketplace": true,
+    "ruby-lsp@claude-code-lsps": false,
+    "ruby-lsp@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true,
+    "shared@wellsky-plugins": true,
+    "sourcegraph@claude-plugins-official": true,
     "superpowers@claude-plugins-official": true,
-    "code-review@claude-plugins-official": true
+    "typescript-lsp@claude-plugins-official": true,
+    "unit-gen@wellsky-plugins": true,
+    "warp@claude-code-warp": false,
+    "workflow@wellsky-plugins": true,
+    "zapier@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
-    "wellsky-plugins": {
+    "chrome-devtools-plugins": {
       "source": {
-        "source": "git",
-        "url": "git@github.com:mediwareinc/wellsky-claude-code-plugins.git"
+        "source": "github",
+        "repo": "ChromeDevTools/chrome-devtools-mcp"
       }
     },
     "claude-code-warp": {
@@ -87,8 +170,23 @@
         "source": "github",
         "repo": "777genius/claude-notifications-go"
       }
+    },
+    "ralph-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "tvrmsmith/ralph",
+        "ref": "feature/docker-sandbox-tool"
+      }
+    },
+    "wellsky-plugins": {
+      "source": {
+        "source": "git",
+        "url": "git@github.com:mediwareinc/wellsky-claude-code-plugins.git"
+      }
     }
   },
   "syntaxHighlightingDisabled": false,
-  "alwaysThinkingEnabled": true
+  "alwaysThinkingEnabled": true,
+  "effortLevel": "medium",
+  "autoDreamEnabled": true
 }

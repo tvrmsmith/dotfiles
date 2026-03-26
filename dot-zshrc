@@ -93,6 +93,8 @@ if [ -n "$CLAUDECODE" ] && [ "$TERM_PROGRAM" = "WarpTerminal" ]; then
 fi
 
 alias lg='lazygit'
-
-alias nono-claude='nono run --allow-cwd --override-deny ~/.config/gcloud --profile claude-code-mise -- claude'
-alias nono-cc-csharp='nono run --allow-cwd --override-deny ~/.config/gcloud --profile claude-code-csharp -- claude'
+alias bubu='brew update && brew upgrade'
+alias cc='claude'
+alias nono-cc-base='GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=$HOME/dotfiles/dot-config/nono/known_hosts" nono run --allow-cwd --override-deny ~/.config/gcloud'
+alias nono-cc='nono-cc-base --profile claude-code-mise -- claude'
+alias nono-cc-csharp='nono-cc-base --profile claude-code-csharp -- claude'

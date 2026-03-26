@@ -20,5 +20,8 @@
 ^/\.vscode
 ^/\.DS_Store$
 
+# Claude Code (non-stow managed)
+^/\.claude
+
 # Stow-related
 ^/\.stow-.*
