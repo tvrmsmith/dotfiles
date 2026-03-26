@@ -1,7 +1,7 @@
 [tools]
 dotnet = "latest"
 go = "1.25.1"
-node = "latest"
+node = "25"
 opentofu = "latest"
 ruby = "3.4.7"
 terraform = "latest"

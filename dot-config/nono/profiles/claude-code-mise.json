@@ -8,14 +8,17 @@
     "allow": [
       "$XDG_DATA_HOME/mise",
       "$HOME/.cache/mise",
-      "$HOME/.local/state/mise"
+      "$HOME/.local/state/mise",
+      "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password"
     ],
     "read": [
       "$HOME/.config/gcloud",
-      "$HOME/.ssh/1Password"
+      "$HOME/.ssh/1Password",
+      "$HOME/dotfiles/dot-claude"
     ],
     "read_file": [
-      "$HOME/.gitignore"
+      "$HOME/.gitignore",
+      "$HOME/dotfiles/dot-config/nono/known_hosts"
     ]
   }
 }
