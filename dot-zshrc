@@ -66,6 +66,7 @@ fi
 catls() { [[ -f "$1" ]] && cat "$1" || ls "${1:-.}"; }
 
 alias gauth="gcloud auth application-default login"
+alias setup-vertex-creds="$HOME/dotfiles/setup-vertex-credentials.sh"
 
 alias logdy='logdy --no-analytics --port=8090'
 
@@ -95,6 +96,6 @@ fi
 alias lg='lazygit'
 alias bubu='brew update && brew upgrade'
 alias cc='claude'
-alias nono-cc-base='GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=$HOME/dotfiles/dot-config/nono/known_hosts" nono run --allow-cwd --override-deny ~/.config/gcloud'
+alias nono-cc-base='GOOGLE_APPLICATION_CREDENTIALS="$HOME/.claude/gcp-vertex-ai-credentials.json" GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=$HOME/dotfiles/dot-config/nono/known_hosts" nono run --allow-cwd'
 alias nono-cc='nono-cc-base --profile claude-code-mise -- claude'
 alias nono-cc-csharp='nono-cc-base --profile claude-code-csharp -- claude'
