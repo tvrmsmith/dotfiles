@@ -12,6 +12,7 @@
       "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password"
     ],
     "read": [
+      "$HOME/.config/gcloud",
       "$HOME/.ssh/1Password",
       "$HOME/.superset",
       "$HOME/dotfiles/dot-claude"
