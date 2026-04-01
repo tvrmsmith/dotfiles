@@ -117,6 +117,52 @@ ADF JSON structure:
 ADF marks: `code`, `strong`, `em`, `link` (with `attrs.href`), `strike`, `underline`.
 ADF blocks: `paragraph`, `heading` (with `attrs.level`), `bulletList`, `orderedList`, `listItem`, `rule`, `codeBlock`, `blockquote`.
 
+## Epics and Linking
+
+### Creating an Epic with Child Stories
+
+1. Create the epic first:
+```bash
+acli jira workitem create --summary "Epic title" --project "PROJ" --type "Epic" --description-file /tmp/epic-desc.json
+```
+
+2. Create stories separately:
+```bash
+acli jira workitem create --summary "Story title" --project "PROJ" --type "Story" --description-file /tmp/story-desc.json
+```
+
+3. Link stories to the epic using `Child-Issue` link type:
+```bash
+acli jira workitem link create --out "PROJ-100" --in "PROJ-101" --type "Child-Issue" --yes
+```
+- `--out` = the epic (parent)
+- `--in` = the story (child)
+- `--yes` skips confirmation prompt
+
+### Linking Work Items
+
+```bash
+# List available link types
+acli jira workitem link type
+
+# Create a link
+acli jira workitem link create --out KEY-1 --in KEY-2 --type "Blocks" --yes
+
+# List links on an issue
+acli jira workitem link list KEY-123
+
+# Delete a link
+acli jira workitem link delete KEY-123
+```
+
+Common link types: `Child-Issue`, `Blocks`, `Relates`, `Duplicate`, `Cloners`.
+
+### Gotchas
+
+- `--label` flag on `create` can silently fail (no error, no ticket created). If a create returns no output, retry without `--label`.
+- `--from-json` and `--key` flags are mutually exclusive on `edit`. You cannot use both — pick one.
+- There is no `--parent` or `--epic` flag on `create` or `edit`. Use `link create --type "Child-Issue"` after creating both issues.
+
 ## Custom Fields
 
 The CLI only exposes standard fields (summary, description, assignee, labels, type). It does **not** support custom fields (e.g. "Success Criteria") via flags. Workaround: include custom field content as a section in the description.

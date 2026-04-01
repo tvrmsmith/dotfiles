@@ -14,7 +14,7 @@ ENV PATH="/mise/shims:$PATH"
 # Configure Vertex AI for Claude Code
 ENV CLAUDE_CODE_USE_VERTEX="1"
 ENV CLOUD_ML_REGION="us-east5"
-ENV ANTHROPIC_VERTEX_PROJECT_ID="wsh-dev-vertex-wsky"
+ENV ANTHROPIC_VERTEX_PROJECT_ID="consolo-dev-vertex-wsky"
 
 # Install mise (polyglot runtime manager)
 # https://mise.jdx.dev/
