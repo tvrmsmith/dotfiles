@@ -10,6 +10,7 @@ export CLAUDE_CODE_USE_VERTEX="1"
 export CLOUD_ML_REGION="us-east5"
 export ANTHROPIC_VERTEX_PROJECT_ID="consolo-dev-vertex-wsky"
 export ENABLE_LSP_TOOL=1
+export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 
 export NVM_DIR="$HOME/.nvm"
 
