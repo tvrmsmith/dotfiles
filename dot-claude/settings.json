@@ -131,12 +131,10 @@
     "bug-fix@wellsky-plugins": true,
     "chrome-devtools-mcp@chrome-devtools-plugins": true,
     "claude-code-setup@claude-plugins-official": true,
-    "claude-notifications-go@claude-notifications-go": true,
     "code-review@claude-plugins-official": true,
     "code-simplifier@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true,
     "csharp-lsp@claude-plugins-official": true,
-    "humanlayer@wellsky-plugins": true,
     "pr-review-toolkit@claude-plugins-official": true,
     "product-management@wellsky-plugins": true,
     "ralph-skills@ralph-marketplace": true,
@@ -148,27 +146,21 @@
     "superpowers@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true,
     "unit-gen@wellsky-plugins": true,
-    "warp@claude-code-warp": false,
     "workflow@wellsky-plugins": true,
-    "zapier@claude-plugins-official": true
+    "zapier@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true,
+    "hookify@claude-plugins-official": true,
+    "terraform@claude-plugins-official": true,
+    "iac-assistant@wellsky-plugins": true,
+    "security-screener@wellsky-plugins": true,
+    "ws-atlassian@wellsky-plugins": true
   },
   "extraKnownMarketplaces": {
     "chrome-devtools-plugins": {
       "source": {
         "source": "github",
         "repo": "ChromeDevTools/chrome-devtools-mcp"
-      }
-    },
-    "claude-code-warp": {
-      "source": {
-        "source": "github",
-        "repo": "warpdotdev/claude-code-warp"
-      }
-    },
-    "claude-notifications-go": {
-      "source": {
-        "source": "github",
-        "repo": "777genius/claude-notifications-go"
       }
     },
     "ralph-marketplace": {
@@ -182,6 +174,12 @@
       "source": {
         "source": "git",
         "url": "git@github.com:mediwareinc/wellsky-claude-code-plugins.git"
+      }
+    },
+    "dotnet-agent-skills": {
+      "source": {
+        "source": "github",
+        "repo": "dotnet/skills"
       }
     }
   },

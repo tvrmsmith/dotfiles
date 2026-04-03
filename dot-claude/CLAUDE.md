@@ -10,4 +10,5 @@
 
 - Prefer ripgrep (`rg`) over `grep` — use the Grep tool or `rg` via Bash
 - For JIRA operations, use `acli jira` — see the `jira` skill for command reference
+- For Confluence operations, use the `ws-atlassian` skill (TypeScript-based) instead of `acli`
 
