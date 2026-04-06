@@ -108,5 +108,5 @@ function nono-cc-base() {
   GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=$HOME/dotfiles/dot-config/nono/known_hosts" \
     nono run --allow-cwd --override-deny ~/.config/gcloud "${worktree_args[@]}" "$@"
 }
-alias nono-cc='nono-cc-base --profile claude-code-mise -- claude'
-alias nono-cc-csharp='nono-cc-base --profile claude-code-csharp -- claude'
+alias nono-cc='nono-cc-base --profile claude-code-mise -- claude --dangerously-skip-permissions'
+alias nono-cc-csharp='nono-cc-base --profile claude-code-csharp -- claude --dangerously-skip-permissions'
