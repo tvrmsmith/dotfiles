@@ -24,6 +24,14 @@ export BAT_THEME_LIGHT="tokyonight_day"
 export BAT_THEME_DARK="tokyonight_night"
 export BAT_STYLE="full,-grid,-header-filesize,-header-filename"
 
+# Atlassian (used by ws-atlassian skill and acli)
+export JIRA_USERNAME="trevor.smith@wellsky.com"
+export JIRA_BASE_URL="https://wellsky.atlassian.net"
+export JIRA_API_TOKEN="op://Employee/iyx4gtojgaxvuze7obrxe3uqqm/credential"
+
+# GitHub (read-only token, resolved to GH_TOKEN in nono alias)
+export GH_TOKEN_RO="op://Employee/qrtqbas4sztbfu4zw52wymnqm4/token"
+
 LOCAL="$HOME/.zshenv.local"
 [ -f "$LOCAL" ] && source "$LOCAL"
 

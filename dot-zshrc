@@ -96,6 +96,17 @@ fi
 alias lg='lazygit'
 alias bubu='brew update && brew upgrade'
 alias cc='claude'
-alias nono-cc-base='GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=$HOME/dotfiles/dot-config/nono/known_hosts" nono run --allow-cwd --override-deny ~/.config/gcloud'
+function nono-cc-base() {
+  local worktree_args=()
+  local git_common_dir
+  if git_common_dir="$(git rev-parse --git-common-dir 2>/dev/null)"; then
+    local source_repo="$(cd "$git_common_dir/.." && pwd)"
+    if [[ "$source_repo" != "$(pwd)" ]]; then
+      worktree_args=(--read "$source_repo")
+    fi
+  fi
+  GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=$HOME/dotfiles/dot-config/nono/known_hosts" \
+    nono run --allow-cwd --override-deny ~/.config/gcloud "${worktree_args[@]}" "$@"
+}
 alias nono-cc='nono-cc-base --profile claude-code-mise -- claude'
 alias nono-cc-csharp='nono-cc-base --profile claude-code-csharp -- claude'

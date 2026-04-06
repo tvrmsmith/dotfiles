@@ -4,15 +4,22 @@
     "description": "Claude Code profile with mise runtime manager and gcloud access"
   },
   "extends": "claude-code",
+  "env_credentials": {
+    "op://Employee/iyx4gtojgaxvuze7obrxe3uqqm/credential": "JIRA_API_TOKEN",
+    "op://Employee/qrtqbas4sztbfu4zw52wymnqm4/token": "GH_TOKEN"
+  },
   "filesystem": {
     "allow": [
       "$XDG_DATA_HOME/mise",
       "$HOME/.cache/mise",
       "$HOME/.local/state/mise",
-      "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password"
+      "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password",
+      "$HOME/.npm"
     ],
     "read": [
       "$HOME/.config/gcloud",
+      "$HOME/.config/acli",
+      "$HOME/.config/gh",
       "$HOME/.ssh/1Password",
       "$HOME/.superset",
       "$HOME/dotfiles/dot-claude"
