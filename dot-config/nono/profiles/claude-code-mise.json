@@ -6,7 +6,7 @@
   "extends": "claude-code",
   "env_credentials": {
     "op://Employee/iyx4gtojgaxvuze7obrxe3uqqm/credential": "JIRA_API_TOKEN",
-    "op://Employee/qrtqbas4sztbfu4zw52wymnqm4/token": "GH_TOKEN"
+    "op://Employee/rwwmfartrrnh2b3cycwvu4i43e/token": "GH_TOKEN"
   },
   "filesystem": {
     "allow": [
