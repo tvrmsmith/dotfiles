@@ -1,12 +1,11 @@
 {
   "meta": {
-    "name": "claude-code-mise",
-    "description": "Claude Code profile with mise runtime manager and gcloud access"
+    "name": "claude-code-personal",
+    "description": "Claude Code profile for personal projects with GitHub PAT"
   },
   "extends": "claude-code",
   "env_credentials": {
-    "op://Employee/JIRA CLI Token/credential": "JIRA_API_TOKEN",
-    "op://Employee/GitHub Personal Access Token/token": "GH_TOKEN"
+    "op://Private/GitHub Personal Access Token RO/token": "GH_TOKEN"
   },
   "filesystem": {
     "allow": [
@@ -17,11 +16,8 @@
       "$HOME/.npm"
     ],
     "read": [
-      "$HOME/.config/gcloud",
-      "$HOME/.config/acli",
       "$HOME/.config/gh",
       "$HOME/.ssh/1Password",
-      "$HOME/.superset",
       "$HOME/dotfiles/dot-claude"
     ],
     "read_file": [
