@@ -10,7 +10,8 @@
       "$HOME/.cache/mise",
       "$HOME/.local/state/mise",
       "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password",
-      "$HOME/.npm"
+      "$HOME/.npm",
+      "$HOME/.bun"
     ],
     "read": [
       "$HOME/.config/gcloud",
