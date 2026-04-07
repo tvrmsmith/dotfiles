@@ -1,0 +1,27 @@
+{
+  "meta": {
+    "name": "claude-code-base",
+    "description": "Shared base profile for Claude Code with mise, 1Password, and common filesystem access"
+  },
+  "extends": "claude-code",
+  "filesystem": {
+    "allow": [
+      "$XDG_DATA_HOME/mise",
+      "$HOME/.cache/mise",
+      "$HOME/.local/state/mise",
+      "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password",
+      "$HOME/.npm"
+    ],
+    "read": [
+      "$HOME/.config/gcloud",
+      "$HOME/.config/gh",
+      "$HOME/.ssh/1Password",
+      "$HOME/.superset",
+      "$HOME/dotfiles/dot-claude"
+    ],
+    "read_file": [
+      "$HOME/.gitignore",
+      "$HOME/dotfiles/dot-config/nono/known_hosts"
+    ]
+  }
+}

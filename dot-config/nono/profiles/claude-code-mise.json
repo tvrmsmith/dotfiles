@@ -1,32 +1,16 @@
 {
   "meta": {
     "name": "claude-code-mise",
-    "description": "Claude Code profile with mise runtime manager and gcloud access"
+    "description": "Claude Code profile for WellSky work with Atlassian and GitHub access"
   },
-  "extends": "claude-code",
+  "extends": "claude-code-base",
   "env_credentials": {
     "op://Employee/JIRA CLI Token/credential": "JIRA_API_TOKEN",
     "op://Employee/GitHub Personal Access Token/token": "GH_TOKEN"
   },
   "filesystem": {
-    "allow": [
-      "$XDG_DATA_HOME/mise",
-      "$HOME/.cache/mise",
-      "$HOME/.local/state/mise",
-      "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password",
-      "$HOME/.npm"
-    ],
     "read": [
-      "$HOME/.config/gcloud",
-      "$HOME/.config/acli",
-      "$HOME/.config/gh",
-      "$HOME/.ssh/1Password",
-      "$HOME/.superset",
-      "$HOME/dotfiles/dot-claude"
-    ],
-    "read_file": [
-      "$HOME/.gitignore",
-      "$HOME/dotfiles/dot-config/nono/known_hosts"
+      "$HOME/.config/acli"
     ]
   }
 }
