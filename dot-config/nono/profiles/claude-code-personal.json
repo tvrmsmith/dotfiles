@@ -3,27 +3,8 @@
     "name": "claude-code-personal",
     "description": "Claude Code profile for personal projects with GitHub PAT"
   },
-  "extends": "claude-code",
+  "extends": "claude-code-base",
   "env_credentials": {
     "op://Private/GitHub Personal Access Token RO/token": "GH_TOKEN"
-  },
-  "filesystem": {
-    "allow": [
-      "$XDG_DATA_HOME/mise",
-      "$HOME/.cache/mise",
-      "$HOME/.local/state/mise",
-      "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password",
-      "$HOME/.npm"
-    ],
-    "read": [
-      "$HOME/.config/gcloud",
-      "$HOME/.config/gh",
-      "$HOME/.ssh/1Password",
-      "$HOME/dotfiles/dot-claude"
-    ],
-    "read_file": [
-      "$HOME/.gitignore",
-      "$HOME/dotfiles/dot-config/nono/known_hosts"
-    ]
   }
 }
