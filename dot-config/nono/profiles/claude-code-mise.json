@@ -5,8 +5,8 @@
   },
   "extends": "claude-code",
   "env_credentials": {
-    "op://Employee/iyx4gtojgaxvuze7obrxe3uqqm/credential": "JIRA_API_TOKEN",
-    "op://Employee/rwwmfartrrnh2b3cycwvu4i43e/token": "GH_TOKEN"
+    "op://Employee/JIRA CLI Token/credential": "JIRA_API_TOKEN",
+    "op://Employee/GitHub Personal Access Token/token": "GH_TOKEN"
   },
   "filesystem": {
     "allow": [
