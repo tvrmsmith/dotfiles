@@ -27,7 +27,7 @@ export BAT_STYLE="full,-grid,-header-filesize,-header-filename"
 # Atlassian (used by ws-atlassian skill and acli)
 export JIRA_USERNAME="trevor.smith@wellsky.com"
 export JIRA_BASE_URL="https://wellsky.atlassian.net"
-export JIRA_API_TOKEN="op://Employee/iyx4gtojgaxvuze7obrxe3uqqm/credential"
+export JIRA_API_TOKEN="op://Employee/JIRA CLI Token/credential"
 
 LOCAL="$HOME/.zshenv.local"
 [ -f "$LOCAL" ] && source "$LOCAL"
