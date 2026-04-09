@@ -102,7 +102,11 @@ function nono-cc-base() {
   if git_common_dir="$(git rev-parse --git-common-dir 2>/dev/null)"; then
     local source_repo="$(cd "$git_common_dir/.." && pwd)"
     if [[ "$source_repo" != "$(pwd)" ]]; then
-      worktree_args=(--read "$source_repo")
+      local git_dir
+      git_dir="$(git rev-parse --absolute-git-dir)"
+      local abs_common_dir
+      abs_common_dir="$(cd "$git_common_dir" && pwd)"
+      worktree_args=(--read "$source_repo" --allow "$git_dir" --allow "$abs_common_dir")
     fi
   fi
   GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=$HOME/dotfiles/dot-config/nono/known_hosts" \
@@ -111,3 +115,10 @@ function nono-cc-base() {
 alias nono-cc='nono-cc-base --profile claude-code-mise -- claude --dangerously-skip-permissions'
 nono-cc-personal() { OP_ACCOUNT=my.1password.com nono-cc-base --profile claude-code-personal -- claude --dangerously-skip-permissions "$@"; }
 alias nono-cc-csharp='nono-cc-base --profile claude-code-csharp -- claude --dangerously-skip-permissions'
+
+# bun completions
+[ -s "/Users/trevor.smith/.bun/_bun" ] && source "/Users/trevor.smith/.bun/_bun"
+
+# bun
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
