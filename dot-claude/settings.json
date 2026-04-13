@@ -1,253 +1,10 @@
 {
-  "alwaysThinkingEnabled": true,
-  "autoDreamEnabled": true,
-  "effortLevel": "high",
-  "enabledPlugins": {
-    "agent-teams@agent-messenger": true,
-    "architect@wellsky-plugins": true,
-    "atlassian@claude-plugins-official": false,
-    "bug-fix@wellsky-plugins": true,
-    "chrome-devtools-mcp@chrome-devtools-plugins": true,
-    "claude-code-setup@claude-plugins-official": true,
-    "claude-md-management@claude-plugins-official": true,
-    "code-review@claude-plugins-official": true,
-    "code-simplifier@claude-plugins-official": true,
-    "commit-commands@claude-plugins-official": true,
-    "csharp-lsp@claude-plugins-official": true,
-    "hookify@claude-plugins-official": true,
-    "iac-assistant@wellsky-plugins": true,
-    "pr-review-toolkit@claude-plugins-official": true,
-    "product-management@wellsky-plugins": true,
-    "ralph-skills@ralph-marketplace": true,
-    "ruby-lsp@claude-code-lsps": false,
-    "ruby-lsp@claude-plugins-official": true,
-    "security-guidance@claude-plugins-official": true,
-    "security-screener@wellsky-plugins": true,
-    "shared@wellsky-plugins": true,
-    "skill-creator@claude-plugins-official": true,
-    "sourcegraph@claude-plugins-official": true,
-    "superpowers@claude-plugins-official": true,
-    "terraform@claude-plugins-official": true,
-    "typescript-lsp@claude-plugins-official": true,
-    "unit-gen@wellsky-plugins": true,
-    "workflow@wellsky-plugins": true,
-    "ws-atlassian@wellsky-plugins": true,
-    "zapier@claude-plugins-official": true
-  },
   "env": {
     "ANTHROPIC_VERTEX_PROJECT_ID": "consolo-dev-vertex-wsky",
     "CLAUDE_CODE_USE_VERTEX": "1",
     "CLOUD_ML_REGION": "us-east5",
     "SUPERSET_DEBUG_HOOKS": "1"
   },
-  "extraKnownMarketplaces": {
-    "chrome-devtools-plugins": {
-      "source": {
-        "repo": "ChromeDevTools/chrome-devtools-mcp",
-        "source": "github"
-      }
-    },
-    "dotnet-agent-skills": {
-      "source": {
-        "repo": "dotnet/skills",
-        "source": "github"
-      }
-    },
-    "ralph-marketplace": {
-      "source": {
-        "ref": "feature/docker-sandbox-tool",
-        "repo": "tvrmsmith/ralph",
-        "source": "github"
-      }
-    },
-    "wellsky-plugins": {
-      "source": {
-        "source": "git",
-        "url": "git@github.com:mediwareinc/wellsky-claude-code-plugins.git"
-      }
-    }
-  },
-  "hooks": {
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "command": "python3 ~/.claude/hooks/claude-island-state.py",
-            "type": "command"
-          }
-        ],
-        "matcher": "*"
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "hooks": [
-          {
-            "command": "python3 ~/.claude/hooks/claude-island-state.py",
-            "timeout": 86400,
-            "type": "command"
-          }
-        ],
-        "matcher": "*"
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "command": "python3 ~/.claude/hooks/claude-island-state.py",
-            "type": "command"
-          }
-        ],
-        "matcher": "*"
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
-          }
-        ]
-      }
-    ],
-    "PostToolUseFailure": [
-      {
-        "hooks": [
-          {
-            "command": "$HOME/.claude/hooks/nono-hook.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": "Read|Write|Edit|Bash"
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "command": "python3 ~/.claude/hooks/claude-island-state.py",
-            "type": "command"
-          }
-        ],
-        "matcher": "auto"
-      },
-      {
-        "hooks": [
-          {
-            "command": "python3 ~/.claude/hooks/claude-island-state.py",
-            "type": "command"
-          }
-        ],
-        "matcher": "manual"
-      }
-    ],
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "command": "bash \"/Users/trevor.smith/.wellsky-claude/hooks/pre-commit-claudemd-review.sh\"",
-            "type": "command"
-          }
-        ],
-        "matcher": "Bash"
-      },
-      {
-        "hooks": [
-          {
-            "command": "python3 ~/.claude/hooks/claude-island-state.py",
-            "type": "command"
-          }
-        ],
-        "matcher": "*"
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "command": "python3 ~/.claude/hooks/claude-island-state.py",
-            "type": "command"
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "command": "python3 ~/.claude/hooks/claude-island-state.py",
-            "type": "command"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "command": "python3 ~/.claude/hooks/claude-island-state.py",
-            "type": "command"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "command": "python3 ~/.claude/hooks/claude-island-state.py",
-            "type": "command"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "command": "python3 ~/.claude/hooks/claude-island-state.py",
-            "type": "command"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
-          }
-        ]
-      }
-    ]
-  },
-  "model": "claude-opus-4-6",
   "permissions": {
     "allow": [
       "Bash(ls:*)",
@@ -271,7 +28,6 @@
       "Bash(pwd)",
       "Bash(which *)"
     ],
-    "defaultMode": "default",
     "deny": [
       "Bash(sudo *)",
       "Bash(rm -rf /)",
@@ -285,11 +41,253 @@
       "Bash(npm -g *)",
       "Bash(npm install -g *)",
       "Bash(pip install --user *)"
+    ],
+    "defaultMode": "default"
+  },
+  "model": "claude-opus-4-6",
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/claude-island-state.py"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/claude-island-state.py",
+            "timeout": 86400
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/claude-island-state.py"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Read|Write|Edit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/nono-hook.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/claude-island-state.py"
+          }
+        ]
+      },
+      {
+        "matcher": "manual",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/claude-island-state.py"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"/Users/trevor.smith/.wellsky-claude/hooks/pre-commit-claudemd-review.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/claude-island-state.py"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/claude-island-state.py"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/claude-island-state.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/claude-island-state.py"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/claude-island-state.py"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/claude-island-state.py"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
-    "command": "mise exec node@25 -- claude-powerline --theme=tokyo-night --style=powerline",
-    "type": "command"
+    "type": "command",
+    "command": "mise exec node@25 -- claude-powerline --theme=tokyo-night --style=powerline"
   },
-  "syntaxHighlightingDisabled": false
+  "enabledPlugins": {
+    "architect@wellsky-plugins": true,
+    "atlassian@claude-plugins-official": false,
+    "bug-fix@wellsky-plugins": true,
+    "chrome-devtools-mcp@chrome-devtools-plugins": true,
+    "claude-code-setup@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": true,
+    "commit-commands@claude-plugins-official": true,
+    "csharp-lsp@claude-plugins-official": true,
+    "hookify@claude-plugins-official": true,
+    "iac-assistant@wellsky-plugins": true,
+    "pr-review-toolkit@claude-plugins-official": true,
+    "product-management@wellsky-plugins": true,
+    "ruby-lsp@claude-code-lsps": false,
+    "ruby-lsp@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true,
+    "security-screener@wellsky-plugins": true,
+    "shared@wellsky-plugins": true,
+    "skill-creator@claude-plugins-official": true,
+    "sourcegraph@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
+    "terraform@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "unit-gen@wellsky-plugins": true,
+    "workflow@wellsky-plugins": true,
+    "ws-atlassian@wellsky-plugins": true,
+    "zapier@claude-plugins-official": true,
+    "caveman@caveman": true
+  },
+  "extraKnownMarketplaces": {
+    "chrome-devtools-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "ChromeDevTools/chrome-devtools-mcp"
+      }
+    },
+    "dotnet-agent-skills": {
+      "source": {
+        "source": "github",
+        "repo": "dotnet/skills"
+      }
+    },
+    "wellsky-plugins": {
+      "source": {
+        "source": "git",
+        "url": "git@github.com:mediwareinc/wellsky-claude-code-plugins.git"
+      }
+    },
+    "caveman": {
+      "source": {
+        "source": "github",
+        "repo": "JuliusBrussee/caveman"
+      }
+    }
+  },
+  "syntaxHighlightingDisabled": false,
+  "alwaysThinkingEnabled": true,
+  "effortLevel": "high",
+  "autoDreamEnabled": true
 }

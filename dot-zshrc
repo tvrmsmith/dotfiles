@@ -93,6 +93,7 @@ if [ -n "$CLAUDECODE" ] && [ "$TERM_PROGRAM" = "WarpTerminal" ]; then
   precmd_functions+=(_update_claude_tab_title)
 fi
 
+alias pi='GOOGLE_CLOUD_PROJECT=consolo-dev-vertex-wsky GOOGLE_CLOUD_LOCATION=us-east5 command pi'
 alias lg='lazygit'
 alias bubu='brew update && brew upgrade'
 alias cc='claude'
