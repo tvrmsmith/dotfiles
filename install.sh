@@ -51,25 +51,7 @@ setup_dotfiles() {
 	stow --dotfiles --adopt -d "$SCRIPT_DIR" -t "$HOME" .
 }
 
-setup_claude_skills() {
-	# Stow can't manage individual entries inside ~/.claude/skills/
-	# because the directory contains symlinks not owned by stow.
-	# Create these symlinks manually instead.
-	local skills_dir="$HOME/.claude/skills"
-	mkdir -p "$skills_dir"
-
-	for skill in "$SCRIPT_DIR"/dot-claude/skills/*/; do
-		local name
-		name="$(basename "$skill")"
-		if [ ! -e "$skills_dir/$name" ]; then
-			ln -s "../../dotfiles/dot-claude/skills/$name" "$skills_dir/$name"
-			echo "Linked skill: $name"
-		fi
-	done
-}
-
 install_gnu_stow
 init_submodules
 setup_dotfiles
-setup_claude_skills
 echo "Dot files installed."
