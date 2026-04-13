@@ -3,6 +3,7 @@
 
 # Repository metadata and documentation
 ^/CLAUDE\.md$
+^/AGENTS\.md$
 ^/README\.md$
 ^/README$
 ^/LICENSE$
@@ -19,9 +20,7 @@
 ^/\.idea
 ^/\.vscode
 ^/\.DS_Store$
-
-# Claude Code (non-stow managed)
-^/\.claude
+settings\.local\.json
 
 # Stow-related
 ^/\.stow-.*
