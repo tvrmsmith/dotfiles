@@ -1,0 +1,16 @@
+{
+  "meta": {
+    "name": "omp-mise",
+    "description": "Oh My Pi profile for WellSky work with Atlassian and GitHub access"
+  },
+  "extends": "omp-base",
+  "env_credentials": {
+    "op://Employee/JIRA CLI Token/credential": "JIRA_API_TOKEN",
+    "op://Employee/GitHub Personal Access Token/token": "GH_TOKEN"
+  },
+  "filesystem": {
+    "read": [
+      "$HOME/.config/acli"
+    ]
+  }
+}

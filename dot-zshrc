@@ -93,30 +93,37 @@ if [ -n "$CLAUDECODE" ] && [ "$TERM_PROGRAM" = "WarpTerminal" ]; then
   precmd_functions+=(_update_claude_tab_title)
 fi
 
-alias pi='GOOGLE_CLOUD_PROJECT=consolo-dev-vertex-wsky GOOGLE_CLOUD_LOCATION=us-east5 command pi'
-alias omp='GOOGLE_CLOUD_PROJECT=consolo-dev-vertex-wsky GOOGLE_CLOUD_LOCATION=us-east5 command omp'
+_OMP_VERTEX="GOOGLE_CLOUD_PROJECT=consolo-dev-vertex-wsky GOOGLE_CLOUD_LOCATION=us-east5"
+_OMP_MODEL="anthropic-vertex/claude-opus-4-6"
+alias pi="$_OMP_VERTEX command pi --model $_OMP_MODEL"
+alias omp="$_OMP_VERTEX command omp --model $_OMP_MODEL"
 alias lg='lazygit'
 alias bubu='brew update && brew upgrade'
 alias cc='claude'
-function nono-cc-base() {
+nono-agent() {
   local worktree_args=()
   local git_common_dir
   if git_common_dir="$(git rev-parse --git-common-dir 2>/dev/null)"; then
     local source_repo="$(cd "$git_common_dir/.." && pwd)"
     if [[ "$source_repo" != "$(pwd)" ]]; then
-      local git_dir
+      local git_dir abs_common_dir
       git_dir="$(git rev-parse --absolute-git-dir)"
-      local abs_common_dir
       abs_common_dir="$(cd "$git_common_dir" && pwd)"
       worktree_args=(--read "$source_repo" --allow "$git_dir" --allow "$abs_common_dir")
     fi
   fi
+
   GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=$HOME/dotfiles/dot-config/nono/known_hosts" \
     nono run --allow-cwd --override-deny ~/.config/gcloud "${worktree_args[@]}" "$@"
 }
-alias nono-cc='nono-cc-base --profile claude-code-mise -- claude --dangerously-skip-permissions'
-nono-cc-personal() { OP_ACCOUNT=my.1password.com nono-cc-base --profile claude-code-personal -- claude --dangerously-skip-permissions "$@"; }
-alias nono-cc-csharp='nono-cc-base --profile claude-code-csharp -- claude --dangerously-skip-permissions'
+# Claude Code
+alias nono-cc='nono-agent --profile claude-code-mise -- claude --dangerously-skip-permissions'
+nono-cc-personal() { OP_ACCOUNT=my.1password.com nono-agent --profile claude-code-personal -- claude --dangerously-skip-permissions "$@"; }
+alias nono-cc-csharp='nono-agent --profile claude-code-csharp -- claude --dangerously-skip-permissions'
+# Oh My Pi
+alias nono-omp="$_OMP_VERTEX nono-agent --profile omp-mise -- omp --model $_OMP_MODEL"
+nono-omp-personal() { env ${=_OMP_VERTEX} OP_ACCOUNT=my.1password.com nono-agent --profile omp-personal -- omp --model $_OMP_MODEL "$@"; }
+alias nono-omp-csharp="$_OMP_VERTEX nono-agent --profile omp-csharp -- omp --model $_OMP_MODEL"
 
 # bun completions
 [ -s "/Users/trevor.smith/.bun/_bun" ] && source "/Users/trevor.smith/.bun/_bun"
