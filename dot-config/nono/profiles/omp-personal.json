@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "name": "omp-personal",
+    "description": "Oh My Pi profile for personal projects with GitHub PAT"
+  },
+  "extends": "omp-base",
+  "env_credentials": {
+    "op://Private/GitHub Personal Access Token RO/token": "GH_TOKEN"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "meta": {
+    "name": "omp-csharp",
+    "description": "Oh My Pi profile with mise and NuGet package access for C# development"
+  },
+  "extends": "omp-mise",
+  "filesystem": {
+    "allow": [
+      "$HOME/.nuget",
+      "$HOME/.dotnet",
+      "$XDG_DATA_HOME/NuGet",
+      "/tmp/NuGetScratch"
+    ]
+  }
+}

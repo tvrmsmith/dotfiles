@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "name": "omp-base",
+    "description": "Shared base profile for Oh My Pi with mise, 1Password, and common filesystem access"
+  },
+  "extends": "default",
+  "security": {
+    "groups": [
+      "user_caches_macos",
+      "node_runtime",
+      "git_config",
+      "unlink_protection"
+    ]
+  },
+  "workdir": {
+    "access": "readwrite"
+  },
+  "rollback": {
+    "exclude_patterns": ["node_modules", ".next", "__pycache__", "target"]
+  },
+  "filesystem": {
+    "allow": [
+      "$TMPDIR",
+      "$HOME/.omp",
+      "$HOME/.superset",
+      "$XDG_DATA_HOME/mise",
+      "$HOME/.cache/mise",
+      "$HOME/.local/state/mise",
+      "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password",
+      "$HOME/.npm",
+      "$HOME/.bun"
+    ],
+    "read": [
+      "$HOME/.config/gcloud",
+      "$HOME/.config/gh",
+      "$HOME/.ssh/1Password",
+      "$HOME/dotfiles/dot-claude",
+      "$HOME/dotfiles/dot-omp"
+    ],
+    "read_file": [
+      "$HOME/.gitignore",
+      "$HOME/dotfiles/dot-config/nono/known_hosts"
+    ]
+  }
+}
