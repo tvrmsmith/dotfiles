@@ -42,7 +42,7 @@
       "Bash(npm install -g *)",
       "Bash(pip install --user *)"
     ],
-    "defaultMode": "default"
+    "defaultMode": "auto"
   },
   "model": "claude-opus-4-6",
   "hooks": {
@@ -289,5 +289,7 @@
   "syntaxHighlightingDisabled": false,
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
-  "autoDreamEnabled": true
+  "autoDreamEnabled": true,
+  "skipAutoPermissionPrompt": true,
+  "skipDangerousModePermissionPrompt": true
 }
