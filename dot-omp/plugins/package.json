@@ -1,0 +1,7 @@
+{
+  "name": "omp-plugins",
+  "private": true,
+  "dependencies": {
+    "omp-extension-anthropic-vertex": "file:node_modules/omp-extension-anthropic-vertex"
+  }
+}

@@ -1,0 +1,14 @@
+lastChangelogVersion: 14.1.0
+modelRoles: 
+  default: anthropic-vertex/claude-opus-4-6
+  task: anthropic-vertex/claude-sonnet-4-6
+  commit: anthropic-vertex/claude-haiku-4-5
+theme: 
+  dark: dark
+statusLine: 
+  preset: default
+  separator: powerline-thin
+display: 
+  showTokenUsage: true
+showHardwareCursor: true
+symbolPreset: nerd

@@ -94,6 +94,7 @@ if [ -n "$CLAUDECODE" ] && [ "$TERM_PROGRAM" = "WarpTerminal" ]; then
 fi
 
 alias pi='GOOGLE_CLOUD_PROJECT=consolo-dev-vertex-wsky GOOGLE_CLOUD_LOCATION=us-east5 command pi'
+alias omp='GOOGLE_CLOUD_PROJECT=consolo-dev-vertex-wsky GOOGLE_CLOUD_LOCATION=us-east5 command omp'
 alias lg='lazygit'
 alias bubu='brew update && brew upgrade'
 alias cc='claude'
