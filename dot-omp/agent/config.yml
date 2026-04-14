@@ -4,7 +4,7 @@ modelRoles:
   task: anthropic-vertex/claude-sonnet-4-6
   commit: anthropic-vertex/claude-haiku-4-5
 theme: 
-  dark: dark
+  dark: dark-tokyo-night
 statusLine: 
   preset: default
   separator: powerline-thin
