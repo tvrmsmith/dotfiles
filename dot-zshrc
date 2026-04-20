@@ -134,12 +134,19 @@ dsbx-build() {
   done
 }
 # Helper: create with template on first run, reconnect on subsequent runs
+# If extra workspaces are passed and sandbox exists, recreate it
 _dsbx_run() {
   local template="$1" agent="$2" prefix="$3"
   shift 3
   local name="${prefix}-$(basename "$(pwd)")"
   if sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
-    sbx run "$name" "$@"
+    if [[ $# -gt 0 ]]; then
+      echo "Recreating $name with additional workspaces..."
+      sbx rm "$name"
+      sbx run -t "$template" --name "$name" "$agent" . "$@"
+    else
+      sbx run "$name"
+    fi
   else
     sbx run -t "$template" --name "$name" "$agent" . "$@"
   fi
