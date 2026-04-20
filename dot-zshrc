@@ -142,11 +142,12 @@ _dsbx_run() {
   for ws in "$@"; do
     name="${name}--$(basename "${ws%:ro}")"
   done
+  local needs_auth=false
   if ! sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
     sbx create -t "$template" --name "$name" "$agent" . "$@" || return 1
+    needs_auth=true
   fi
-  if ! sbx exec "$name" -- gcloud auth application-default print-access-token &>/dev/null; then
-    echo "Refreshing gcloud credentials in $name..."
+  if $needs_auth || ! sbx exec "$name" -- gcloud auth application-default print-access-token &>/dev/null; then
     sbx exec -it "$name" -- gcloud auth application-default login --no-launch-browser || return 1
   fi
   sbx run "$name"
