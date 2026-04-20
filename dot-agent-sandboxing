@@ -91,7 +91,7 @@ _dsbx_run() {
     fi
     _dsbx_mark_authed "$name"
   fi
-  sbx run "$name" 2>> "$_DSBX_LOG"
+  sbx run "$name" 2> >(tee -a "$_DSBX_LOG" >&2)
 }
 
 dsbx-cc() { _dsbx_run claude-sandbox-mise:latest claude dsbx-cc "$@"; }
