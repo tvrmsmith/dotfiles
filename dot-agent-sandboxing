@@ -38,7 +38,10 @@ _dsbx_run() {
     sbx create -t "$template" --name "$name" "$agent" . "$@" || return 1
   fi
   if _dsbx_needs_auth "$name"; then
-    sbx exec -it "$name" -- gcloud auth application-default login --no-launch-browser || return 1
+    # Cache says expired — verify with sbx exec in case user authed inside sandbox
+    if ! sbx exec "$name" -- gcloud auth application-default print-access-token &>/dev/null; then
+      sbx exec -it "$name" -- gcloud auth application-default login --no-launch-browser || return 1
+    fi
     _dsbx_mark_authed "$name"
   fi
   sbx run "$name"
