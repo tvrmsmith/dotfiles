@@ -10,7 +10,7 @@ ENV MISE_CONFIG_DIR="/mise"
 ENV MISE_CACHE_DIR="/mise/cache"
 ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
 ENV PATH="/mise/shims:$PATH"
-ENV MISE_TRUSTED_CONFIG_PATHS="/Users:/home"
+ENV MISE_TRUSTED_CONFIG_PATHS="/"
 
 # Configure Vertex AI for Claude Code (set via docker-compose build args)
 ARG CLAUDE_CODE_USE_VERTEX
