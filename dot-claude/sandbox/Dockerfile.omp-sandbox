@@ -4,7 +4,7 @@ RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:$PATH"
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly-2026-03-27
 ENV PATH="/root/.cargo/bin:$PATH"
-RUN git clone --depth 1 https://github.com/tvrmsmith/oh-my-pi.git /opt/oh-my-pi && \
+RUN git clone --depth 1 --branch fix/glimmer-arm64-scanner https://github.com/tvrmsmith/oh-my-pi.git /opt/oh-my-pi && \
   cd /opt/oh-my-pi && bun install && bun run build:native && bun run install:dev
 
 # Stage 2: Final sandbox image
