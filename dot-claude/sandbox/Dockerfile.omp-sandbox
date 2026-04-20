@@ -1,3 +1,13 @@
+# Stage 1: Build pi-natives with arm64 glimmer fix
+FROM node:22-bookworm AS native-builder
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:$PATH"
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly-2026-03-27
+ENV PATH="/root/.cargo/bin:$PATH"
+RUN git clone --depth 1 https://github.com/tvrmsmith/oh-my-pi.git /build && \
+  cd /build && bun install && bun run build:native
+
+# Stage 2: Final sandbox image
 FROM docker/sandbox-templates:shell
 
 # Build args (set via docker-compose build args)
@@ -44,9 +54,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   apt-get update && \
   apt-get install -y google-cloud-cli
 
-# Oh My Pi coding agent via mise
-RUN mise trust && \
-  mise use -g npm:@oh-my-pi/pi-coding-agent
+# Oh My Pi — install from npm, patch native addon from builder
+RUN mise trust && mise use -g npm:@oh-my-pi/pi-coding-agent
+COPY --from=native-builder /build/packages/natives/pi_natives.linux-arm64.node \
+  /mise/installs/npm-@oh-my-pi-pi-coding-agent/latest/node_modules/@oh-my-pi/pi-natives/pi_natives.linux-arm64.node
 
 # Anthropic Vertex extension
 COPY --from=omp-vertex-ext . /opt/omp-extensions/anthropic-vertex/
