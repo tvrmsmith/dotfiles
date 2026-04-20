@@ -1,0 +1,73 @@
+FROM docker/sandbox-templates:shell
+
+# Build args (set via docker-compose build args)
+ARG GOOGLE_CLOUD_PROJECT
+ARG GOOGLE_CLOUD_LOCATION
+ARG OMP_MODEL
+
+USER root
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Vertex AI + OMP config
+ENV GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
+ENV GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION}
+ENV OMP_MODEL=${OMP_MODEL}
+
+# mise
+ENV MISE_DATA_DIR="/mise"
+ENV MISE_CONFIG_DIR="/mise"
+ENV MISE_CACHE_DIR="/mise/cache"
+ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
+ENV PATH="/mise/shims:$PATH"
+RUN curl https://mise.run | sh
+
+# bun
+ENV BUN_INSTALL="/opt/bun"
+ENV PATH="/opt/bun/bin:$PATH"
+RUN curl -fsSL https://bun.sh/install | bash
+
+# Google Cloud SDK
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  rm -f /etc/apt/apt.conf.d/docker-clean && \
+  echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+  apt-get update && \
+  apt-get install -y --no-install-recommends \
+    ca-certificates \
+    gnupg2 \
+    lsb-release && \
+  echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | \
+  tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && \
+  curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | \
+  gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg && \
+  apt-get update && \
+  apt-get install -y google-cloud-cli
+
+# Oh My Pi coding agent via mise
+RUN mise trust && \
+  mise use -g npm:@oh-my-pi/pi-coding-agent
+
+# Anthropic Vertex extension
+COPY --from=omp-vertex-ext . /opt/omp-extensions/anthropic-vertex/
+RUN cd /opt/omp-extensions/anthropic-vertex && bun install --production && \
+  mkdir -p /home/agent/.omp/plugins/node_modules && \
+  ln -s /opt/omp-extensions/anthropic-vertex /home/agent/.omp/plugins/node_modules/omp-extension-anthropic-vertex && \
+  echo '{"name":"omp-plugins","private":true,"dependencies":{"omp-extension-anthropic-vertex":"file:node_modules/omp-extension-anthropic-vertex"}}' > /home/agent/.omp/plugins/package.json && \
+  chown -R agent:agent /home/agent/.omp
+
+USER agent
+
+# Shell integration and auto-launch
+RUN echo 'eval "$(mise activate bash)"' >> /home/agent/.bashrc && \
+  cat >> /home/agent/.bashrc << 'EOF'
+
+# Auto-launch omp coding agent
+if [[ $- == *i* ]] && command -v omp &> /dev/null; then
+  exec omp --model "$OMP_MODEL"
+fi
+EOF
+
+# Dotfiles
+RUN git clone https://github.com/tvrmsmith/dotfiles.git /home/agent/dotfiles && \
+    /home/agent/dotfiles/install.sh
