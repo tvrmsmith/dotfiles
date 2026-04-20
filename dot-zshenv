@@ -33,4 +33,3 @@ export JIRA_API_TOKEN="op://Employee/JIRA CLI Token/credential"
 
 LOCAL="$HOME/.zshenv.local"
 [ -f "$LOCAL" ] && source "$LOCAL"
-
