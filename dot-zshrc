@@ -93,10 +93,9 @@ if [ -n "$CLAUDECODE" ] && [ "$TERM_PROGRAM" = "WarpTerminal" ]; then
   precmd_functions+=(_update_claude_tab_title)
 fi
 
-_OMP_VERTEX="GOOGLE_CLOUD_PROJECT=consolo-dev-vertex-wsky GOOGLE_CLOUD_LOCATION=us-east5"
-_OMP_MODEL="anthropic-vertex/claude-opus-4-6"
-alias pi="$_OMP_VERTEX command pi --model $_OMP_MODEL"
-alias omp="$_OMP_VERTEX command omp --model $_OMP_MODEL"
+_OMP_VERTEX="GOOGLE_CLOUD_PROJECT=$ANTHROPIC_VERTEX_PROJECT_ID GOOGLE_CLOUD_LOCATION=$CLOUD_ML_REGION"
+alias pi="$_OMP_VERTEX command pi --model $OMP_MODEL"
+alias omp="$_OMP_VERTEX command omp --model $OMP_MODEL"
 alias lg='lazygit'
 alias bubu='brew update && brew upgrade'
 alias cc='claude'
@@ -121,9 +120,33 @@ alias nono-cc='nono-agent --profile claude-code-mise -- claude --dangerously-ski
 nono-cc-personal() { OP_ACCOUNT=my.1password.com nono-agent --profile claude-code-personal -- claude --dangerously-skip-permissions "$@"; }
 alias nono-cc-csharp='nono-agent --profile claude-code-csharp -- claude --dangerously-skip-permissions'
 # Oh My Pi
-alias nono-omp="$_OMP_VERTEX nono-agent --profile omp-mise -- omp --model $_OMP_MODEL"
-nono-omp-personal() { env ${=_OMP_VERTEX} OP_ACCOUNT=my.1password.com nono-agent --profile omp-personal -- omp --model $_OMP_MODEL "$@"; }
-alias nono-omp-csharp="$_OMP_VERTEX nono-agent --profile omp-csharp -- omp --model $_OMP_MODEL"
+alias nono-omp="$_OMP_VERTEX nono-agent --profile omp-mise -- omp --model $OMP_MODEL"
+nono-omp-personal() { env ${=_OMP_VERTEX} OP_ACCOUNT=my.1password.com nono-agent --profile omp-personal -- omp --model $OMP_MODEL "$@"; }
+alias nono-omp-csharp="$_OMP_VERTEX nono-agent --profile omp-csharp -- omp --model $OMP_MODEL"
+
+# Docker Sandbox (sbx) — custom templates
+_SBX_DIR="$HOME/dotfiles/dot-claude/sandbox"
+dsbx-build() {
+  docker compose -f "$_SBX_DIR/docker-compose.yml" build "$@" && \
+  for img in $(docker compose -f "$_SBX_DIR/docker-compose.yml" config --images); do
+    echo "Loading $img into sbx..." && \
+    docker save "$img" | sbx template load /dev/stdin
+  done
+}
+# Helper: create with template on first run, reconnect on subsequent runs
+_dsbx_run() {
+  local template="$1" agent="$2" prefix="$3"
+  shift 3
+  local name="${prefix}-$(basename "$(pwd)")"
+  if sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
+    sbx run "$name" "$@"
+  else
+    sbx run -t "$template" --name "$name" "$agent" . "$@"
+  fi
+}
+dsbx-cc() { _dsbx_run claude-sandbox-mise:latest claude dsbx-cc "$@"; }
+dsbx-ruby-cc() { _dsbx_run claude-sandbox-ruby-2.6.10:latest claude dsbx-ruby-cc "$@"; }
+dsbx-omp() { _dsbx_run omp-sandbox:latest shell dsbx-omp "$@"; }
 
 # bun completions
 [ -s "/Users/trevor.smith/.bun/_bun" ] && source "/Users/trevor.smith/.bun/_bun"

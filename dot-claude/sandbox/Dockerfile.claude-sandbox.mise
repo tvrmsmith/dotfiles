@@ -11,10 +11,13 @@ ENV MISE_CACHE_DIR="/mise/cache"
 ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
 ENV PATH="/mise/shims:$PATH"
 
-# Configure Vertex AI for Claude Code
-ENV CLAUDE_CODE_USE_VERTEX="1"
-ENV CLOUD_ML_REGION="us-east5"
-ENV ANTHROPIC_VERTEX_PROJECT_ID="consolo-dev-vertex-wsky"
+# Configure Vertex AI for Claude Code (set via docker-compose build args)
+ARG CLAUDE_CODE_USE_VERTEX
+ARG CLOUD_ML_REGION
+ARG ANTHROPIC_VERTEX_PROJECT_ID
+ENV CLAUDE_CODE_USE_VERTEX=${CLAUDE_CODE_USE_VERTEX}
+ENV CLOUD_ML_REGION=${CLOUD_ML_REGION}
+ENV ANTHROPIC_VERTEX_PROJECT_ID=${ANTHROPIC_VERTEX_PROJECT_ID}
 
 # Install mise (polyglot runtime manager)
 # https://mise.jdx.dev/
