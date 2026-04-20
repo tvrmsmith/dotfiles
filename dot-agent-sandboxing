@@ -2,7 +2,6 @@
 _SBX_DIR="$HOME/dotfiles/dot-claude/sandbox"
 _DSBX_AUTH_DIR="$HOME/.cache/dsbx-auth"
 _DSBX_ADC_TTL=21600  # 6 hours in seconds
-_DSBX_LOG="$HOME/.cache/dsbx-auth/startup.log"
 
 dsbx-build() {
   docker compose -f "$_SBX_DIR/docker-compose.yml" build "$@" && \
@@ -35,22 +34,15 @@ _dsbx_run() {
   for ws in "$@"; do
     name="${name}--$(basename "${ws%:ro}")"
   done
-  local t0=$EPOCHREALTIME
   if ! sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
     sbx create -t "$template" --name "$name" "$agent" . "$@" || return 1
   fi
-  local t1=$EPOCHREALTIME
   if _dsbx_needs_auth "$name"; then
     if ! sbx exec "$name" -- gcloud auth application-default print-access-token &>/dev/null; then
       sbx exec -it "$name" -- gcloud auth application-default login --no-launch-browser || return 1
     fi
     _dsbx_mark_authed "$name"
   fi
-  local t2=$EPOCHREALTIME
-  mkdir -p "$(dirname "$_DSBX_LOG")"
-  printf '%s  %-40s  create=%.2fs  auth=%.2fs  total=%.2fs\n' \
-    "$(date -Iseconds)" "$name" \
-    "$(( t1 - t0 ))" "$(( t2 - t1 ))" "$(( t2 - t0 ))" >> "$_DSBX_LOG"
   sbx run "$name"
 }
 
