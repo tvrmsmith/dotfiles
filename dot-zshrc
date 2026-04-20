@@ -124,44 +124,8 @@ alias nono-omp="$_OMP_VERTEX nono-agent --profile omp-mise -- omp --model $OMP_M
 nono-omp-personal() { env ${=_OMP_VERTEX} OP_ACCOUNT=my.1password.com nono-agent --profile omp-personal -- omp --model $OMP_MODEL "$@"; }
 alias nono-omp-csharp="$_OMP_VERTEX nono-agent --profile omp-csharp -- omp --model $OMP_MODEL"
 
-# Docker Sandbox (sbx) — custom templates
-_SBX_DIR="$HOME/dotfiles/dot-claude/sandbox"
-dsbx-build() {
-  docker compose -f "$_SBX_DIR/docker-compose.yml" build "$@" && \
-  for img in $(docker compose -f "$_SBX_DIR/docker-compose.yml" config --images); do
-    echo "Loading $img into sbx..." && \
-    docker save "$img" | sbx template load /dev/stdin
-  done
-}
-# Helper: create with template on first run, reconnect on subsequent runs
-# Checks gcloud ADC credentials before attaching and refreshes if expired.
-_dsbx_run() {
-  local template="$1" agent="$2" prefix="$3"
-  shift 3
-  local name="${prefix}-$(basename "$(pwd)")"
-  for ws in "$@"; do
-    name="${name}--$(basename "${ws%:ro}")"
-  done
-  local needs_auth=false
-  if ! sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
-    sbx create -t "$template" --name "$name" "$agent" . "$@" || return 1
-    needs_auth=true
-  fi
-  if $needs_auth || ! sbx exec "$name" -- gcloud auth application-default print-access-token &>/dev/null; then
-    sbx exec -it "$name" -- gcloud auth application-default login --no-launch-browser || return 1
-  fi
-  sbx run "$name"
-}
-dsbx-cc() { _dsbx_run claude-sandbox-mise:latest claude dsbx-cc "$@"; }
-dsbx-ruby-cc() { _dsbx_run claude-sandbox-ruby-2.6.10:latest claude dsbx-ruby-cc "$@"; }
-dsbx-omp() { _dsbx_run omp-sandbox:latest shell dsbx-omp "$@"; }
-_dsbx_exec() {
-  local prefix="$1"
-  shift
-  local name="${prefix}-$(basename "$(pwd)")"
-  sbx exec -it "$name" -- "$@"
-}
-dsbx-gauth() { _dsbx_exec "${1:-dsbx-omp}" gcloud auth application-default login --no-launch-browser; }
+# Agent sandboxing (sbx)
+[ -f ~/.agent-sandboxing ] && source ~/.agent-sandboxing
 
 # bun completions
 [ -s "/Users/trevor.smith/.bun/_bun" ] && source "/Users/trevor.smith/.bun/_bun"
