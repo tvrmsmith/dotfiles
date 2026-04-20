@@ -147,13 +147,13 @@ _dsbx_run() {
 dsbx-cc() { _dsbx_run claude-sandbox-mise:latest claude dsbx-cc "$@"; }
 dsbx-ruby-cc() { _dsbx_run claude-sandbox-ruby-2.6.10:latest claude dsbx-ruby-cc "$@"; }
 dsbx-omp() { _dsbx_run omp-sandbox:latest shell dsbx-omp "$@"; }
-dsbx-exec() {
+_dsbx_exec() {
   local prefix="$1"
   shift
   local name="${prefix}-$(basename "$(pwd)")"
   sbx exec "$name" -- "$@"
 }
-dsbx-gauth() { dsbx-exec "${1:-dsbx-omp}" gcloud auth application-default login; }
+dsbx-gauth() { _dsbx_exec "${1:-dsbx-omp}" gcloud auth application-default login; }
 
 # bun completions
 [ -s "/Users/trevor.smith/.bun/_bun" ] && source "/Users/trevor.smith/.bun/_bun"
