@@ -12,6 +12,9 @@
 ^/install\.sh$
 ^/setup-vertex-credentials\.sh$
 
+# Documentation
+^/docs
+
 # Version control
 ^/\.git
 ^/\.gitignore$
