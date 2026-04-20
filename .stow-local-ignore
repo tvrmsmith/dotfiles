@@ -10,6 +10,7 @@
 
 # Installation and scripts
 ^/install\.sh$
+^/setup-vertex-credentials\.sh$
 
 # Version control
 ^/\.git
