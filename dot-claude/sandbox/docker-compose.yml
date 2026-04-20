@@ -4,6 +4,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.claude-sandbox.mise
+      args:
+        CLAUDE_CODE_USE_VERTEX: ${CLAUDE_CODE_USE_VERTEX:-1}
+        CLOUD_ML_REGION: ${CLOUD_ML_REGION:-us}
+        ANTHROPIC_VERTEX_PROJECT_ID: ${ANTHROPIC_VERTEX_PROJECT_ID:-consolo-dev-vertex-wsky}
     image: claude-sandbox-mise:latest
     container_name: claude-sandbox-mise
 
@@ -16,3 +20,18 @@ services:
     container_name: claude-sandbox-ruby-2-6-10
     depends_on:
       - claude-sandbox-mise
+
+
+  # Oh My Pi coding agent sandbox
+  omp-sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.omp-sandbox
+      additional_contexts:
+        omp-vertex-ext: ${HOME}/dev/omp-extension-anthropic-vertex
+      args:
+        GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-consolo-dev-vertex-wsky}
+        GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-us}
+        OMP_MODEL: ${OMP_MODEL:-anthropic-vertex/claude-opus-4-7}
+    image: omp-sandbox:latest
+    container_name: omp-sandbox
