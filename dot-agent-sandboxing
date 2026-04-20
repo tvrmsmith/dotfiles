@@ -45,6 +45,7 @@ alias nono-omp-csharp="$_OMP_VERTEX nono-agent --profile omp-csharp -- omp --mod
 _SBX_DIR="$HOME/dotfiles/dot-claude/sandbox"
 _DSBX_AUTH_DIR="$HOME/.cache/dsbx-auth"
 _DSBX_ADC_TTL=21600  # 6 hours in seconds
+_DSBX_LOG="$HOME/.cache/dsbx-auth/dsbx.log"
 
 dsbx-build() {
   docker compose -f "$_SBX_DIR/docker-compose.yml" build "$@" && \
@@ -90,7 +91,7 @@ _dsbx_run() {
     fi
     _dsbx_mark_authed "$name"
   fi
-  sbx run "$name"
+  sbx run "$name" 2>> "$_DSBX_LOG"
 }
 
 dsbx-cc() { _dsbx_run claude-sandbox-mise:latest claude dsbx-cc "$@"; }
