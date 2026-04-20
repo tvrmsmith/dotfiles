@@ -1,6 +1,6 @@
-lastChangelogVersion: 14.1.2
+lastChangelogVersion: 14.1.4
 modelRoles: 
-  default: anthropic-vertex/claude-opus-4-6
+  default: anthropic-vertex/claude-opus-4-7
   task: anthropic-vertex/claude-sonnet-4-6
   commit: anthropic-vertex/claude-haiku-4-5
 theme: 
@@ -12,3 +12,20 @@ display:
   showTokenUsage: true
 showHardwareCursor: true
 symbolPreset: nerd
+disabledExtensions: 
+  - skill:otel-telemetry:otel-configure
+  - skill:claude-code-setup:claude-automation-recommender
+  - skill:hookify:writing-hookify-rules
+disabledProviders: 
+  - agents
+  - agents-md
+steeringMode: all
+followUpMode: all
+interruptMode: immediate
+edit: 
+  mode: vim
+  streamingAbort: false
+renderMermaid: 
+  enabled: true
+secrets: 
+  enabled: false
