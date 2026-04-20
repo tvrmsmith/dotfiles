@@ -1,5 +1,8 @@
 # Docker Sandbox (sbx) — custom templates
 _SBX_DIR="$HOME/dotfiles/dot-claude/sandbox"
+_DSBX_AUTH_DIR="$HOME/.cache/dsbx-auth"
+_DSBX_ADC_TTL=21600  # 6 hours in seconds
+
 dsbx-build() {
   docker compose -f "$_SBX_DIR/docker-compose.yml" build "$@" && \
   for img in $(docker compose -f "$_SBX_DIR/docker-compose.yml" config --images); do
@@ -7,8 +10,23 @@ dsbx-build() {
     docker save "$img" | sbx template load /dev/stdin
   done
 }
+
+_dsbx_needs_auth() {
+  local ts_file="$_DSBX_AUTH_DIR/$1"
+  [ -f "$ts_file" ] || return 0
+  local mtime age
+  mtime=$(stat -f %m "$ts_file" 2>/dev/null) || return 0
+  age=$(( $(date +%s) - mtime ))
+  [ $age -ge $_DSBX_ADC_TTL ]
+}
+
+_dsbx_mark_authed() {
+  mkdir -p "$_DSBX_AUTH_DIR"
+  touch "$_DSBX_AUTH_DIR/$1"
+}
+
 # Helper: create with template on first run, reconnect on subsequent runs
-# Checks gcloud ADC credentials before attaching and refreshes if expired.
+# Tracks gcloud ADC auth age on host to avoid slow sbx exec checks.
 _dsbx_run() {
   local template="$1" agent="$2" prefix="$3"
   shift 3
@@ -16,23 +34,30 @@ _dsbx_run() {
   for ws in "$@"; do
     name="${name}--$(basename "${ws%:ro}")"
   done
-  local needs_auth=false
   if ! sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
     sbx create -t "$template" --name "$name" "$agent" . "$@" || return 1
-    needs_auth=true
   fi
-  if $needs_auth || ! sbx exec "$name" -- gcloud auth application-default print-access-token &>/dev/null; then
+  if _dsbx_needs_auth "$name"; then
     sbx exec -it "$name" -- gcloud auth application-default login --no-launch-browser || return 1
+    _dsbx_mark_authed "$name"
   fi
   sbx run "$name"
 }
+
 dsbx-cc() { _dsbx_run claude-sandbox-mise:latest claude dsbx-cc "$@"; }
 dsbx-ruby-cc() { _dsbx_run claude-sandbox-ruby-2.6.10:latest claude dsbx-ruby-cc "$@"; }
 dsbx-omp() { _dsbx_run omp-sandbox:latest shell dsbx-omp "$@"; }
+
 _dsbx_exec() {
   local prefix="$1"
   shift
   local name="${prefix}-$(basename "$(pwd)")"
   sbx exec -it "$name" -- "$@"
 }
-dsbx-gauth() { _dsbx_exec "${1:-dsbx-omp}" gcloud auth application-default login --no-launch-browser; }
+
+dsbx-gauth() {
+  local prefix="${1:-dsbx-omp}"
+  local name="${prefix}-$(basename "$(pwd)")"
+  _dsbx_exec "$prefix" gcloud auth application-default login --no-launch-browser && \
+    _dsbx_mark_authed "$name"
+}
