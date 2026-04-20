@@ -2,8 +2,10 @@
   "env": {
     "ANTHROPIC_VERTEX_PROJECT_ID": "consolo-dev-vertex-wsky",
     "CLAUDE_CODE_USE_VERTEX": "1",
-    "CLOUD_ML_REGION": "us-east5",
-    "SUPERSET_DEBUG_HOOKS": "1"
+    "CLOUD_ML_REGION": "global",
+    "SUPERSET_DEBUG_HOOKS": "1",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTS": "effort,thinking,adaptive_thinking,interleaved_thinking,web_search"
   },
   "permissions": {
     "allow": [
@@ -233,7 +235,7 @@
     "architect@wellsky-plugins": true,
     "atlassian@claude-plugins-official": false,
     "bug-fix@wellsky-plugins": true,
-    "chrome-devtools-mcp@chrome-devtools-plugins": true,
+    "chrome-devtools-mcp@chrome-devtools-plugins": false,
     "claude-code-setup@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,
     "code-review@claude-plugins-official": true,
@@ -252,26 +254,32 @@
     "skill-creator@claude-plugins-official": true,
     "sourcegraph@claude-plugins-official": true,
     "superpowers@claude-plugins-official": true,
-    "terraform@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true,
     "unit-gen@wellsky-plugins": true,
     "workflow@wellsky-plugins": true,
     "ws-atlassian@wellsky-plugins": true,
     "zapier@claude-plugins-official": true,
-    "caveman@caveman": true
+    "caveman@caveman": true,
+    "otel-telemetry@wellsky-plugins": true,
+    "terraform-code-generation@hashicorp": true,
+    "terraform-module-generation@hashicorp": true,
+    "terrashark@terrashark": true,
+    "terragrunt-skill@jfr992": true
   },
   "extraKnownMarketplaces": {
     "chrome-devtools-plugins": {
       "source": {
         "source": "github",
         "repo": "ChromeDevTools/chrome-devtools-mcp"
-      }
+      },
+      "autoUpdate": true
     },
     "dotnet-agent-skills": {
       "source": {
         "source": "github",
         "repo": "dotnet/skills"
-      }
+      },
+      "autoUpdate": true
     },
     "wellsky-plugins": {
       "source": {
@@ -283,13 +291,35 @@
       "source": {
         "source": "github",
         "repo": "JuliusBrussee/caveman"
-      }
+      },
+      "autoUpdate": true
+    },
+    "hashicorp": {
+      "source": {
+        "source": "github",
+        "repo": "hashicorp/agent-skills"
+      },
+      "autoUpdate": true
+    },
+    "terrashark": {
+      "source": {
+        "source": "github",
+        "repo": "LukasNiessen/terrashark"
+      },
+      "autoUpdate": true
+    },
+    "jfr992": {
+      "source": {
+        "source": "github",
+        "repo": "jfr992/terragrunt-skill"
+      },
+      "autoUpdate": true
     }
   },
   "syntaxHighlightingDisabled": false,
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
   "autoDreamEnabled": true,
-  "skipAutoPermissionPrompt": true,
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "skipAutoPermissionPrompt": true
 }
