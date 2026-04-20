@@ -134,22 +134,18 @@ dsbx-build() {
   done
 }
 # Helper: create with template on first run, reconnect on subsequent runs
-# Extra args become additional workspaces; sbx only allows one sandbox per
-# primary workspace, so an existing one must be removed first.
+# sbx only allows one sandbox per primary workspace.
 _dsbx_run() {
   local template="$1" agent="$2" prefix="$3"
   shift 3
-  local base_name="${prefix}-$(basename "$(pwd)")"
-  local name="$base_name"
-  for ws in "$@"; do
-    name="${name}--$(basename "${ws%:ro}")"
-  done
+  local name="${prefix}-$(basename "$(pwd)")"
   if sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
+    if [[ $# -gt 0 ]]; then
+      echo "Sandbox '$name' owns this workspace. Remove it first:" >&2
+      echo "  sbx rm $name" >&2
+      return 1
+    fi
     sbx run "$name"
-  elif [[ $# -gt 0 ]] && sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$base_name"; then
-    echo "Sandbox '$base_name' owns this workspace. Remove it first:" >&2
-    echo "  sbx rm $base_name" >&2
-    return 1
   else
     sbx run -t "$template" --name "$name" "$agent" . "$@"
   fi
