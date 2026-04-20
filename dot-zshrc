@@ -140,7 +140,7 @@ _dsbx_run() {
   shift 3
   local name="${prefix}-$(basename "$(pwd)")"
   for ws in "$@"; do
-    name="${name}-$(basename "${ws%:ro}")"
+    name="${name}+$(basename "${ws%:ro}")"
   done
   if sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
     sbx run "$name"
