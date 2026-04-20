@@ -153,7 +153,7 @@ _dsbx_exec() {
   local name="${prefix}-$(basename "$(pwd)")"
   sbx exec "$name" -- "$@"
 }
-dsbx-gauth() { _dsbx_exec "${1:-dsbx-omp}" gcloud auth application-default login; }
+dsbx-gauth() { _dsbx_exec "${1:-dsbx-omp}" gcloud auth application-default login --no-launch-browser; }
 
 # bun completions
 [ -s "/Users/trevor.smith/.bun/_bun" ] && source "/Users/trevor.smith/.bun/_bun"
