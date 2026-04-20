@@ -151,7 +151,7 @@ _dsbx_exec() {
   local prefix="$1"
   shift
   local name="${prefix}-$(basename "$(pwd)")"
-  sbx exec "$name" -- "$@"
+  sbx exec -it "$name" -- "$@"
 }
 dsbx-gauth() { _dsbx_exec "${1:-dsbx-omp}" gcloud auth application-default login --no-launch-browser; }
 
