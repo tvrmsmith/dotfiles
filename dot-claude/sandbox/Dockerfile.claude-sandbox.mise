@@ -11,7 +11,8 @@ ENV MISE_CACHE_DIR="/mise/cache"
 ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
 ENV PATH="/mise/shims:$PATH"
 ENV MISE_TRUSTED_CONFIG_PATHS="/"
-RUN curl https://mise.run | sh
+RUN install -d -o agent -g agent /mise /mise/cache && \
+  curl https://mise.run | sh
 
 # System packages (gcloud, gh, openssh)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
