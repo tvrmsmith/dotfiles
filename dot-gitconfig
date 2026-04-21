@@ -42,6 +42,8 @@
 [include]
 	path = ~/.gitconfig.sandbox
 
-# Personal repos under ~/dev/personal/ get personal identity
+# Personal repos under ~/dev/personal/ get personal identity and sandbox signing key
 [includeIf "gitdir:~/dev/personal/"]
 	path = ~/.gitconfig-personal
+[includeIf "gitdir:~/dev/personal/"]
+	path = ~/.gitconfig.sandbox-personal
