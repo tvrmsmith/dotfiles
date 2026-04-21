@@ -4,27 +4,16 @@ USER root
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Configure mise environment variables for Docker
+# mise
 ENV MISE_DATA_DIR="/mise"
 ENV MISE_CONFIG_DIR="/mise"
 ENV MISE_CACHE_DIR="/mise/cache"
 ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
 ENV PATH="/mise/shims:$PATH"
 ENV MISE_TRUSTED_CONFIG_PATHS="/"
-
-# Configure Vertex AI for Claude Code (set via docker-compose build args)
-ARG CLAUDE_CODE_USE_VERTEX
-ARG CLOUD_ML_REGION
-ARG ANTHROPIC_VERTEX_PROJECT_ID
-ENV CLAUDE_CODE_USE_VERTEX=${CLAUDE_CODE_USE_VERTEX}
-ENV CLOUD_ML_REGION=${CLOUD_ML_REGION}
-ENV ANTHROPIC_VERTEX_PROJECT_ID=${ANTHROPIC_VERTEX_PROJECT_ID}
-
-# Install mise (polyglot runtime manager)
-# https://mise.jdx.dev/
 RUN curl https://mise.run | sh
 
-# Install Google Cloud SDK
+# Google Cloud SDK
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,target=/var/lib/apt,sharing=locked \
   rm -f /etc/apt/apt.conf.d/docker-clean && \
@@ -41,11 +30,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   apt-get update && \
   apt-get install -y google-cloud-cli
 
+# Dotfiles (changes frequently — keep near end)
 USER agent
-
-# Enable shell integration for agent user
 RUN echo 'eval "$(mise activate bash)"' >> /home/agent/.bashrc
-
-# Clone and install dotfiles
 RUN git clone https://github.com/tvrmsmith/dotfiles.git /home/agent/dotfiles && \
     /home/agent/dotfiles/install.sh
+
+# Build args last — only affect ENV, not tool installs above
+USER root
+ARG CLAUDE_CODE_USE_VERTEX
+ARG CLOUD_ML_REGION
+ARG ANTHROPIC_VERTEX_PROJECT_ID
+ENV CLAUDE_CODE_USE_VERTEX=${CLAUDE_CODE_USE_VERTEX}
+ENV CLOUD_ML_REGION=${CLOUD_ML_REGION}
+ENV ANTHROPIC_VERTEX_PROJECT_ID=${ANTHROPIC_VERTEX_PROJECT_ID}
+USER agent
