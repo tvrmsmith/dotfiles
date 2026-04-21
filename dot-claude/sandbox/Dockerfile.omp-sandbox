@@ -8,7 +8,7 @@ RUN git clone --depth 1 --branch fix/glimmer-arm64-scanner https://github.com/tv
   cd /opt/oh-my-pi && bun install && bun run build:native && bun run install:dev
 
 # Stage 2: Final sandbox image
-FROM docker/sandbox-templates:shell
+FROM docker/sandbox-templates:shell-docker
 
 # Build args (set via docker-compose build args)
 ARG GOOGLE_CLOUD_PROJECT
