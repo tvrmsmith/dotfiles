@@ -4,7 +4,10 @@ RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:$PATH"
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly-2026-03-27
 ENV PATH="/root/.cargo/bin:$PATH"
-RUN git clone --depth 1 --branch fix/glimmer-arm64-scanner https://github.com/tvrmsmith/oh-my-pi.git /opt/oh-my-pi && \
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+  --mount=type=cache,target=/root/.cargo/registry \
+  --mount=type=cache,target=/root/.cargo/git \
+  git clone --depth 1 --branch fix/glimmer-arm64-scanner https://github.com/tvrmsmith/oh-my-pi.git /opt/oh-my-pi && \
   cd /opt/oh-my-pi && bun install && bun run build:native && bun run install:dev
 
 # Stage 2: Final sandbox image
@@ -62,7 +65,8 @@ RUN ln -s /opt/oh-my-pi/packages/coding-agent/src/cli.ts /usr/local/bin/omp && \
 
 # Anthropic Vertex extension
 COPY --from=omp-vertex-ext . /opt/omp-extensions/anthropic-vertex/
-RUN cd /opt/omp-extensions/anthropic-vertex && bun install --production && \
+RUN --mount=type=cache,target=/opt/bun/install/cache \
+  cd /opt/omp-extensions/anthropic-vertex && bun install --production && \
   mkdir -p /home/agent/.omp/plugins/node_modules && \
   ln -s /opt/omp-extensions/anthropic-vertex /home/agent/.omp/plugins/node_modules/omp-extension-anthropic-vertex && \
   echo '{"name":"omp-plugins","private":true,"dependencies":{"omp-extension-anthropic-vertex":"file:node_modules/omp-extension-anthropic-vertex"}}' > /home/agent/.omp/plugins/package.json && \
