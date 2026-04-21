@@ -13,19 +13,9 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
 # Stage 2: Final sandbox image
 FROM docker/sandbox-templates:shell-docker
 
-# Build args (set via docker-compose build args)
-ARG GOOGLE_CLOUD_PROJECT
-ARG GOOGLE_CLOUD_LOCATION
-ARG OMP_MODEL
-
 USER root
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-
-# Vertex AI + OMP config
-ENV GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
-ENV GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION}
-ENV OMP_MODEL=${OMP_MODEL}
 
 # mise
 ENV MISE_DATA_DIR="/mise"
@@ -72,6 +62,18 @@ RUN --mount=type=cache,target=/opt/bun/install/cache \
   echo '{"name":"omp-plugins","private":true,"dependencies":{"omp-extension-anthropic-vertex":"file:node_modules/omp-extension-anthropic-vertex"}}' > /home/agent/.omp/plugins/package.json && \
   chown -R agent:agent /home/agent/.omp
 
+# Dotfiles (changes frequently — keep near end)
+RUN git clone https://github.com/tvrmsmith/dotfiles.git /home/agent/dotfiles && \
+    /home/agent/dotfiles/install.sh
+
+# Build args last — only affect ENV, not tool installs above
+ARG GOOGLE_CLOUD_PROJECT
+ARG GOOGLE_CLOUD_LOCATION
+ARG OMP_MODEL
+ENV GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
+ENV GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION}
+ENV OMP_MODEL=${OMP_MODEL}
+
 USER agent
 
 # Shell integration and auto-launch
@@ -83,7 +85,3 @@ if [[ $- == *i* ]] && command -v omp &> /dev/null; then
   exec omp --model "$OMP_MODEL"
 fi
 EOF
-
-# Dotfiles
-RUN git clone https://github.com/tvrmsmith/dotfiles.git /home/agent/dotfiles && \
-    /home/agent/dotfiles/install.sh
