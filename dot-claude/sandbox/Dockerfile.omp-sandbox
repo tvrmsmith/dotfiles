@@ -48,6 +48,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   apt-get update && \
   apt-get install -y google-cloud-cli
 
+# Signing key script (stable)
+COPY setup-signing-key.sh /tmp/setup-signing-key.sh
+
 # Oh My Pi — copy entire app from builder
 COPY --from=omp-builder /opt/oh-my-pi /opt/oh-my-pi
 RUN ln -s /opt/oh-my-pi/packages/coding-agent/src/cli.ts /usr/local/bin/omp && \
@@ -61,9 +64,6 @@ RUN --mount=type=cache,target=/opt/bun/install/cache \
   ln -s /opt/omp-extensions/anthropic-vertex /home/agent/.omp/plugins/node_modules/omp-extension-anthropic-vertex && \
   echo '{"name":"omp-plugins","private":true,"dependencies":{"omp-extension-anthropic-vertex":"file:node_modules/omp-extension-anthropic-vertex"}}' > /home/agent/.omp/plugins/package.json && \
   chown -R agent:agent /home/agent/.omp
-
-# Signing key script (stable — before dotfiles to preserve cache)
-COPY setup-signing-key.sh /tmp/setup-signing-key.sh
 
 # Dotfiles (changes frequently)
 RUN git clone https://github.com/tvrmsmith/dotfiles.git /home/agent/dotfiles && \
