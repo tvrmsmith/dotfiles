@@ -58,19 +58,19 @@ COPY --from=omp-builder /opt/oh-my-pi /opt/oh-my-pi
 RUN ln -s /opt/oh-my-pi/packages/coding-agent/src/cli.ts /usr/local/bin/omp && \
   ln -s /opt/oh-my-pi/packages/coding-agent/src/cli.ts /usr/local/bin/pi
 
-# Anthropic Vertex extension
+# Anthropic Vertex extension (install to /opt, link after dotfiles stow)
 COPY --from=omp-vertex-ext . /opt/omp-extensions/anthropic-vertex/
 RUN --mount=type=cache,target=/opt/bun/install/cache \
-  cd /opt/omp-extensions/anthropic-vertex && bun install --production && \
-  mkdir -p /home/agent/.omp/plugins/node_modules && \
-  ln -s /opt/omp-extensions/anthropic-vertex /home/agent/.omp/plugins/node_modules/omp-extension-anthropic-vertex && \
-  echo '{"name":"omp-plugins","private":true,"dependencies":{"omp-extension-anthropic-vertex":"file:node_modules/omp-extension-anthropic-vertex"}}' > /home/agent/.omp/plugins/package.json && \
-  chown -R agent:agent /home/agent/.omp
+  cd /opt/omp-extensions/anthropic-vertex && bun install --production
 
 ARG DOTFILES_SHA
 # Dotfiles (cache busted by commit SHA)
+USER agent
 RUN git clone https://github.com/tvrmsmith/dotfiles.git /home/agent/dotfiles && \
-    /home/agent/dotfiles/install.sh
+    /home/agent/dotfiles/install.sh && \
+    mkdir -p /home/agent/.omp/plugins/node_modules && \
+    ln -s /opt/omp-extensions/anthropic-vertex /home/agent/.omp/plugins/node_modules/omp-extension-anthropic-vertex
+USER root
 
 # SSH commit-signing key (uploaded to GitHub at build time)
 COPY setup-signing-key.sh /tmp/setup-signing-key.sh
