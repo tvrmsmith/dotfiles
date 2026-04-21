@@ -13,26 +13,30 @@ ENV PATH="/mise/shims:$PATH"
 ENV MISE_TRUSTED_CONFIG_PATHS="/"
 RUN curl https://mise.run | sh
 
-# Google Cloud SDK
+# System packages (gcloud, gh, openssh)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,target=/var/lib/apt,sharing=locked \
   rm -f /etc/apt/apt.conf.d/docker-clean && \
   echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
   apt-get update && \
-  apt-get install -y --no-install-recommends \
-    ca-certificates \
-    gnupg2 \
-    lsb-release \
-    openssh-client && \
+  apt-get install -y --no-install-recommends ca-certificates gnupg2 curl && \
   echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | \
-  tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && \
-  curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | \
+  tee /etc/apt/sources.list.d/google-cloud-sdk.list && \
+  curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | \
   gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg && \
+  curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
+  tee /usr/share/keyrings/githubcli-archive-keyring.gpg > /dev/null && \
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | \
+  tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
   apt-get update && \
-  apt-get install -y google-cloud-cli
+  apt-get install -y --no-install-recommends \
+    gh \
+    google-cloud-cli \
+    lsb-release \
+    openssh-client
 
 # Signing key script (stable)
-COPY setup-signing-key.py /tmp/setup-signing-key.py
+COPY setup-signing-key.sh /tmp/setup-signing-key.sh
 
 ARG DOTFILES_SHA
 # Dotfiles (cache busted by commit SHA)
@@ -44,9 +48,9 @@ RUN git clone https://github.com/tvrmsmith/dotfiles.git /home/agent/dotfiles && 
 # SSH commit-signing key (uploaded to GitHub at build time)
 ARG GIT_USER_NAME
 ARG GIT_USER_EMAIL
-RUN --mount=type=secret,id=github_token,uid=1000 --mount=type=secret,id=github_token_personal,uid=1000 python3 /tmp/setup-signing-key.py
+RUN --mount=type=secret,id=github_token,uid=1000 --mount=type=secret,id=github_token_personal,uid=1000 /tmp/setup-signing-key.sh
 USER root
-RUN rm /tmp/setup-signing-key.py
+RUN rm /tmp/setup-signing-key.sh
 
 # Build args last — only affect ENV, not tool installs above
 USER root
