@@ -34,7 +34,7 @@ services:
       context: .
       dockerfile: Dockerfile.omp-sandbox
       additional_contexts:
-        omp-vertex-ext: ${HOME}/dev/omp-extension-anthropic-vertex
+        omp-vertex-ext: ${HOME}/dev/personal/omp-extension-anthropic-vertex
       secrets:
         - github_token
         - github_token_personal
