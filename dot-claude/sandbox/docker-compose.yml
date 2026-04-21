@@ -6,6 +6,7 @@ services:
       dockerfile: Dockerfile.claude-sandbox.mise
       secrets:
         - github_token
+        - github_token_personal
       args:
         CLAUDE_CODE_USE_VERTEX: ${CLAUDE_CODE_USE_VERTEX:-1}
         CLOUD_ML_REGION: ${CLOUD_ML_REGION:-us}
@@ -36,6 +37,7 @@ services:
         omp-vertex-ext: ${HOME}/dev/omp-extension-anthropic-vertex
       secrets:
         - github_token
+        - github_token_personal
       args:
         GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-consolo-dev-vertex-wsky}
         GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-us}
@@ -49,3 +51,5 @@ services:
 secrets:
   github_token:
     environment: GITHUB_TOKEN
+  github_token_personal:
+    environment: GITHUB_TOKEN_PERSONAL
