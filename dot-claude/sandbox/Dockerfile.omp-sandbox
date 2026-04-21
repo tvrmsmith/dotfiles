@@ -66,6 +66,14 @@ RUN --mount=type=cache,target=/opt/bun/install/cache \
 RUN git clone https://github.com/tvrmsmith/dotfiles.git /home/agent/dotfiles && \
     /home/agent/dotfiles/install.sh
 
+# SSH commit-signing key (uploaded to GitHub at build time)
+ARG GIT_USER_NAME
+ARG GIT_USER_EMAIL
+USER agent
+COPY setup-signing-key.sh /tmp/setup-signing-key.sh
+RUN --mount=type=secret,id=github_token /tmp/setup-signing-key.sh && rm /tmp/setup-signing-key.sh
+USER root
+
 # Build args last — only affect ENV, not tool installs above
 ARG GOOGLE_CLOUD_PROJECT
 ARG GOOGLE_CLOUD_LOCATION
