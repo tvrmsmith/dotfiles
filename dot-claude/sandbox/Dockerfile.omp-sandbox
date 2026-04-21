@@ -65,7 +65,8 @@ RUN --mount=type=cache,target=/opt/bun/install/cache \
   echo '{"name":"omp-plugins","private":true,"dependencies":{"omp-extension-anthropic-vertex":"file:node_modules/omp-extension-anthropic-vertex"}}' > /home/agent/.omp/plugins/package.json && \
   chown -R agent:agent /home/agent/.omp
 
-# Dotfiles (changes frequently)
+ARG DOTFILES_SHA
+# Dotfiles (cache busted by commit SHA)
 RUN git clone https://github.com/tvrmsmith/dotfiles.git /home/agent/dotfiles && \
     /home/agent/dotfiles/install.sh
 
