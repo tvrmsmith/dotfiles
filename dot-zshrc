@@ -54,7 +54,7 @@ if command -v zoxide > /dev/null && [ -z "$CLAUDECODE" ]; then
   eval "$(zoxide init zsh --cmd cd)"
 fi
 
-# [ -f ~/dotfiles/bat-into-tokyonight/bat-into-tokyonight ] && ~/dotfiles/bat-into-tokyonight/bat-into-tokyonight >/dev/null 2>&1 &
+# [ -f ~/dev/personal/dotfiles/bat-into-tokyonight/bat-into-tokyonight ] && ~/dev/personal/dotfiles/bat-into-tokyonight/bat-into-tokyonight >/dev/null 2>&1 &
 
 # Source the Lazyman shell initialization for aliases and nvims selector
 # shellcheck source=.config/nvim-Lazyman/.lazymanrc
