@@ -41,3 +41,7 @@
 # Sandbox overrides (no-op on host if file doesn't exist)
 [include]
 	path = ~/.gitconfig.sandbox
+
+# Personal repos under ~/dev/personal/ get personal identity
+[includeIf "gitdir:~/dev/personal/"]
+	path = ~/.gitconfig-personal
