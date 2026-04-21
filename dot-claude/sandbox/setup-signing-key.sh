@@ -13,9 +13,6 @@ GH_API="https://api.github.com"
 
 GITHUB_TOKEN="$(cat /run/secrets/github_token)"
 
-# Configure git identity
-git config --global user.name "$GIT_USER_NAME"
-git config --global user.email "$GIT_USER_EMAIL"
 
 # Delete existing sandbox signing keys
 existing_ids=$(curl -sf -H "Authorization: token $GITHUB_TOKEN" \
@@ -40,12 +37,22 @@ curl -sf -X POST -H "Authorization: token $GITHUB_TOKEN" \
   "$GH_API/user/ssh_signing_keys" > /dev/null
 echo "Uploaded signing key to GitHub"
 
-# Configure git signing
-git config --global gpg.format ssh
-git config --global user.signingkey "$KEY_PATH"
-git config --global commit.gpgsign true
-git config --global tag.gpgsign true
+# Write sandbox-specific git overrides to a local include file
+# (avoids modifying the stow-symlinked ~/.gitconfig)
+cat > "$HOME/.gitconfig.sandbox" << EOF
+[user]
+	name = $GIT_USER_NAME
+	email = $GIT_USER_EMAIL
+	signingkey = $KEY_PATH
+[gpg]
+	format = ssh
+[gpg \"ssh\"]
+	allowedSignersFile = $HOME/.ssh/allowed_signers
+[commit]
+	gpgsign = true
+[tag]
+	gpgsign = true
+EOF
 
 # Create allowed_signers for verification
 echo "$GIT_USER_EMAIL $(cat "${KEY_PATH}.pub")" > "$HOME/.ssh/allowed_signers"
-git config --global gpg.ssh.allowedSignersFile "$HOME/.ssh/allowed_signers"
