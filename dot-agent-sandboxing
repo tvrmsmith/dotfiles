@@ -69,6 +69,20 @@ _dsbx_mark_authed() {
   touch "$_DSBX_AUTH_DIR/$1"
 }
 
+# Build sandbox name from prefix, cwd, and any extra workspaces.
+_dsbx_name() {
+  local prefix="$1"
+  shift
+  local name="${prefix}-$(basename "$(pwd)")"
+  for ws in "$@"; do
+    name="${name}--$(basename "${ws%:ro}")"
+  done
+  if _detect_git_worktree; then
+    name="${name}--$(basename "$_GIT_WORKTREE_SOURCE_REPO")"
+  fi
+  echo "$name"
+}
+
 # Helper: create with template on first run, reconnect on subsequent runs
 # Auto-detects git worktrees and mounts the source repo for git access.
 _dsbx_run() {
@@ -78,10 +92,8 @@ _dsbx_run() {
   if _detect_git_worktree; then
     extra_ws+=("$_GIT_WORKTREE_SOURCE_REPO")
   fi
-  local name="${prefix}-$(basename "$(pwd)")"
-  for ws in "${extra_ws[@]}"; do
-    name="${name}--$(basename "${ws%:ro}")"
-  done
+  local name
+  name="$(_dsbx_name "$prefix" "$@")"
   if ! sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
     sbx create -t "$template" --name "$name" "$agent" . "${extra_ws[@]}" || return 1
   fi
@@ -101,13 +113,15 @@ dsbx-omp() { _dsbx_run omp-sandbox:latest shell dsbx-omp "$@"; }
 _dsbx_exec() {
   local prefix="$1"
   shift
-  local name="${prefix}-$(basename "$(pwd)")"
+  local name
+  name="$(_dsbx_name "$prefix")"
   sbx exec -it "$name" -- "$@"
 }
 
 dsbx-gauth() {
   local prefix="${1:-dsbx-omp}"
-  local name="${prefix}-$(basename "$(pwd)")"
+  local name
+  name="$(_dsbx_name "$prefix")"
   _dsbx_exec "$prefix" gcloud auth application-default login --no-launch-browser && \
     _dsbx_mark_authed "$name"
 }
