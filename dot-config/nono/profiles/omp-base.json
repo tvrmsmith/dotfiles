@@ -34,12 +34,12 @@
       "$HOME/.config/gcloud",
       "$HOME/.config/gh",
       "$HOME/.ssh/1Password",
-      "$HOME/dotfiles/dot-claude",
-      "$HOME/dotfiles/dot-omp"
+      "$HOME/dev/personal/dotfiles/dot-claude",
+      "$HOME/dev/personal/dotfiles/dot-omp"
     ],
     "read_file": [
       "$HOME/.gitignore",
-      "$HOME/dotfiles/dot-config/nono/known_hosts"
+      "$HOME/dev/personal/dotfiles/dot-config/nono/known_hosts"
     ]
   }
 }
