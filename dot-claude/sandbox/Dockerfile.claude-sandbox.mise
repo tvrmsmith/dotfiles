@@ -30,7 +30,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   apt-get update && \
   apt-get install -y google-cloud-cli
 
-# Dotfiles (changes frequently — keep near end)
+# Signing key script (stable — before dotfiles to preserve cache)
+COPY setup-signing-key.sh /tmp/setup-signing-key.sh
+
+# Dotfiles (changes frequently)
 USER agent
 RUN echo 'eval "$(mise activate bash)"' >> /home/agent/.bashrc
 RUN git clone https://github.com/tvrmsmith/dotfiles.git /home/agent/dotfiles && \
@@ -39,7 +42,6 @@ RUN git clone https://github.com/tvrmsmith/dotfiles.git /home/agent/dotfiles && 
 # SSH commit-signing key (uploaded to GitHub at build time)
 ARG GIT_USER_NAME
 ARG GIT_USER_EMAIL
-COPY setup-signing-key.sh /tmp/setup-signing-key.sh
 RUN --mount=type=secret,id=github_token /tmp/setup-signing-key.sh && rm /tmp/setup-signing-key.sh
 
 # Build args last — only affect ENV, not tool installs above
