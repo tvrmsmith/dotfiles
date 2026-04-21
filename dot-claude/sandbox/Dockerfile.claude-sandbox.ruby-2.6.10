@@ -78,7 +78,8 @@ ENV GEM_HOME=/usr/local/bundle \
   PATH=/usr/local/bundle/bin:$PATH
 
 # Install latest bundler version compatible with Ruby version
-RUN RUBY_MAJOR_MINOR=$(echo ${RUBY_VERSION} | cut -d. -f1,2) && \
+RUN --mount=type=cache,target=/usr/local/bundle/cache \
+  RUBY_MAJOR_MINOR=$(echo ${RUBY_VERSION} | cut -d. -f1,2) && \
   gem uninstall bundler -x || true && \
   if [ "${RUBY_MAJOR_MINOR}" = "2.6" ]; then \
   gem install bundler -v '~> 2.4.0'; \
