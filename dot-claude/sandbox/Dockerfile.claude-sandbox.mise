@@ -35,9 +35,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     lsb-release \
     openssh-client
 
-# Signing key script (stable)
-COPY setup-signing-key.sh /tmp/setup-signing-key.sh
-
 ARG DOTFILES_SHA
 # Dotfiles (cache busted by commit SHA)
 USER agent
@@ -46,6 +43,7 @@ RUN git clone https://github.com/tvrmsmith/dotfiles.git /home/agent/dotfiles && 
     /home/agent/dotfiles/install.sh
 
 # SSH commit-signing key (uploaded to GitHub at build time)
+COPY setup-signing-key.sh /tmp/setup-signing-key.sh
 ARG GIT_USER_NAME
 ARG GIT_USER_EMAIL
 RUN --mount=type=secret,id=github_token,uid=1000 --mount=type=secret,id=github_token_personal,uid=1000 /tmp/setup-signing-key.sh
