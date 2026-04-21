@@ -50,6 +50,7 @@ cat > "$HOME/.gitconfig.sandbox" << EOF
 [gpg]
 	format = ssh
 [gpg "ssh"]
+	program = /usr/bin/ssh-keygen
 	allowedSignersFile = $KEY_DIR/allowed_signers
 [commit]
 	gpgsign = true
@@ -62,6 +63,17 @@ cat > "$HOME/.gitconfig.sandbox-personal" << EOF
 [user]
 	signingkey = $personal_key
 EOF
+
+# Ensure sandbox config is included on every shell startup
+# (sandbox runtime overwrites ~/.gitconfig after build)
+cat >> "$HOME/.bashrc" << 'BASHEOF'
+
+# Re-include dotfiles and sandbox git config if sandbox runtime overwrote ~/.gitconfig
+if ! grep -q 'gitconfig.sandbox' "$HOME/.gitconfig" 2>/dev/null; then
+  git config --global --add include.path "$HOME/dotfiles/dot-gitconfig"
+  git config --global --add include.path "$HOME/.gitconfig.sandbox"
+fi
+BASHEOF
 
 # Create allowed_signers for verification (both keys)
 echo "$GIT_USER_EMAIL $(cat "${work_key}.pub")" > "$KEY_DIR/allowed_signers"
