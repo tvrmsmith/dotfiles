@@ -48,7 +48,8 @@ _DSBX_ADC_TTL=21600  # 6 hours in seconds
 _DSBX_LOG="$HOME/.cache/dsbx-auth/dsbx.log"
 
 dsbx-build() {
-  GITHUB_TOKEN="$(gh auth token)" \
+  GITHUB_TOKEN="$(gh auth token --user TrevorSmith-Wellsky)" \
+  GITHUB_TOKEN_PERSONAL="$(gh auth token --user tvrmsmith)" \
   GIT_USER_NAME="$(git config --global user.name)" \
   GIT_USER_EMAIL="$(git config --global user.email)" \
   DOTFILES_SHA="$(git -C "$HOME/dotfiles" rev-parse HEAD)" \
