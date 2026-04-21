@@ -37,12 +37,11 @@ curl -sf -X POST -H "Authorization: token $GITHUB_TOKEN" \
   "$GH_API/user/ssh_signing_keys" > /dev/null
 echo "Uploaded signing key to GitHub"
 
-# Write sandbox-specific git overrides to a local include file
-# (avoids modifying the stow-symlinked ~/.gitconfig)
+# Write sandbox-specific git signing overrides to a local include file.
+# Only signing config — identity (name/email) comes from repo-level config
+# or dotfiles, so personal repo includeIf overrides are preserved.
 cat > "$HOME/.gitconfig.sandbox" << EOF
 [user]
-	name = $GIT_USER_NAME
-	email = $GIT_USER_EMAIL
 	signingkey = $KEY_PATH
 [gpg]
 	format = ssh
