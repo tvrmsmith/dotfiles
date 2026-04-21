@@ -37,3 +37,7 @@
 	conflictStyle = zdiff3
 [pull]
 	rebase = true
+
+# Sandbox overrides (no-op on host if file doesn't exist)
+[include]
+	path = ~/.gitconfig.sandbox
