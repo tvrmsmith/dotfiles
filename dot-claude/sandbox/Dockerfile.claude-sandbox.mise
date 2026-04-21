@@ -1,4 +1,4 @@
-FROM docker/sandbox-templates:claude-code
+FROM docker/sandbox-templates:claude-code-docker
 
 USER root
 
