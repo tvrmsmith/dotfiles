@@ -4,7 +4,8 @@ export XDG_STATE_HOME="$HOME/.local/state"
 export XDG_CACHE_HOME="$HOME/.cache"
 export EZA_CONFIG_DIR="$XDG_DATA_HOME/eza"
 
-export PATH="$HOME/.local/bin:$HOME/.dotnet/tools:$HOME/dev/personal/ralph/scripts:$PATH"
+export DEV_PERSONAL="$HOME/dev/personal"
+export PATH="$HOME/.local/bin:$HOME/.dotnet/tools:$DEV_PERSONAL/ralph/scripts:$PATH"
 
 export CLAUDE_CODE_USE_VERTEX="1"
 export CLOUD_ML_REGION="us"
