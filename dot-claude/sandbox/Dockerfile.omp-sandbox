@@ -98,6 +98,7 @@ RUN echo 'eval "$(mise activate bash)"' >> /home/agent/.bashrc && \
 
 # Auto-launch omp coding agent
 if [[ $- == *i* ]] && command -v omp &> /dev/null; then
+  unset ANTHROPIC_API_KEY  # sbx injects 'proxy-managed' sentinel; omp would mistake it for a real Anthropic key and skip Vertex
   exec omp --model "$OMP_MODEL"
 fi
 EOF
