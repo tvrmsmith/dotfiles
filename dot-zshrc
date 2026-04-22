@@ -66,7 +66,7 @@ fi
 catls() { [[ -f "$1" ]] && cat "$1" || ls "${1:-.}"; }
 
 alias gauth="gcloud auth application-default login"
-alias setup-vertex-creds="$HOME/dev/personal/dotfiles/setup-vertex-credentials.sh"
+alias setup-vertex-creds="$DEV_PERSONAL/dotfiles/setup-vertex-credentials.sh"
 
 alias logdy='logdy --no-analytics --port=8090'
 

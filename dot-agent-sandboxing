@@ -27,7 +27,7 @@ nono-agent() {
     worktree_args=(--read "$_GIT_WORKTREE_SOURCE_REPO" --allow "$git_dir" --allow "$abs_common_dir")
   fi
 
-  GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=$HOME/dev/personal/dotfiles/dot-ssh/known_hosts.pinned" \
+  GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=$DEV_PERSONAL/dotfiles/dot-ssh/known_hosts.pinned" \
     nono run --allow-cwd --override-deny ~/.config/gcloud "${worktree_args[@]}" "$@"
 }
 
@@ -42,7 +42,7 @@ alias nono-omp-csharp="$_OMP_VERTEX nono-agent --profile omp-csharp -- omp --mod
 
 # ── Docker Sandbox (sbx) ────────────────────────────────────────────────────
 
-_SBX_DIR="$HOME/dev/personal/dotfiles/dot-claude/sandbox"
+_SBX_DIR="$DEV_PERSONAL/dotfiles/dot-claude/sandbox"
 _DSBX_AUTH_DIR="$HOME/.cache/dsbx-auth"
 _DSBX_ADC_TTL=21600  # 6 hours in seconds
 _DSBX_LOG="$HOME/.cache/dsbx-auth/dsbx.log"
@@ -52,7 +52,7 @@ dsbx-build() {
   GITHUB_TOKEN_PERSONAL="$(OP_ACCOUNT=my.1password.com op read "$GIT_TOKEN_PERSONAL")" \
   GIT_USER_NAME="$(git config --global user.name)" \
   GIT_USER_EMAIL="$(git config --global user.email)" \
-  DOTFILES_SHA="$(git -C "$HOME/dev/personal/dotfiles" rev-parse HEAD)" \
+  DOTFILES_SHA="$(git -C "$DEV_PERSONAL/dotfiles" rev-parse HEAD)" \
   docker compose -f "$_SBX_DIR/docker-compose.yml" build "$@" && \
   for img in $(docker compose -f "$_SBX_DIR/docker-compose.yml" config --images); do
     echo "Loading $img into sbx..." && \
