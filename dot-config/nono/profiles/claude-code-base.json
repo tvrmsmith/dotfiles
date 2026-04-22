@@ -22,7 +22,7 @@
     ],
     "read_file": [
       "$HOME/.gitignore",
-      "$HOME/dev/personal/dotfiles/dot-config/nono/known_hosts"
+      "$HOME/dev/personal/dotfiles/dot-ssh/known_hosts.pinned"
     ]
   }
 }
