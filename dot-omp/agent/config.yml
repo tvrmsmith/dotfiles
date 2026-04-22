@@ -3,6 +3,8 @@ modelRoles:
   default: anthropic-vertex/claude-opus-4-7
   task: anthropic-vertex/claude-sonnet-4-6
   commit: anthropic-vertex/claude-haiku-4-5
+  slow: anthropic-vertex/claude-opus-4-7
+  plan: anthropic-vertex/claude-opus-4-7
 theme: 
   dark: dark-tokyo-night
 statusLine: 
@@ -19,6 +21,15 @@ disabledExtensions:
 disabledProviders: 
   - agents
   - agents-md
+  - anthropic
+  - google
+  - google-vertex
+  - openai
+  - mistral
+  - xai
+  - ollama
+  - llama.cpp
+  - lm-studio
 steeringMode: all
 followUpMode: all
 interruptMode: immediate
