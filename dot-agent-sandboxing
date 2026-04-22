@@ -46,6 +46,90 @@ _SBX_DIR="$DEV_PERSONAL/dotfiles/dot-claude/sandbox"
 _DSBX_AUTH_DIR="$HOME/.cache/dsbx-auth"
 _DSBX_ADC_TTL=21600  # 6 hours in seconds
 _DSBX_LOG="$HOME/.cache/dsbx-auth/dsbx.log"
+_DSBX_SECRET_TTL=3600  # 1 hour: skip GitHub secret resync if cached marker is fresher than this
+
+# zsh/datetime gives sub-ms wall-clock without subprocess overhead.
+# Falls back to perl on bash (~10ms cost).
+if [ -n "$ZSH_VERSION" ]; then
+  zmodload zsh/datetime 2>/dev/null
+  _dsbx_now_ms() { printf '%.0f\n' $(( EPOCHREALTIME * 1000 )); }
+else
+  _dsbx_now_ms() { perl -MTime::HiRes=time -e 'printf("%d\n", time()*1000)'; }
+fi
+
+# Profile a command's wall time. Logs to _DSBX_LOG; prints to stderr if _DSBX_PROFILE is set.
+_dsbx_time() {
+  local label="$1"; shift
+  local start end elapsed
+  start=$(_dsbx_now_ms)
+  "$@"
+  local rc=$?
+  end=$(_dsbx_now_ms)
+  elapsed=$(( end - start ))
+  echo "$(date -Iseconds) [timing] ${label}=${elapsed}ms rc=${rc}" >> "$_DSBX_LOG"
+  [ -n "$_DSBX_PROFILE" ] && echo "[dsbx] ${label}: ${elapsed}ms" >&2
+  return $rc
+}
+
+# Resolve the GitHub identity for the current cwd.
+# Personal: under $DEV_PERSONAL/ → personal account, per-sandbox scope.
+# Work: everything else → work account, global scope.
+# Echoes: "<op_account> <op_path> <scope_flag>" where scope_flag is `-g` or the sandbox name.
+_dsbx_github_identity() {
+  local sandbox_name="$1"
+  case "$PWD/" in
+    "$DEV_PERSONAL/"*)
+      echo "my.1password.com $GIT_TOKEN_PERSONAL $sandbox_name"
+      ;;
+    *)
+      echo "wellsky.1password.com $GIT_TOKEN -g"
+      ;;
+  esac
+}
+
+_dsbx_secret_marker() {
+  local sandbox_name="$1"
+  echo "$_DSBX_AUTH_DIR/${sandbox_name}.gh-secret"
+}
+
+_dsbx_secret_fresh() {
+  local marker="$1"
+  [ -f "$marker" ] || return 1
+  local mtime age
+  mtime=$(stat -f %m "$marker" 2>/dev/null) || return 1
+  age=$(( $(date +%s) - mtime ))
+  [ $age -lt $_DSBX_SECRET_TTL ]
+}
+
+# Sync the GitHub PAT for this sandbox from 1Password into sbx's proxy store.
+# Idempotent and TTL-gated; safe to call before every dsbx-* invocation.
+_dsbx_sync_github_secret() {
+  local sandbox_name="$1"
+  local marker; marker=$(_dsbx_secret_marker "$sandbox_name")
+  if _dsbx_secret_fresh "$marker"; then
+    return 0
+  fi
+  mkdir -p "$_DSBX_AUTH_DIR"
+
+  local op_account op_path scope
+  read -r op_account op_path scope <<< "$(_dsbx_github_identity "$sandbox_name")"
+
+  local token
+  if ! token=$(OP_ACCOUNT="$op_account" op read "$op_path" 2>>"$_DSBX_LOG"); then
+    echo "[dsbx] failed to read GitHub PAT from 1Password ($op_account: $op_path)" >&2
+    echo "[dsbx] is your op session active? try: eval \$(op signin --account $op_account)" >&2
+    return 1
+  fi
+
+  # `set -f` overwrites without prompting; with stdin, the token never enters argv.
+  local scope_arg
+  if [ "$scope" = "-g" ]; then scope_arg="-g"; else scope_arg="$scope"; fi
+  if ! printf '%s' "$token" | sbx secret set $scope_arg github -f >>"$_DSBX_LOG" 2>&1; then
+    echo "[dsbx] failed to write GitHub secret to sbx (scope=$scope)" >&2
+    return 1
+  fi
+  touch "$marker"
+}
 
 dsbx-build() {
   GITHUB_TOKEN="$(op read "$GIT_TOKEN")" \
@@ -88,20 +172,52 @@ _dsbx_name() {
   echo "$name"
 }
 
-# Helper: create with template on first run, reconnect on subsequent runs
+_DSBX_SBXD_SOCK="$HOME/Library/Application Support/com.docker.sandboxes/sandboxes/sandboxd/docker.sock"
+
+# Remove orphan container/network in sbx's embedded containerd. sbx's own state
+# can drift from containerd's after crashes; without this, recreate fails with
+# `failed to create network: already exists`.
+_dsbx_purge_orphans() {
+  local name="$1"
+  [ -S "$_DSBX_SBXD_SOCK" ] || return 0
+  docker -H "unix://$_DSBX_SBXD_SOCK" rm -f "$name" >> "$_DSBX_LOG" 2>&1 || true
+  docker -H "unix://$_DSBX_SBXD_SOCK" network rm "$name" >> "$_DSBX_LOG" 2>&1 || true
+}
+
+# Helper: create with template on first run, reconnect on subsequent runs.
 # Auto-detects git worktrees and mounts the source repo for git access.
+# Pass --recreate to tear down an existing sandbox before creating a new one.
 _dsbx_run() {
   local template="$1" agent="$2" prefix="$3"
   shift 3
-  local -a extra_ws=("$@")
+  local recreate=0
+  local -a extra_ws=()
+  for arg in "$@"; do
+    if [[ "$arg" == "--recreate" ]]; then
+      recreate=1
+    else
+      extra_ws+=("$arg")
+    fi
+  done
+  set -- "${extra_ws[@]}"
   if _detect_git_worktree; then
     extra_ws+=("$_GIT_WORKTREE_SOURCE_REPO")
   fi
   local name
   name="$(_dsbx_name "$prefix" "$@")"
+  if (( recreate )); then
+    echo "$(date -Iseconds) Recreating $name" >> "$_DSBX_LOG"
+    sbx rm -f "$name" >> "$_DSBX_LOG" 2>&1 || true
+    _dsbx_purge_orphans "$name"
+    rm -f "$_DSBX_AUTH_DIR/$name" "$(_dsbx_secret_marker "$name")"
+  fi
   if ! sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
     echo "$(date -Iseconds) Creating $name" >> "$_DSBX_LOG"
-    sbx create -t "$template" --name "$name" "$agent" . "${extra_ws[@]}" >> "$_DSBX_LOG" 2>&1 || return 1
+    if ! sbx create -t "$template" --name "$name" "$agent" . "${extra_ws[@]}" >> "$_DSBX_LOG" 2>&1; then
+      echo "$(date -Iseconds) Create failed; purging orphans and retrying $name" >> "$_DSBX_LOG"
+      _dsbx_purge_orphans "$name"
+      sbx create -t "$template" --name "$name" "$agent" . "${extra_ws[@]}" >> "$_DSBX_LOG" 2>&1 || return 1
+    fi
   fi
   if _dsbx_needs_auth "$name"; then
     if ! sbx exec "$name" -- gcloud auth application-default print-access-token &>/dev/null; then
@@ -110,6 +226,7 @@ _dsbx_run() {
     fi
     _dsbx_mark_authed "$name"
   fi
+  _dsbx_time "sync-gh-secret($name)" _dsbx_sync_github_secret "$name" || return 1
   sbx run "$name"
 }
 
