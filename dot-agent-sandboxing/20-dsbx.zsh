@@ -122,6 +122,36 @@ _dsbx_sync_adc() {
   touch "$marker"
 }
 
+# Push host's Claude Code plugin cache into the sandbox at the canonical path.
+# Idempotent. Re-syncs whenever any host cache file is newer than our marker.
+# Empty/missing host cache is a silent no-op (not an error).
+_dsbx_sync_plugin_cache() {
+  local name="$1"
+  local marker="$_DSBX_AUTH_DIR/${name}.plugin-cache"
+
+  # Nothing to mirror — user hasn't populated CC plugins on the host. Not a failure.
+  [ -d "$_DSBX_HOST_PLUGIN_CACHE" ] || return 0
+
+  # Fast-exit when no host file is newer than the marker. -print -quit short-
+  # circuits at the first match, so cache size doesn't dominate steady-state cost.
+  if [ -f "$marker" ] \
+     && [ -z "$(find "$_DSBX_HOST_PLUGIN_CACHE" -newer "$marker" -type f -print -quit 2>/dev/null)" ]; then
+    return 0
+  fi
+
+  mkdir -p "$_DSBX_AUTH_DIR"
+
+  if ! tar -C "$_DSBX_HOST_PLUGIN_CACHE" -cf - . \
+      | sbx exec -i "$name" -- bash -c '
+          install -d -m 755 "$HOME/.claude/plugins/cache" &&
+          tar -C "$HOME/.claude/plugins/cache" -xf -
+        ' 2>>"$_DSBX_LOG"; then
+    echo "[dsbx] failed to copy claude plugin cache into $name" >&2
+    return 1
+  fi
+  touch "$marker"
+}
+
 # Build sandbox name from prefix, cwd, and any extra workspaces.
 _dsbx_name() {
   local prefix="$1"
