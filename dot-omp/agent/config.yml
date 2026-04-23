@@ -34,9 +34,15 @@ steeringMode: all
 followUpMode: all
 interruptMode: immediate
 edit: 
-  mode: vim
+  mode: hashline
   streamingAbort: false
 renderMermaid: 
   enabled: true
 secrets: 
   enabled: false
+treeFilterMode: all
+task: 
+  eager: true
+  simple: default
+mcp: 
+  enableProjectConfig: false
