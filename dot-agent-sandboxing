@@ -44,7 +44,6 @@ alias nono-omp-csharp="$_OMP_VERTEX nono-agent --profile omp-csharp -- omp --mod
 
 _SBX_DIR="$DEV_PERSONAL/dotfiles/dot-claude/sandbox"
 _DSBX_AUTH_DIR="$HOME/.cache/dsbx-auth"
-_DSBX_ADC_TTL=21600  # 6 hours in seconds
 _DSBX_LOG="$HOME/.cache/dsbx-auth/dsbx.log"
 _DSBX_SECRET_TTL=3600  # 1 hour: skip GitHub secret resync if cached marker is fresher than this
 
@@ -144,18 +143,29 @@ dsbx-build() {
   done
 }
 
-_dsbx_needs_auth() {
-  local ts_file="$_DSBX_AUTH_DIR/$1"
-  [ -f "$ts_file" ] || return 0
-  local mtime age
-  mtime=$(stat -f %m "$ts_file" 2>/dev/null) || return 0
-  age=$(( $(date +%s) - mtime ))
-  [ $age -ge $_DSBX_ADC_TTL ]
-}
+_DSBX_HOST_ADC="$HOME/.config/gcloud/application_default_credentials.json"
 
-_dsbx_mark_authed() {
+# Push host ADC into the sandbox at the canonical path. Idempotent.
+# Re-syncs whenever host ADC mtime is newer than our marker (covers refresh).
+_dsbx_sync_adc() {
+  local name="$1"
+  local marker="$_DSBX_AUTH_DIR/${name}.adc"
+  if [ ! -f "$_DSBX_HOST_ADC" ]; then
+    echo "[dsbx] no host ADC at $_DSBX_HOST_ADC; run: gcloud auth application-default login" >&2
+    return 1
+  fi
+  if [ -f "$marker" ] && [ "$marker" -nt "$_DSBX_HOST_ADC" ]; then
+    return 0
+  fi
   mkdir -p "$_DSBX_AUTH_DIR"
-  touch "$_DSBX_AUTH_DIR/$1"
+  if ! sbx exec -i "$name" -- bash -c '
+      install -d -m 700 "$HOME/.config/gcloud" &&
+      umask 077 && cat > "$HOME/.config/gcloud/application_default_credentials.json"
+    ' < "$_DSBX_HOST_ADC" 2>>"$_DSBX_LOG"; then
+    echo "[dsbx] failed to copy ADC into $name" >&2
+    return 1
+  fi
+  touch "$marker"
 }
 
 # Build sandbox name from prefix, cwd, and any extra workspaces.
@@ -209,7 +219,7 @@ _dsbx_run() {
     echo "$(date -Iseconds) Recreating $name" >> "$_DSBX_LOG"
     sbx rm -f "$name" >> "$_DSBX_LOG" 2>&1 || true
     _dsbx_purge_orphans "$name"
-    rm -f "$_DSBX_AUTH_DIR/$name" "$(_dsbx_secret_marker "$name")"
+    rm -f "$_DSBX_AUTH_DIR/${name}.adc" "$(_dsbx_secret_marker "$name")"
   fi
   if ! sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
     echo "$(date -Iseconds) Creating $name" >> "$_DSBX_LOG"
@@ -219,13 +229,7 @@ _dsbx_run() {
       sbx create -t "$template" --name "$name" "$agent" . "${extra_ws[@]}" >> "$_DSBX_LOG" 2>&1 || return 1
     fi
   fi
-  if _dsbx_needs_auth "$name"; then
-    if ! sbx exec "$name" -- gcloud auth application-default print-access-token &>/dev/null; then
-      echo "$(date -Iseconds) Refreshing gcloud ADC for $name" >> "$_DSBX_LOG"
-      sbx exec -it "$name" -- gcloud auth application-default login --no-launch-browser || return 1
-    fi
-    _dsbx_mark_authed "$name"
-  fi
+  _dsbx_time "sync-adc($name)" _dsbx_sync_adc "$name" || return 1
   _dsbx_time "sync-gh-secret($name)" _dsbx_sync_github_secret "$name" || return 1
   sbx run "$name"
 }
@@ -246,6 +250,53 @@ dsbx-gauth() {
   local prefix="${1:-dsbx-omp}"
   local name
   name="$(_dsbx_name "$prefix")"
-  _dsbx_exec "$prefix" gcloud auth application-default login --no-launch-browser && \
-    _dsbx_mark_authed "$name"
+  gcloud auth application-default login --no-launch-browser || return 1
+  _dsbx_sync_adc "$name"
+}
+
+
+
+# Check whether sandboxes for the current working directory are running on the
+# latest built image. Inspects each existing sandbox's actual container image ID
+# (via sbx's embedded daemon) and compares to the current outer docker image ID
+# for that template. Sandboxes that don't exist for cwd are silently skipped.
+# Exit non-zero if any existing cwd sandbox is stale.
+dsbx-check() {
+  local -a entries=(
+    'dsbx-cc:claude-sandbox-mise:latest'
+    'dsbx-ruby-cc:claude-sandbox-ruby-2.6.10:latest'
+    'dsbx-omp:omp-sandbox:latest'
+  )
+  local rc=0 found=0
+  local entry prefix img name container_id current_id
+  for entry in "${entries[@]}"; do
+    prefix="${entry%%:*}"
+    img="${entry#*:}"
+    name="$(_dsbx_name "$prefix")"
+    if ! sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
+      continue
+    fi
+    found=1
+    container_id=$(docker -H "unix://$_DSBX_SBXD_SOCK" inspect "$name" --format '{{.Image}}' 2>/dev/null \
+      | sed 's/^sha256:\(.\{12\}\).*/\1/')
+    current_id=$(docker image inspect --format '{{.Id}}' "$img" 2>/dev/null \
+      | sed 's/^sha256:\(.\{12\}\).*/\1/')
+    if [ -z "$current_id" ]; then
+      printf 'missing-image    %s  (sandbox=%s; run dsbx-build)\n' "$img" "$name"
+      rc=1
+    elif [ -z "$container_id" ]; then
+      printf 'unknown          %s  (could not inspect container; sbx daemon down?)\n' "$name"
+      rc=1
+    elif [ "$container_id" = "$current_id" ]; then
+      printf 'ok               %s  %s  (%s)\n' "$name" "$container_id" "$img"
+    else
+      printf 'stale            %s  running=%s  current=%s  (recreate: %s --recreate)\n' \
+        "$name" "$container_id" "$current_id" "$prefix"
+      rc=1
+    fi
+  done
+  if [ $found -eq 0 ]; then
+    echo 'no sandboxes for this cwd'
+  fi
+  return $rc
 }
