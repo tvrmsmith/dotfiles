@@ -215,6 +215,7 @@ _dsbx_run() {
   fi
   _dsbx_time "sync-adc($name)" _dsbx_sync_adc "$name" || return 1
   _dsbx_time "sync-gh-secret($name)" _dsbx_sync_github_secret "$name" || return 1
+  _dsbx_time "sync-plugin-cache($name)" _dsbx_sync_plugin_cache "$name" || return 1
   sbx run "$name"
 }
 
