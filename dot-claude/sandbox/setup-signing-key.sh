@@ -4,7 +4,13 @@
 # Requires github_token and github_token_personal as Docker build secrets.
 set -euo pipefail
 
-KEY_TITLE="sandbox-signing-key"
+# Per-image title so concurrent sandbox images don't delete each other's keys.
+# Same-image rebuilds rotate idempotently because deletion is scoped to this title.
+if [ $# -ne 1 ] || [ -z "$1" ]; then
+  echo "usage: $0 <sandbox-id>" >&2
+  exit 1
+fi
+KEY_TITLE="sandbox-signing-key:$1"
 KEY_DIR="$HOME/.ssh"
 
 : "${GIT_USER_NAME:?GIT_USER_NAME is required}"
