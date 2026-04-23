@@ -97,6 +97,7 @@ dsbx-build() {
 }
 
 _DSBX_HOST_ADC="$HOME/.config/gcloud/application_default_credentials.json"
+_DSBX_HOST_PLUGIN_CACHE="$HOME/.claude/plugins/cache"
 
 # Push host ADC into the sandbox at the canonical path. Idempotent.
 # Re-syncs whenever host ADC mtime is newer than our marker (covers refresh).
