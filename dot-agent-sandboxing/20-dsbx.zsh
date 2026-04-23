@@ -203,7 +203,9 @@ _dsbx_run() {
     echo "$(date -Iseconds) Recreating $name" >> "$_DSBX_LOG"
     sbx rm -f "$name" >> "$_DSBX_LOG" 2>&1 || true
     _dsbx_purge_orphans "$name"
-    rm -f "$_DSBX_AUTH_DIR/${name}.adc" "$(_dsbx_secret_marker "$name")"
+    rm -f "$_DSBX_AUTH_DIR/${name}.adc" \
+          "$(_dsbx_secret_marker "$name")" \
+          "$_DSBX_AUTH_DIR/${name}.plugin-cache"
   fi
   if ! sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
     echo "$(date -Iseconds) Creating $name" >> "$_DSBX_LOG"
