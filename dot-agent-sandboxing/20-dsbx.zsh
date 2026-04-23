@@ -1,60 +1,13 @@
-# Agent sandboxing — shared helpers, nono, and docker sandbox (sbx)
-
-# ── Shared ────────────────────────────────────────────────────────────────────
-
-# Detect if cwd is a git worktree. Sets _GIT_WORKTREE_SOURCE_REPO if so.
-_detect_git_worktree() {
-  _GIT_WORKTREE_SOURCE_REPO=""
-  local git_common_dir
-  git_common_dir="$(git rev-parse --git-common-dir 2>/dev/null)" || return 1
-  local source_repo="$(cd "$git_common_dir/.." && pwd)"
-  [[ "$source_repo" != "$(pwd)" ]] || return 1
-  _GIT_WORKTREE_SOURCE_REPO="$source_repo"
-}
-
-# ── Nono (nsjail) ────────────────────────────────────────────────────────────
-
-_OMP_VERTEX="GOOGLE_CLOUD_PROJECT=$ANTHROPIC_VERTEX_PROJECT_ID GOOGLE_CLOUD_LOCATION=$CLOUD_ML_REGION"
-alias pi="$_OMP_VERTEX command pi --model $OMP_MODEL"
-alias omp="$_OMP_VERTEX command omp --model $OMP_MODEL"
-
-nono-agent() {
-  local worktree_args=()
-  if _detect_git_worktree; then
-    local git_dir abs_common_dir
-    git_dir="$(git rev-parse --absolute-git-dir)"
-    abs_common_dir="$(cd "$(git rev-parse --git-common-dir)" && pwd)"
-    worktree_args=(--read "$_GIT_WORKTREE_SOURCE_REPO" --allow "$git_dir" --allow "$abs_common_dir")
-  fi
-
-  GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=$DEV_PERSONAL/dotfiles/dot-ssh/known_hosts.pinned" \
-    nono run --allow-cwd --override-deny ~/.config/gcloud "${worktree_args[@]}" "$@"
-}
-
-# Claude Code
-alias nono-cc='nono-agent --profile claude-code-mise -- claude --dangerously-skip-permissions'
-nono-cc-personal() { OP_ACCOUNT=my.1password.com nono-agent --profile claude-code-personal -- claude --dangerously-skip-permissions "$@"; }
-alias nono-cc-csharp='nono-agent --profile claude-code-csharp -- claude --dangerously-skip-permissions'
-# Oh My Pi
-alias nono-omp="$_OMP_VERTEX nono-agent --profile omp-mise -- omp --model $OMP_MODEL"
-nono-omp-personal() { env ${=_OMP_VERTEX} OP_ACCOUNT=my.1password.com nono-agent --profile omp-personal -- omp --model $OMP_MODEL "$@"; }
-alias nono-omp-csharp="$_OMP_VERTEX nono-agent --profile omp-csharp -- omp --model $OMP_MODEL"
-
-# ── Docker Sandbox (sbx) ────────────────────────────────────────────────────
+# Docker Sandbox (sbx) launchers and credential sync
 
 _SBX_DIR="$DEV_PERSONAL/dotfiles/dot-claude/sandbox"
 _DSBX_AUTH_DIR="$HOME/.cache/dsbx-auth"
 _DSBX_LOG="$HOME/.cache/dsbx-auth/dsbx.log"
 _DSBX_SECRET_TTL=3600  # 1 hour: skip GitHub secret resync if cached marker is fresher than this
 
-# zsh/datetime gives sub-ms wall-clock without subprocess overhead.
-# Falls back to perl on bash (~10ms cost).
-if [ -n "$ZSH_VERSION" ]; then
-  zmodload zsh/datetime 2>/dev/null
-  _dsbx_now_ms() { printf '%.0f\n' $(( EPOCHREALTIME * 1000 )); }
-else
-  _dsbx_now_ms() { perl -MTime::HiRes=time -e 'printf("%d\n", time()*1000)'; }
-fi
+# Sub-ms wall-clock without subprocess overhead.
+zmodload zsh/datetime 2>/dev/null
+_dsbx_now_ms() { printf '%.0f\n' $(( EPOCHREALTIME * 1000 )); }
 
 # Profile a command's wall time. Logs to _DSBX_LOG; prints to stderr if _DSBX_PROFILE is set.
 _dsbx_time() {
