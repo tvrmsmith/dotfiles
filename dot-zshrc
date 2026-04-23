@@ -98,7 +98,7 @@ alias bubu='brew update && brew upgrade'
 alias cc='claude'
 
 # Agent sandboxing (nono, sbx) and pi/omp aliases
-[ -f ~/.agent-sandboxing ] && source ~/.agent-sandboxing
+[ -d ~/.agent-sandboxing ] && for _f in ~/.agent-sandboxing/*.zsh; do source "$_f"; done; unset _f
 
 # bun completions
 [ -s "/Users/trevor.smith/.bun/_bun" ] && source "/Users/trevor.smith/.bun/_bun"
