@@ -78,7 +78,7 @@ COPY setup-signing-key.sh /tmp/setup-signing-key.sh
 ARG GIT_USER_NAME
 ARG GIT_USER_EMAIL
 USER agent
-RUN --mount=type=secret,id=github_token,uid=1000 --mount=type=secret,id=github_token_personal,uid=1000 /tmp/setup-signing-key.sh
+RUN --mount=type=secret,id=github_token,uid=1000 --mount=type=secret,id=github_token_personal,uid=1000 /tmp/setup-signing-key.sh omp-sandbox
 USER root
 RUN rm /tmp/setup-signing-key.sh
 
