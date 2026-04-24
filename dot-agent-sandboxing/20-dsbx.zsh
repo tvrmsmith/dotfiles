@@ -253,7 +253,7 @@ dsbx-gauth() {
   local prefix="${1:-dsbx-omp}"
   local name
   name="$(_dsbx_name "$prefix")"
-  gcloud auth application-default login --no-launch-browser || return 1
+  gcloud auth application-default login || return 1
   _dsbx_sync_adc "$name"
 }
 
