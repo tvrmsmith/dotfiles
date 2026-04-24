@@ -95,6 +95,10 @@ fi
 
 alias lg='lazygit'
 alias bubu='brew update && brew upgrade'
+# Reset terminal after a TUI crash leaves stdin raw + Kitty kbd protocol active.
+# Disables: bracketed paste, mode 2031, kitty kb stack, modifyOtherKeys; shows cursor; restores cooked tty.
+alias unwedge='printf "\e[?2004l\e[?2031l\e[<u\e[>4;0m\e[?25h"; stty sane'
+
 alias cc='claude'
 
 # Agent sandboxing (nono, sbx) and pi/omp aliases
