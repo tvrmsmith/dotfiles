@@ -180,25 +180,37 @@ _dsbx_purge_orphans() {
 
 # Helper: create with template on first run, reconnect on subsequent runs.
 # Auto-detects git worktrees and mounts the source repo for git access.
-# Pass --recreate to tear down an existing sandbox before creating a new one.
+#
+# Flags:
+#   --recreate     Tear down an existing sandbox before creating a new one.
+#   --print | -p   Skip the interactive `sbx run` attach; run `<print_cmd> -p <prompt>`
+#                  via `sbx exec -i` instead. Remaining positional args form the prompt.
+#                  Use this from inside another agent's bash tool: interactive attach
+#                  grabs /dev/tty and on exit EPIPEs the parent's renderer.
 _dsbx_run() {
-  local template="$1" agent="$2" prefix="$3"
-  shift 3
-  local recreate=0
-  local -a extra_ws=()
+  local template="$1" agent="$2" prefix="$3" print_cmd="$4"
+  shift 4
+  local recreate=0 print_mode=0
+  local -a positional=()
   for arg in "$@"; do
-    if [[ "$arg" == "--recreate" ]]; then
-      recreate=1
-    else
-      extra_ws+=("$arg")
-    fi
+    case "$arg" in
+      --recreate)  recreate=1 ;;
+      --print|-p)  print_mode=1 ;;
+      *)           positional+=("$arg") ;;
+    esac
   done
-  set -- "${extra_ws[@]}"
+  # In interactive mode positional args are workspace mounts; in print mode they're prompt tokens.
+  local -a extra_ws=() agent_args=()
+  if (( print_mode )); then
+    agent_args=("${positional[@]}")
+  else
+    extra_ws=("${positional[@]}")
+  fi
   if _detect_git_worktree; then
     extra_ws+=("$_GIT_WORKTREE_SOURCE_REPO")
   fi
   local name
-  name="$(_dsbx_name "$prefix" "$@")"
+  name="$(_dsbx_name "$prefix" "${extra_ws[@]}")"
   if (( recreate )); then
     echo "$(date -Iseconds) Recreating $name" >> "$_DSBX_LOG"
     sbx rm -f "$name" >> "$_DSBX_LOG" 2>&1 || true
@@ -218,12 +230,16 @@ _dsbx_run() {
   _dsbx_time "sync-adc($name)" _dsbx_sync_adc "$name" || return 1
   _dsbx_time "sync-gh-secret($name)" _dsbx_sync_github_secret "$name" || return 1
   _dsbx_time "sync-plugin-cache($name)" _dsbx_sync_plugin_cache "$name" || return 1
+  if (( print_mode )); then
+    sbx exec -i "$name" -- "$print_cmd" -p "${agent_args[@]}"
+    return $?
+  fi
   sbx run "$name"
 }
 
-dsbx-cc() { _dsbx_run claude-sandbox-mise:latest claude dsbx-cc "$@"; }
-dsbx-ruby-cc() { _dsbx_run claude-sandbox-ruby-2.6.10:latest claude dsbx-ruby-cc "$@"; }
-dsbx-omp() { _dsbx_run omp-sandbox:latest shell dsbx-omp "$@"; }
+dsbx-cc()      { _dsbx_run claude-sandbox-mise:latest        claude dsbx-cc      claude "$@"; }
+dsbx-ruby-cc() { _dsbx_run claude-sandbox-ruby-2.6.10:latest claude dsbx-ruby-cc claude "$@"; }
+dsbx-omp()     { _dsbx_run omp-sandbox:latest                shell  dsbx-omp     omp    "$@"; }
 
 _dsbx_exec() {
   local prefix="$1"
