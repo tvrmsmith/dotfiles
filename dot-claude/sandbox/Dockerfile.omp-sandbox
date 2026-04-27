@@ -1,16 +1,4 @@
-# Stage 1: Build oh-my-pi from fork (arm64 glimmer fix)
-FROM node:22-bookworm AS omp-builder
-RUN curl -fsSL https://bun.sh/install | bash
-ENV PATH="/root/.bun/bin:$PATH"
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly-2026-03-27
-ENV PATH="/root/.cargo/bin:$PATH"
-RUN --mount=type=cache,target=/root/.bun/install/cache \
-  --mount=type=cache,target=/root/.cargo/registry \
-  --mount=type=cache,target=/root/.cargo/git \
-  git clone --depth 1 --branch fix/glimmer-arm64-scanner https://github.com/tvrmsmith/oh-my-pi.git /opt/oh-my-pi && \
-  cd /opt/oh-my-pi && bun install && bun run build:native && bun run install:dev
-
-# Stage 2: Final sandbox image
+# Sandbox image
 FROM docker/sandbox-templates:shell-docker
 
 USER root
@@ -54,10 +42,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     lsb-release \
     openssh-client
 
-# Oh My Pi — copy entire app from builder
-COPY --from=omp-builder /opt/oh-my-pi /opt/oh-my-pi
-RUN ln -s /opt/oh-my-pi/packages/coding-agent/src/cli.ts /usr/local/bin/omp && \
-  ln -s /opt/oh-my-pi/packages/coding-agent/src/cli.ts /usr/local/bin/pi
+# Oh My Pi coding agent (installed globally via bun)
+RUN --mount=type=cache,target=/opt/bun/install/cache \
+  bun install -g @oh-my-pi/pi-coding-agent && \
+  ln -s /opt/bun/bin/omp /usr/local/bin/pi
 
 # Anthropic Vertex extension (install to /opt, link after dotfiles stow)
 COPY --from=omp-vertex-ext . /opt/omp-extensions/anthropic-vertex/
