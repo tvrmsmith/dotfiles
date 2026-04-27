@@ -96,60 +96,43 @@ dsbx-build() {
   done
 }
 
-_DSBX_HOST_ADC="$HOME/.config/gcloud/application_default_credentials.json"
-_DSBX_HOST_PLUGIN_CACHE="$HOME/.claude/plugins/cache"
+# Helper bind mounts. Workspaces appended to `sbx create` but excluded from
+# the sandbox name (so they don't bloat sandbox identity). Mounted read-only at
+# their host paths inside the container; we then symlink the canonical lookup
+# locations to those mount paths so unmodified tools (gcloud SDK, omp's plugin
+# discovery) find what they expect.
+_DSBX_HELPER_ADC_DIR="$HOME/.config/gcloud"
+_DSBX_HELPER_PLUGINS_DIR="$HOME/.claude/plugins"
 
-# Push host ADC into the sandbox at the canonical path. Idempotent.
-# Re-syncs whenever host ADC mtime is newer than our marker (covers refresh).
-_dsbx_sync_adc() {
-  local name="$1"
-  local marker="$_DSBX_AUTH_DIR/${name}.adc"
-  if [ ! -f "$_DSBX_HOST_ADC" ]; then
-    echo "[dsbx] no host ADC at $_DSBX_HOST_ADC; run: gcloud auth application-default login" >&2
-    return 1
-  fi
-  if [ -f "$marker" ] && [ "$marker" -nt "$_DSBX_HOST_ADC" ]; then
-    return 0
-  fi
-  mkdir -p "$_DSBX_AUTH_DIR"
-  if ! sbx exec -i "$name" -- bash -c '
-      install -d -m 700 "$HOME/.config/gcloud" &&
-      umask 077 && cat > "$HOME/.config/gcloud/application_default_credentials.json"
-    ' < "$_DSBX_HOST_ADC" 2>>"$_DSBX_LOG"; then
-    echo "[dsbx] failed to copy ADC into $name" >&2
-    return 1
-  fi
-  touch "$marker"
+# Build the helper-mount argv. Skips entries whose host path is missing so a
+# user without gcloud or claude plugins doesn't break sandbox creation.
+_dsbx_helper_mounts() {
+  local -a mounts=()
+  [ -d "$_DSBX_HELPER_ADC_DIR" ] && mounts+=("${_DSBX_HELPER_ADC_DIR}:ro")
+  [ -d "$_DSBX_HELPER_PLUGINS_DIR" ] && mounts+=("${_DSBX_HELPER_PLUGINS_DIR}:ro")
+  printf '%s\n' "${mounts[@]}"
 }
 
-# Push host's Claude Code plugin cache into the sandbox at the canonical path.
-# Idempotent. Re-syncs whenever any host cache file is newer than our marker.
-# Empty/missing host cache is a silent no-op (not an error).
-_dsbx_sync_plugin_cache() {
+# Install the in-container symlinks that point the canonical lookup paths at
+# the bind-mounted host directories. Idempotent; safe to run after every
+# `sbx create`. The bind mount lands at the same path inside the container as
+# on the host (verified via `mount` output), so HOST_HOME is the host $HOME.
+_dsbx_install_helper_links() {
   local name="$1"
-  local marker="$_DSBX_AUTH_DIR/${name}.plugin-cache"
-
-  # Nothing to mirror — user hasn't populated CC plugins on the host. Not a failure.
-  [ -d "$_DSBX_HOST_PLUGIN_CACHE" ] || return 0
-
-  # Fast-exit when no host file is newer than the marker. -print -quit short-
-  # circuits at the first match, so cache size doesn't dominate steady-state cost.
-  if [ -f "$marker" ] \
-     && [ -z "$(find "$_DSBX_HOST_PLUGIN_CACHE" -newer "$marker" -type f -print -quit 2>/dev/null)" ]; then
-    return 0
-  fi
-
-  mkdir -p "$_DSBX_AUTH_DIR"
-
-  if ! tar -C "$_DSBX_HOST_PLUGIN_CACHE" -cf - . \
-      | sbx exec -i "$name" -- bash -c '
-          install -d -m 755 "$HOME/.claude/plugins/cache" &&
-          tar -C "$HOME/.claude/plugins/cache" -xf -
-        ' 2>>"$_DSBX_LOG"; then
-    echo "[dsbx] failed to copy claude plugin cache into $name" >&2
-    return 1
-  fi
-  touch "$marker"
+  sbx exec -i -e HOST_HOME="$HOME" "$name" -- bash -c '
+    set -e
+    if [ -d "$HOST_HOME/.config/gcloud" ]; then
+      install -d -m 700 "$HOME/.config/gcloud"
+      ln -sf "$HOST_HOME/.config/gcloud/application_default_credentials.json" \
+        "$HOME/.config/gcloud/application_default_credentials.json"
+    fi
+    if [ -d "$HOST_HOME/.claude/plugins" ]; then
+      # Plugin dir may pre-exist (from prior sandbox versions that copied it in).
+      # Replace with a symlink to the bind mount so freshness is automatic.
+      rm -rf "$HOME/.claude/plugins"
+      ln -sfn "$HOST_HOME/.claude/plugins" "$HOME/.claude/plugins"
+    fi
+  ' 2>>"$_DSBX_LOG"
 }
 
 # Build sandbox name from prefix, cwd, and any extra workspaces.
@@ -211,25 +194,32 @@ _dsbx_run() {
   fi
   local name
   name="$(_dsbx_name "$prefix" "${extra_ws[@]}")"
+  # Helper mounts (gcloud ADC, claude plugins) are appended after extra_ws but
+  # NOT fed to _dsbx_name — they're shared host state, not part of identity.
+  local -a helper_mounts=()
+  helper_mounts=(${(f)"$(_dsbx_helper_mounts)"})
   if (( recreate )); then
     echo "$(date -Iseconds) Recreating $name" >> "$_DSBX_LOG"
     sbx rm -f "$name" >> "$_DSBX_LOG" 2>&1 || true
     _dsbx_purge_orphans "$name"
-    rm -f "$_DSBX_AUTH_DIR/${name}.adc" \
-          "$(_dsbx_secret_marker "$name")" \
-          "$_DSBX_AUTH_DIR/${name}.plugin-cache"
+    rm -f "$(_dsbx_secret_marker "$name")"
   fi
+  local created=0
   if ! sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
     echo "$(date -Iseconds) Creating $name" >> "$_DSBX_LOG"
-    if ! sbx create -t "$template" --name "$name" "$agent" . "${extra_ws[@]}" >> "$_DSBX_LOG" 2>&1; then
+    if ! sbx create -t "$template" --name "$name" "$agent" . "${extra_ws[@]}" "${helper_mounts[@]}" >> "$_DSBX_LOG" 2>&1; then
       echo "$(date -Iseconds) Create failed; purging orphans and retrying $name" >> "$_DSBX_LOG"
       _dsbx_purge_orphans "$name"
-      sbx create -t "$template" --name "$name" "$agent" . "${extra_ws[@]}" >> "$_DSBX_LOG" 2>&1 || return 1
+      sbx create -t "$template" --name "$name" "$agent" . "${extra_ws[@]}" "${helper_mounts[@]}" >> "$_DSBX_LOG" 2>&1 || return 1
     fi
+    created=1
   fi
-  _dsbx_time "sync-adc($name)" _dsbx_sync_adc "$name" || return 1
+  # Symlinks are install-once: re-run only on fresh create. The bind mounts
+  # themselves stay live across container restarts.
+  if (( created )); then
+    _dsbx_time "install-helper-links($name)" _dsbx_install_helper_links "$name" || return 1
+  fi
   _dsbx_time "sync-gh-secret($name)" _dsbx_sync_github_secret "$name" || return 1
-  _dsbx_time "sync-plugin-cache($name)" _dsbx_sync_plugin_cache "$name" || return 1
   if (( print_mode )); then
     sbx exec -i "$name" -- "$print_cmd" -p "${agent_args[@]}"
     return $?
@@ -248,16 +238,6 @@ _dsbx_exec() {
   name="$(_dsbx_name "$prefix")"
   sbx exec -it "$name" -- "$@"
 }
-
-dsbx-gauth() {
-  local prefix="${1:-dsbx-omp}"
-  local name
-  name="$(_dsbx_name "$prefix")"
-  gcloud auth application-default login || return 1
-  _dsbx_sync_adc "$name"
-}
-
-
 
 # Check whether sandboxes for the current working directory are running on the
 # latest built image. Inspects each existing sandbox's actual container image ID
