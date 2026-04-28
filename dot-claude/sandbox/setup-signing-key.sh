@@ -43,16 +43,9 @@ setup_signing_key() {
 
 mkdir -p "$KEY_DIR"
 
-# Seed known_hosts with pinned host keys (github.com, etc.) so first
-# `git clone git@...` doesn't prompt and abort on the SHA256 fingerprint check.
-KNOWN_HOSTS_SRC="$HOME/dotfiles/dot-ssh/known_hosts.pinned"
-if [ -f "$KNOWN_HOSTS_SRC" ]; then
-  cat "$KNOWN_HOSTS_SRC" >> "$KEY_DIR/known_hosts"
-  sort -u "$KEY_DIR/known_hosts" -o "$KEY_DIR/known_hosts"
-  chmod 644 "$KEY_DIR/known_hosts"
-else
-  echo "WARN: $KNOWN_HOSTS_SRC missing; sandbox will prompt on first SSH host" >&2
-fi
+# Note: known_hosts pinning is seeded at runtime by `_dsbx_install_helper_links`
+# from the bind-mounted dotfiles repo — not at build time, since the dotfiles
+# tree isn't cloned into the image anymore.
 
 work_token="$(cat /run/secrets/github_token)"
 personal_token="$(cat /run/secrets/github_token_personal)"
