@@ -13,7 +13,6 @@ services:
         ANTHROPIC_VERTEX_PROJECT_ID: ${ANTHROPIC_VERTEX_PROJECT_ID:-consolo-dev-vertex-wsky}
         GIT_USER_NAME: ${GIT_USER_NAME}
         GIT_USER_EMAIL: ${GIT_USER_EMAIL}
-        DOTFILES_SHA: ${DOTFILES_SHA}
     image: claude-sandbox-mise:latest
     container_name: claude-sandbox-mise
 
@@ -44,7 +43,6 @@ services:
         OMP_MODEL: ${OMP_MODEL:-anthropic-vertex/claude-opus-4-7}
         GIT_USER_NAME: ${GIT_USER_NAME}
         GIT_USER_EMAIL: ${GIT_USER_EMAIL}
-        DOTFILES_SHA: ${DOTFILES_SHA}
     image: omp-sandbox:latest
     container_name: omp-sandbox
 
