@@ -99,6 +99,15 @@ alias bubu='brew update && brew upgrade'
 # Disables: bracketed paste, mode 2031, kitty kb stack, modifyOtherKeys; shows cursor; restores cooked tty.
 alias unwedge='printf "\e[?2004l\e[?2031l\e[<u\e[>4;0m\e[?25h"; stty sane'
 
+# Superset spoofs TERM_PROGRAM=kitty so claude-code parses CSI-u, but xterm.js
+# can't render Kitty graphics APC, so OMP's image-protocol writes leak as
+# gibberish during every spinner redraw. Disable OMP image protocol + OSC
+# notifications when the parent PTY is a Superset terminal.
+if [ -n "$SUPERSET_TERMINAL_ID" ]; then
+  export PI_FORCE_IMAGE_PROTOCOL=off
+  export PI_NOTIFICATIONS=off
+fi
+
 alias cc='claude'
 
 # Agent sandboxing (nono, sbx) and pi/omp aliases
