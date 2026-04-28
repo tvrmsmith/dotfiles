@@ -18,6 +18,7 @@ disabledExtensions:
   - skill:otel-telemetry:otel-configure
   - skill:claude-code-setup:claude-automation-recommender
   - skill:hookify:writing-hookify-rules
+  - skill:supacode-cli
 disabledProviders: 
   - agents
   - agents-md
