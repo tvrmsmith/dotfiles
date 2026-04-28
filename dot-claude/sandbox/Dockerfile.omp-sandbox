@@ -40,24 +40,34 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     gh \
     google-cloud-cli \
     lsb-release \
-    openssh-client
+    openssh-client \
+    stow
 
 # Oh My Pi coding agent (installed globally via bun)
 RUN --mount=type=cache,target=/opt/bun/install/cache \
   bun install -g @oh-my-pi/pi-coding-agent && \
   ln -s /opt/bun/bin/omp /usr/local/bin/pi
 
+# OMP launcher shim, registered as the `claude` agent so `sbx run claude -t omp-sandbox`
+# dispatches it directly via sbx's hardcoded agent table (no bashrc gymnastics, no
+# `shell` agent + auto-launch race). sbx execs /usr/local/bin/claude with TTY; we exec omp.
+# Args from sbx (e.g. --dangerously-skip-permissions) are discarded — they're claude-only.
+RUN cat > /usr/local/bin/claude <<'SH' && chmod +x /usr/local/bin/claude
+#!/usr/bin/env bash
+# sbx injects ANTHROPIC_API_KEY=proxy-managed; OMP would treat that as a real key
+# and skip the Vertex provider. Strip it before exec.
+unset ANTHROPIC_API_KEY
+exec omp --model "${OMP_MODEL}"
+SH
+
 # Anthropic Vertex extension (install to /opt, link after dotfiles stow)
 COPY --from=omp-vertex-ext . /opt/omp-extensions/anthropic-vertex/
 RUN --mount=type=cache,target=/opt/bun/install/cache \
   cd /opt/omp-extensions/anthropic-vertex && bun install --production
 
-ARG DOTFILES_SHA
-# Dotfiles (cache busted by commit SHA)
+# OMP plugin link (independent of dotfiles — baked once)
 USER agent
-RUN git clone https://github.com/tvrmsmith/dotfiles.git /home/agent/dotfiles && \
-    /home/agent/dotfiles/install.sh && \
-    mkdir -p /home/agent/.omp/plugins/node_modules && \
+RUN mkdir -p /home/agent/.omp/plugins/node_modules && \
     ln -s /opt/omp-extensions/anthropic-vertex /home/agent/.omp/plugins/node_modules/omp-extension-anthropic-vertex
 USER root
 
@@ -80,13 +90,8 @@ ENV OMP_MODEL=${OMP_MODEL}
 
 USER agent
 
-# Shell integration and auto-launch
-RUN echo 'eval "$(mise activate bash)"' >> /home/agent/.bashrc && \
-  cat >> /home/agent/.bashrc << 'EOF'
-
-# Auto-launch omp coding agent
-if [[ $- == *i* ]] && command -v omp &> /dev/null; then
-  unset ANTHROPIC_API_KEY  # sbx injects 'proxy-managed' sentinel; omp would mistake it for a real Anthropic key and skip Vertex
-  exec omp --model "$OMP_MODEL"
-fi
-EOF
+# Mise shell integration. The dotfiles are bind-mounted at runtime by
+# `_dsbx_install_helper_links` and stowed into ~/, so we add only sandbox-essential
+# lines to ~/.bashrc here. setup-signing-key.sh appends the sandbox gitconfig
+# include logic separately. Everything user-facing comes from the host RO mount.
+RUN echo 'eval "$(mise activate bash)"' >> /home/agent/.bashrc
