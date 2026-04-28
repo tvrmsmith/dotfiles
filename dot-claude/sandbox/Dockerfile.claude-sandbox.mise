@@ -34,14 +34,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     gh \
     google-cloud-cli \
     lsb-release \
-    openssh-client
+    openssh-client \
+    stow
 
-ARG DOTFILES_SHA
-# Dotfiles (cache busted by commit SHA)
+# Mise shell integration. Dotfiles are bind-mounted at runtime (RO) and stowed
+# into ~/ by `_dsbx_install_helper_links`; nothing user-facing is baked here.
 USER agent
 RUN echo 'eval "$(mise activate bash)"' >> /home/agent/.bashrc
-RUN git clone https://github.com/tvrmsmith/dotfiles.git /home/agent/dotfiles && \
-    /home/agent/dotfiles/install.sh
 
 # SSH commit-signing key (uploaded to GitHub at build time)
 COPY setup-signing-key.sh /tmp/setup-signing-key.sh
