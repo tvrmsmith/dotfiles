@@ -88,7 +88,6 @@ dsbx-build() {
   GITHUB_TOKEN_PERSONAL="$(OP_ACCOUNT=my.1password.com op read "$GIT_TOKEN_PERSONAL")" \
   GIT_USER_NAME="$(git config --global user.name)" \
   GIT_USER_EMAIL="$(git config --global user.email)" \
-  DOTFILES_SHA="$(git -C "$DEV_PERSONAL/dotfiles" rev-parse HEAD)" \
   docker compose -f "$_SBX_DIR/docker-compose.yml" build "$@" && \
   for img in $(docker compose -f "$_SBX_DIR/docker-compose.yml" config --images); do
     echo "Loading $img into sbx..." && \
@@ -103,6 +102,7 @@ dsbx-build() {
 # discovery) find what they expect.
 _DSBX_HELPER_ADC_DIR="$HOME/.config/gcloud"
 _DSBX_HELPER_PLUGINS_DIR="$HOME/.claude/plugins"
+_DSBX_HELPER_DOTFILES_DIR="$DEV_PERSONAL/dotfiles"
 
 # Build the helper-mount argv. Skips entries whose host path is missing so a
 # user without gcloud or claude plugins doesn't break sandbox creation.
@@ -110,29 +110,39 @@ _dsbx_helper_mounts() {
   local -a mounts=()
   [ -d "$_DSBX_HELPER_ADC_DIR" ] && mounts+=("${_DSBX_HELPER_ADC_DIR}:ro")
   [ -d "$_DSBX_HELPER_PLUGINS_DIR" ] && mounts+=("${_DSBX_HELPER_PLUGINS_DIR}:ro")
+  [ -d "$_DSBX_HELPER_DOTFILES_DIR" ] && mounts+=("${_DSBX_HELPER_DOTFILES_DIR}:ro")
   printf '%s\n' "${mounts[@]}"
 }
 
-# Install the in-container symlinks that point the canonical lookup paths at
-# the bind-mounted host directories. Idempotent; safe to run after every
-# `sbx create`. The bind mount lands at the same path inside the container as
-# on the host (verified via `mount` output), so HOST_HOME is the host $HOME.
+# Returns 0 (true) if the existing sandbox is missing any of the helper mounts
+# we currently expect. Used to auto-recreate sandboxes that predate a change to
+# the helper-mount set (e.g. adding gcloud ADC), since bind mounts can only be
+# attached at `sbx create` time.
+_dsbx_helper_mounts_stale() {
+  local name="$1"; shift
+  local -a expected=("$@")
+  (( ${#expected[@]} )) || return 1
+  local actual
+  actual=$(sbx ls --json 2>/dev/null \
+    | jq -r --arg n "$name" '.sandboxes[] | select(.name==$n) | .workspaces[]') || return 1
+  local m
+  for m in "${expected[@]}"; do
+    grep -qxF -- "$m" <<< "$actual" || return 0
+  done
+  return 1
+}
+
+# Run the in-container helper-link installer once per sandbox-create. The script
+# itself lives in the dotfiles repo and is executed via the read-only bind mount
+# at $DEV_PERSONAL/dotfiles inside the container.
+#
+# stderr from the in-container script propagates through (no log redirection)
+# so failures surface to the user; details still go to the dsbx log via `tee`.
 _dsbx_install_helper_links() {
   local name="$1"
-  sbx exec -i -e HOST_HOME="$HOME" "$name" -- bash -c '
-    set -e
-    if [ -d "$HOST_HOME/.config/gcloud" ]; then
-      install -d -m 700 "$HOME/.config/gcloud"
-      ln -sf "$HOST_HOME/.config/gcloud/application_default_credentials.json" \
-        "$HOME/.config/gcloud/application_default_credentials.json"
-    fi
-    if [ -d "$HOST_HOME/.claude/plugins" ]; then
-      # Plugin dir may pre-exist (from prior sandbox versions that copied it in).
-      # Replace with a symlink to the bind mount so freshness is automatic.
-      rm -rf "$HOME/.claude/plugins"
-      ln -sfn "$HOST_HOME/.claude/plugins" "$HOME/.claude/plugins"
-    fi
-  ' 2>>"$_DSBX_LOG"
+  local script_path="$DEV_PERSONAL/dotfiles/dot-agent-sandboxing/install-helper-links.sh"
+  sbx exec -i -e HOST_HOME="$HOME" -e DEV_PERSONAL="$DEV_PERSONAL" "$name" \
+    -- bash "$script_path" 2> >(tee -a "$_DSBX_LOG" >&2)
 }
 
 # Build sandbox name from prefix, cwd, and any extra workspaces.
@@ -198,6 +208,12 @@ _dsbx_run() {
   # NOT fed to _dsbx_name — they're shared host state, not part of identity.
   local -a helper_mounts=()
   helper_mounts=(${(f)"$(_dsbx_helper_mounts)"})
+  if ! (( recreate )) && sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
+    if _dsbx_helper_mounts_stale "$name" "${helper_mounts[@]}"; then
+      echo "$(date -Iseconds) Helper mounts stale on $name, auto-recreating" >> "$_DSBX_LOG"
+      recreate=1
+    fi
+  fi
   if (( recreate )); then
     echo "$(date -Iseconds) Recreating $name" >> "$_DSBX_LOG"
     sbx rm -f "$name" >> "$_DSBX_LOG" 2>&1 || true
@@ -207,17 +223,23 @@ _dsbx_run() {
   local created=0
   if ! sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
     echo "$(date -Iseconds) Creating $name" >> "$_DSBX_LOG"
-    if ! sbx create -t "$template" --name "$name" "$agent" . "${extra_ws[@]}" "${helper_mounts[@]}" >> "$_DSBX_LOG" 2>&1; then
+    if ! sbx create -t "$template" --name "$name" "$agent" . "${extra_ws[@]}" "${helper_mounts[@]}" 2> >(tee -a "$_DSBX_LOG" >&2) >> "$_DSBX_LOG"; then
       echo "$(date -Iseconds) Create failed; purging orphans and retrying $name" >> "$_DSBX_LOG"
       _dsbx_purge_orphans "$name"
-      sbx create -t "$template" --name "$name" "$agent" . "${extra_ws[@]}" "${helper_mounts[@]}" >> "$_DSBX_LOG" 2>&1 || return 1
+      if ! sbx create -t "$template" --name "$name" "$agent" . "${extra_ws[@]}" "${helper_mounts[@]}" 2> >(tee -a "$_DSBX_LOG" >&2) >> "$_DSBX_LOG"; then
+        echo "[dsbx] sbx create failed for $name (see $_DSBX_LOG)" >&2
+        return 1
+      fi
     fi
     created=1
   fi
   # Symlinks are install-once: re-run only on fresh create. The bind mounts
   # themselves stay live across container restarts.
   if (( created )); then
-    _dsbx_time "install-helper-links($name)" _dsbx_install_helper_links "$name" || return 1
+    if ! _dsbx_time "install-helper-links($name)" _dsbx_install_helper_links "$name"; then
+      echo "[dsbx] failed to install helper links in $name (see $_DSBX_LOG)" >&2
+      return 1
+    fi
   fi
   _dsbx_time "sync-gh-secret($name)" _dsbx_sync_github_secret "$name" || return 1
   if (( print_mode )); then
@@ -229,7 +251,7 @@ _dsbx_run() {
 
 dsbx-cc()      { _dsbx_run claude-sandbox-mise:latest        claude dsbx-cc      claude "$@"; }
 dsbx-ruby-cc() { _dsbx_run claude-sandbox-ruby-2.6.10:latest claude dsbx-ruby-cc claude "$@"; }
-dsbx-omp()     { _dsbx_run omp-sandbox:latest                shell  dsbx-omp     omp    "$@"; }
+dsbx-omp()     { _dsbx_run omp-sandbox:latest                claude dsbx-omp     omp    "$@"; }
 
 _dsbx_exec() {
   local prefix="$1"
