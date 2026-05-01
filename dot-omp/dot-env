@@ -1,0 +1,4 @@
+# Suppress OMP's automatic `CI=true` injection into bash tool spawns.
+# sherif (and likely a few other tools) refuse autofix in CI environments.
+OMP_BASH_NO_CI=1
+PI_BASH_NO_CI=1
