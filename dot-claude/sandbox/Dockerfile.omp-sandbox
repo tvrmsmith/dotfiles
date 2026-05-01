@@ -98,14 +98,11 @@ RUN install -d -o agent -g agent /home/agent/.omp /home/agent/.omp/plugins /home
   ln -s /opt/omp-extensions/anthropic-vertex /home/agent/.omp/plugins/node_modules/omp-extension-anthropic-vertex && \
   chown -h agent:agent /home/agent/.omp/plugins/node_modules/omp-extension-anthropic-vertex
 
-# SSH commit-signing key (uploaded to GitHub at build time)
-COPY setup-signing-key.sh /tmp/setup-signing-key.sh
-ARG GIT_USER_NAME
-ARG GIT_USER_EMAIL
-USER agent
-RUN --mount=type=secret,id=github_token,uid=1000 --mount=type=secret,id=github_token_personal,uid=1000 /tmp/setup-signing-key.sh omp-sandbox
-USER root
-RUN rm /tmp/setup-signing-key.sh
+# SSH commit signing relies on the host 1Password agent forwarded by sbx
+# (>=v0.28). The signing key lives in 1Password; ssh-add -L inside the
+# sandbox lists it, and the host's stowed dot-gitconfig provides the
+# matching `signingkey` value. setup-signing-key.sh is retained in the repo
+# but no longer baked into the image.
 
 # Build args last — only affect ENV, not tool installs above
 ARG GOOGLE_CLOUD_PROJECT
