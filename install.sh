@@ -48,25 +48,18 @@ init_submodules() {
 }
 
 setup_dotfiles() {
-	stow --dotfiles --adopt -d "$SCRIPT_DIR" -t "$HOME" .
-}
+	# ~/.warp must exist as a real directory before stow runs: Warp writes
+	# runtime data into it (worktrees/, typescript-language-server/, generated
+	# tab configs). If ~/.warp didn't exist, stow would fold ~/.warp ->
+	# dot-warp/ and route those runtime writes into this repo. Pre-creating
+	# the writeable subdirs forces per-file linking; themes/ is left absent
+	# so stow folds it (it's a read-only submodule).
+	mkdir -p "$HOME/.warp/tab_configs" "$HOME/.warp/default_tab_configs"
 
-setup_warp() {
-	# ~/.warp can't be a single fold-symlink to dot-warp/: Warp writes runtime
-	# data into it (worktrees/, typescript-language-server/, plus tab configs
-	# Warp itself generates) and those writes would land in this repo.
-	#
-	# Pre-create the writeable subdirs so stow per-file-symlinks them instead
-	# of folding the whole dir, then run a stow pass scoped at ~/.warp.
-	# `themes/` (a submodule with no runtime writes) is left absent so stow
-	# folds it into a single dir-symlink.
-	local warp_dir="$HOME/.warp"
-	mkdir -p "$warp_dir/tab_configs" "$warp_dir/default_tab_configs"
-	stow -d "$SCRIPT_DIR" -t "$warp_dir" dot-warp
+	stow --dotfiles -d "$SCRIPT_DIR" -t "$HOME" .
 }
 
 install_gnu_stow
 init_submodules
-setup_warp
 setup_dotfiles
 echo "Dot files installed."
