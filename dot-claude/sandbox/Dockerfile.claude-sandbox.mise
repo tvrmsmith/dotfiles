@@ -42,13 +42,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 USER agent
 RUN echo 'eval "$(mise activate bash)"' >> /home/agent/.bashrc
 
-# SSH commit-signing key (uploaded to GitHub at build time)
-COPY setup-signing-key.sh /tmp/setup-signing-key.sh
-ARG GIT_USER_NAME
-ARG GIT_USER_EMAIL
-RUN --mount=type=secret,id=github_token,uid=1000 --mount=type=secret,id=github_token_personal,uid=1000 /tmp/setup-signing-key.sh claude-sandbox-mise
-USER root
-RUN rm /tmp/setup-signing-key.sh
+# SSH commit signing relies on the host 1Password agent forwarded by sbx
+# (>=v0.28). The signing key lives in 1Password; ssh-add -L inside the
+# sandbox lists it, and the host's stowed dot-gitconfig provides the
+# matching `signingkey` value. setup-signing-key.sh is retained in the repo
+# but no longer baked into the image.
 
 # Build args last — only affect ENV, not tool installs above
 USER root
