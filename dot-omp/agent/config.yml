@@ -1,4 +1,4 @@
-lastChangelogVersion: 14.5.3
+lastChangelogVersion: 14.5.12
 modelRoles: 
   default: anthropic-vertex/claude-opus-4-7
   task: anthropic-vertex/claude-sonnet-4-6
@@ -47,3 +47,5 @@ task:
   simple: default
 mcp: 
   enableProjectConfig: false
+ask: 
+  timeout: 0
