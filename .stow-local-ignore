@@ -26,12 +26,11 @@
 ^/\.DS_Store$
 settings\.local\.json
 
+# Repo-scoped Claude Code config (skills, commands) lives at .claude/
+# at the repo root because Claude reads it from cwd. NOT a dotfile to
+# install into ~/.claude.
+^/\.claude$
+
+
 # Stow-related
 ^/\.stow-.*
-
-
-# dot-warp is managed by setup_warp() in install.sh, not by stow.
-# Warp writes runtime data into ~/.warp (worktrees, language servers,
-# generated tab configs); folding ~/.warp -> dot-warp/ would route
-# those writes into this repo.
-^/dot-warp$
