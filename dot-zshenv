@@ -13,6 +13,9 @@ export ANTHROPIC_VERTEX_PROJECT_ID="consolo-dev-vertex-wsky"
 export OMP_MODEL="anthropic-vertex/claude-opus-4-7"
 export ENABLE_LSP_TOOL=1
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+# Always overlay the personal-build oh-my-pi worktree into dsbx-omp sandboxes.
+# See dot-agent-sandboxing/20-dsbx.zsh:_dsbx_omp_sync_fork.
+export DSBX_OMP_FORK=1
 
 export NVM_DIR="$HOME/.nvm"
 
