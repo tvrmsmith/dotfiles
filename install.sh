@@ -52,27 +52,17 @@ setup_dotfiles() {
 }
 
 setup_warp() {
-	# Stow can't manage ~/.warp wholesale: Warp writes runtime data into it
-	# (worktrees/, typescript-language-server/, plus tab configs Warp itself
-	# generates). Letting stow fold ~/.warp -> dot-warp/ would route those
-	# writes into this repo. Instead, ensure ~/.warp and its writeable
-	# subdirs are real directories, then symlink only the tracked entries.
+	# ~/.warp can't be a single fold-symlink to dot-warp/: Warp writes runtime
+	# data into it (worktrees/, typescript-language-server/, plus tab configs
+	# Warp itself generates) and those writes would land in this repo.
+	#
+	# Pre-create the writeable subdirs so stow per-file-symlinks them instead
+	# of folding the whole dir, then run a stow pass scoped at ~/.warp.
+	# `themes/` (a submodule with no runtime writes) is left absent so stow
+	# folds it into a single dir-symlink.
 	local warp_dir="$HOME/.warp"
 	mkdir -p "$warp_dir/tab_configs" "$warp_dir/default_tab_configs"
-
-	# Top-level tracked entries (files and the themes submodule).
-	ln -sfn "$SCRIPT_DIR/dot-warp/keybindings.yaml" "$warp_dir/keybindings.yaml"
-	ln -sfn "$SCRIPT_DIR/dot-warp/themes" "$warp_dir/themes"
-
-	# Per-file links inside dirs Warp also writes into.
-	for f in "$SCRIPT_DIR"/dot-warp/tab_configs/*; do
-		[ -e "$f" ] || continue
-		ln -sfn "$f" "$warp_dir/tab_configs/$(basename "$f")"
-	done
-	for f in "$SCRIPT_DIR"/dot-warp/default_tab_configs/*; do
-		[ -e "$f" ] || continue
-		ln -sfn "$f" "$warp_dir/default_tab_configs/$(basename "$f")"
-	done
+	stow -d "$SCRIPT_DIR" -t "$warp_dir" dot-warp
 }
 
 install_gnu_stow
