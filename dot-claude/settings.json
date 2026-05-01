@@ -1,11 +1,11 @@
 {
   "env": {
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTS": "effort,thinking,adaptive_thinking,interleaved_thinking,web_search",
     "ANTHROPIC_VERTEX_PROJECT_ID": "consolo-dev-vertex-wsky",
     "CLAUDE_CODE_USE_VERTEX": "1",
     "CLOUD_ML_REGION": "global",
-    "SUPERSET_DEBUG_HOOKS": "1",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTS": "effort,thinking,adaptive_thinking,interleaved_thinking,web_search"
+    "SUPERSET_DEBUG_HOOKS": "1"
   },
   "permissions": {
     "allow": [
@@ -55,6 +55,16 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/claude-island-state.py"
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"${SUPACODE_SOCKET_PATH:-}\" ] && [ -n \"${SUPACODE_WORKTREE_ID:-}\" ] && [ -n \"${SUPACODE_TAB_ID:-}\" ] && [ -n \"${SUPACODE_SURFACE_ID:-}\" ] && { printf '%s claude\\n' \"$SUPACODE_WORKTREE_ID $SUPACODE_TAB_ID $SUPACODE_SURFACE_ID\"; cat; } | /usr/bin/nc -U -w1 \"$SUPACODE_SOCKET_PATH\" 2>/dev/null || true",
+            "timeout": 10
           }
         ]
       }
@@ -107,6 +117,15 @@
           {
             "type": "command",
             "command": "$HOME/.claude/hooks/nono-hook.sh"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"${SUPACODE_SOCKET_PATH:-}\" ] && [ -n \"${SUPACODE_WORKTREE_ID:-}\" ] && [ -n \"${SUPACODE_TAB_ID:-}\" ] && [ -n \"${SUPACODE_SURFACE_ID:-}\" ] && echo \"$SUPACODE_WORKTREE_ID $SUPACODE_TAB_ID $SUPACODE_SURFACE_ID 0\" | /usr/bin/nc -U -w1 \"$SUPACODE_SOCKET_PATH\" 2>/dev/null || true",
+            "timeout": 5
           }
         ]
       },
@@ -168,6 +187,16 @@
             "command": "python3 ~/.claude/hooks/claude-island-state.py"
           }
         ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"${SUPACODE_SOCKET_PATH:-}\" ] && [ -n \"${SUPACODE_WORKTREE_ID:-}\" ] && [ -n \"${SUPACODE_TAB_ID:-}\" ] && [ -n \"${SUPACODE_SURFACE_ID:-}\" ] && echo \"$SUPACODE_WORKTREE_ID $SUPACODE_TAB_ID $SUPACODE_SURFACE_ID 0\" | /usr/bin/nc -U -w1 \"$SUPACODE_SOCKET_PATH\" 2>/dev/null || true",
+            "timeout": 1
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -186,6 +215,24 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/claude-island-state.py"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"${SUPACODE_SOCKET_PATH:-}\" ] && [ -n \"${SUPACODE_WORKTREE_ID:-}\" ] && [ -n \"${SUPACODE_TAB_ID:-}\" ] && [ -n \"${SUPACODE_SURFACE_ID:-}\" ] && echo \"$SUPACODE_WORKTREE_ID $SUPACODE_TAB_ID $SUPACODE_SURFACE_ID 0\" | /usr/bin/nc -U -w1 \"$SUPACODE_SOCKET_PATH\" 2>/dev/null || true",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"${SUPACODE_SOCKET_PATH:-}\" ] && [ -n \"${SUPACODE_WORKTREE_ID:-}\" ] && [ -n \"${SUPACODE_TAB_ID:-}\" ] && [ -n \"${SUPACODE_SURFACE_ID:-}\" ] && { printf '%s claude\\n' \"$SUPACODE_WORKTREE_ID $SUPACODE_TAB_ID $SUPACODE_SURFACE_ID\"; cat; } | /usr/bin/nc -U -w1 \"$SUPACODE_SOCKET_PATH\" 2>/dev/null || true",
+            "timeout": 10
           }
         ]
       },
@@ -229,6 +276,15 @@
         "hooks": [
           {
             "type": "command",
+            "command": "[ -n \"${SUPACODE_SOCKET_PATH:-}\" ] && [ -n \"${SUPACODE_WORKTREE_ID:-}\" ] && [ -n \"${SUPACODE_TAB_ID:-}\" ] && [ -n \"${SUPACODE_SURFACE_ID:-}\" ] && echo \"$SUPACODE_WORKTREE_ID $SUPACODE_TAB_ID $SUPACODE_SURFACE_ID 1\" | /usr/bin/nc -U -w1 \"$SUPACODE_SOCKET_PATH\" 2>/dev/null || true",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
             "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
           }
         ]
@@ -243,6 +299,7 @@
     "architect@wellsky-plugins": true,
     "atlassian@claude-plugins-official": false,
     "bug-fix@wellsky-plugins": true,
+    "caveman@caveman": true,
     "chrome-devtools-mcp@chrome-devtools-plugins": false,
     "claude-code-setup@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,
@@ -252,9 +309,9 @@
     "csharp-lsp@claude-plugins-official": true,
     "hookify@claude-plugins-official": true,
     "iac-assistant@wellsky-plugins": true,
+    "otel-telemetry@wellsky-plugins": true,
     "pr-review-toolkit@claude-plugins-official": true,
     "product-management@wellsky-plugins": true,
-    "ruby-lsp@claude-code-lsps": false,
     "ruby-lsp@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
     "security-screener@wellsky-plugins": true,
@@ -262,19 +319,22 @@
     "skill-creator@claude-plugins-official": true,
     "sourcegraph@claude-plugins-official": true,
     "superpowers@claude-plugins-official": true,
+    "terraform-code-generation@hashicorp": true,
+    "terraform-module-generation@hashicorp": true,
     "typescript-lsp@claude-plugins-official": true,
     "unit-gen@wellsky-plugins": true,
     "workflow@wellsky-plugins": true,
     "ws-atlassian@wellsky-plugins": true,
-    "zapier@claude-plugins-official": true,
-    "caveman@caveman": true,
-    "otel-telemetry@wellsky-plugins": true,
-    "terraform-code-generation@hashicorp": true,
-    "terraform-module-generation@hashicorp": true,
-    "terrashark@terrashark": true,
-    "terragrunt-skill@jfr992": true
+    "zapier@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
+    "caveman": {
+      "source": {
+        "source": "github",
+        "repo": "JuliusBrussee/caveman"
+      },
+      "autoUpdate": true
+    },
     "chrome-devtools-plugins": {
       "source": {
         "source": "github",
@@ -289,23 +349,17 @@
       },
       "autoUpdate": true
     },
-    "wellsky-plugins": {
-      "source": {
-        "source": "git",
-        "url": "git@github.com:mediwareinc/wellsky-claude-code-plugins.git"
-      }
-    },
-    "caveman": {
-      "source": {
-        "source": "github",
-        "repo": "JuliusBrussee/caveman"
-      },
-      "autoUpdate": true
-    },
     "hashicorp": {
       "source": {
         "source": "github",
         "repo": "hashicorp/agent-skills"
+      },
+      "autoUpdate": true
+    },
+    "jfr992": {
+      "source": {
+        "source": "github",
+        "repo": "jfr992/terragrunt-skill"
       },
       "autoUpdate": true
     },
@@ -316,12 +370,11 @@
       },
       "autoUpdate": true
     },
-    "jfr992": {
+    "wellsky-plugins": {
       "source": {
-        "source": "github",
-        "repo": "jfr992/terragrunt-skill"
-      },
-      "autoUpdate": true
+        "source": "git",
+        "url": "git@github.com:mediwareinc/wellsky-claude-code-plugins.git"
+      }
     }
   },
   "syntaxHighlightingDisabled": false,
@@ -329,5 +382,6 @@
   "effortLevel": "high",
   "autoDreamEnabled": true,
   "skipDangerousModePermissionPrompt": true,
+  "editorMode": "vim",
   "skipAutoPermissionPrompt": true
 }
