@@ -2,3 +2,12 @@
 settings.local.json
 setup-vertex-credentials.sh
 
+
+
+# Warp worktrees live under ~/.warp/worktrees/<repo>/<branch>/ and contain
+# checkouts of unrelated repositories — never track them as dotfile content.
+dot-warp/worktrees/
+
+# Optional Warp helper: typescript-language-server installed via npm into
+# ~/.warp/typescript-language-server/. node_modules tree, do not track.
+dot-warp/typescript-language-server/
