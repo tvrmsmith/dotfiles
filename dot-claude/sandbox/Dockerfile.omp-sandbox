@@ -41,12 +41,31 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     google-cloud-cli \
     lsb-release \
     openssh-client \
-    stow
+    stow \
+    build-essential \
+    pkg-config \
+    libssl-dev
 
 # Oh My Pi coding agent (installed globally via bun)
+# OMP_VERSION is set from docker-compose.yml; bumping it busts only this layer
+# downward, leaving the apt/gcloud layers above cached.
+ARG OMP_VERSION=latest
 RUN --mount=type=cache,target=/opt/bun/install/cache \
-  bun install -g @oh-my-pi/pi-coding-agent && \
+  bun install -g @oh-my-pi/pi-coding-agent@${OMP_VERSION} && \
   ln -s /opt/bun/bin/omp /usr/local/bin/pi
+
+# Rust toolchain. Used by `dsbx-omp-build` (host-side helper) when it runs this
+# image as a one-shot container to build packages/natives for linux-arm64 from
+# the user's omp fork. Sandboxes themselves never invoke cargo — they consume
+# the prebuilt tree via bind mount.
+# rust-toolchain.toml in the fork pins the channel, so we install rustup with no
+# default toolchain and let the workspace materialize the right nightly on first use.
+ENV RUSTUP_HOME=/opt/rust/rustup
+ENV CARGO_HOME=/opt/rust/cargo
+ENV PATH="/opt/rust/cargo/bin:$PATH"
+RUN install -d -o agent -g agent /opt/rust /opt/rust/rustup /opt/rust/cargo && \
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    su agent -c 'sh -s -- -y --no-modify-path --default-toolchain none --profile minimal'
 
 # OMP launcher shim, registered as the `claude` agent so `sbx run claude -t omp-sandbox`
 # dispatches it directly via sbx's hardcoded agent table (no bashrc gymnastics, no
@@ -57,6 +76,14 @@ RUN cat > /usr/local/bin/claude <<'SH' && chmod +x /usr/local/bin/claude
 # sbx injects ANTHROPIC_API_KEY=proxy-managed; OMP would treat that as a real key
 # and skip the Vertex provider. Strip it before exec.
 unset ANTHROPIC_API_KEY
+# Prefer the host-built fork if dsbx-omp-build has produced one.
+# ~/.omp-fork is a symlink to the bind-mounted host cache (~/.cache/dsbx-omp-fork);
+# install-helper-links creates it unconditionally, so the existence check is on
+# the cli.ts file (dangling symlink => fall through to published omp).
+FORK_CLI="$HOME/.omp-fork/packages/coding-agent/src/cli.ts"
+if [ -f "$FORK_CLI" ]; then
+  exec bun "$FORK_CLI" --model "${OMP_MODEL}"
+fi
 exec omp --model "${OMP_MODEL}"
 SH
 
@@ -65,11 +92,11 @@ COPY --from=omp-vertex-ext . /opt/omp-extensions/anthropic-vertex/
 RUN --mount=type=cache,target=/opt/bun/install/cache \
   cd /opt/omp-extensions/anthropic-vertex && bun install --production
 
-# OMP plugin link (independent of dotfiles — baked once)
-USER agent
-RUN mkdir -p /home/agent/.omp/plugins/node_modules && \
-    ln -s /opt/omp-extensions/anthropic-vertex /home/agent/.omp/plugins/node_modules/omp-extension-anthropic-vertex
-USER root
+# OMP plugin link (independent of dotfiles — baked once). Run as root because
+# the base image's /home/agent may not be agent-owned at this stage.
+RUN install -d -o agent -g agent /home/agent/.omp /home/agent/.omp/plugins /home/agent/.omp/plugins/node_modules && \
+  ln -s /opt/omp-extensions/anthropic-vertex /home/agent/.omp/plugins/node_modules/omp-extension-anthropic-vertex && \
+  chown -h agent:agent /home/agent/.omp/plugins/node_modules/omp-extension-anthropic-vertex
 
 # SSH commit-signing key (uploaded to GitHub at build time)
 COPY setup-signing-key.sh /tmp/setup-signing-key.sh
@@ -88,10 +115,12 @@ ENV GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
 ENV GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION}
 ENV OMP_MODEL=${OMP_MODEL}
 
-USER agent
-
 # Mise shell integration. The dotfiles are bind-mounted at runtime by
 # `_dsbx_install_helper_links` and stowed into ~/, so we add only sandbox-essential
 # lines to ~/.bashrc here. setup-signing-key.sh appends the sandbox gitconfig
 # include logic separately. Everything user-facing comes from the host RO mount.
-RUN echo 'eval "$(mise activate bash)"' >> /home/agent/.bashrc
+# Run as root: the base image may not pre-create an agent-owned ~/.bashrc.
+RUN echo 'eval "$(mise activate bash)"' >> /home/agent/.bashrc && \
+  chown agent:agent /home/agent/.bashrc
+
+USER agent

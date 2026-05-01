@@ -103,6 +103,12 @@ dsbx-build() {
 _DSBX_HELPER_ADC_DIR="$HOME/.config/gcloud"
 _DSBX_HELPER_PLUGINS_DIR="$HOME/.claude/plugins"
 _DSBX_HELPER_DOTFILES_DIR="$DEV_PERSONAL/dotfiles"
+# Personal omp fork: source of truth (RO), and built tree (RO into sandboxes).
+# Build is host-side via `dsbx-omp-build`; sandboxes mount the built tree.
+_DSBX_OMP_FORK_HOST_DIR="$DEV_PERSONAL/oh-my-pi-personal-build"
+_DSBX_OMP_FORK_CACHE_DIR="$HOME/.cache/dsbx-omp-fork"
+_DSBX_OMP_FORK_BUN_VOLUME="dsbx-omp-fork-buncache"
+_DSBX_OMP_FORK_CARGO_VOLUME="dsbx-omp-fork-cargocache"
 
 # Build the helper-mount argv. Skips entries whose host path is missing so a
 # user without gcloud or claude plugins doesn't break sandbox creation.
@@ -111,8 +117,12 @@ _dsbx_helper_mounts() {
   [ -d "$_DSBX_HELPER_ADC_DIR" ] && mounts+=("${_DSBX_HELPER_ADC_DIR}:ro")
   [ -d "$_DSBX_HELPER_PLUGINS_DIR" ] && mounts+=("${_DSBX_HELPER_PLUGINS_DIR}:ro")
   [ -d "$_DSBX_HELPER_DOTFILES_DIR" ] && mounts+=("${_DSBX_HELPER_DOTFILES_DIR}:ro")
+  # Built fork is mounted RO; absent if the user has not run dsbx-omp-build yet,
+  # in which case the launcher shim falls back to the published omp install.
+  [ -d "$_DSBX_OMP_FORK_CACHE_DIR" ] && mounts+=("${_DSBX_OMP_FORK_CACHE_DIR}:ro")
   printf '%s\n' "${mounts[@]}"
 }
+
 
 # Returns 0 (true) if the existing sandbox is missing any of the helper mounts
 # we currently expect. Used to auto-recreate sandboxes that predate a change to
@@ -145,6 +155,83 @@ _dsbx_install_helper_links() {
     -- bash "$script_path" 2> >(tee -a "$_DSBX_LOG" >&2)
 }
 
+# Build the personal-build oh-my-pi worktree on the host into a cache dir that
+# every dsbx-omp sandbox bind-mounts RO. Replaces the per-sandbox sbx-cp + bun
+# install + cargo build cycle: one host build, N sandboxes share it live, no
+# --recreate needed when the fork changes (the bind mount is a live view).
+#
+# Layout:
+#   $_DSBX_OMP_FORK_HOST_DIR  RO source (your fork worktree)
+#   $_DSBX_OMP_FORK_CACHE_DIR  RW build output (rsynced source + node_modules + native .node)
+#   $_DSBX_OMP_FORK_BUN_VOLUME    docker named volume for bun download cache
+#   $_DSBX_OMP_FORK_CARGO_VOLUME  docker named volume for cargo registry+git+target
+#
+# Bun + cargo download caches live in named volumes (not bind mounts) — they're
+# only used during the build container's life and don't need to be visible to
+# sandboxes or the host.
+#
+# Idempotent and incremental: rsync only copies changed source, bun install
+# reuses node_modules, cargo reuses target/. Cold first run takes minutes
+# (rust nightly compile); warm reruns are seconds.
+dsbx-omp-build() {
+  if [ ! -d "$_DSBX_OMP_FORK_HOST_DIR" ]; then
+    echo "[dsbx-omp-build] fork worktree missing: $_DSBX_OMP_FORK_HOST_DIR" >&2
+    return 1
+  fi
+  if ! docker image inspect omp-sandbox:latest >/dev/null 2>&1; then
+    echo "[dsbx-omp-build] omp-sandbox:latest not built; run dsbx-build omp-sandbox first" >&2
+    return 1
+  fi
+  mkdir -p "$_DSBX_OMP_FORK_CACHE_DIR"
+  docker volume inspect "$_DSBX_OMP_FORK_BUN_VOLUME" >/dev/null 2>&1 || \
+    docker volume create "$_DSBX_OMP_FORK_BUN_VOLUME" >/dev/null
+  docker volume inspect "$_DSBX_OMP_FORK_CARGO_VOLUME" >/dev/null 2>&1 || \
+    docker volume create "$_DSBX_OMP_FORK_CARGO_VOLUME" >/dev/null
+
+  local host_hash=""
+  if command -v git >/dev/null 2>&1; then
+    host_hash=$(git -C "$_DSBX_OMP_FORK_HOST_DIR" rev-parse HEAD 2>/dev/null || true)
+  fi
+  echo "[dsbx-omp-build] building $_DSBX_OMP_FORK_HOST_DIR ${host_hash:+@ $host_hash} -> $_DSBX_OMP_FORK_CACHE_DIR" >&2
+  docker run --rm \
+    -v "$_DSBX_OMP_FORK_HOST_DIR:/src:ro" \
+    -v "$_DSBX_OMP_FORK_CACHE_DIR:/out" \
+    -v "$_DSBX_OMP_FORK_BUN_VOLUME:/root/.bun/install/cache" \
+    -v "$_DSBX_OMP_FORK_CARGO_VOLUME:/usr/local/cargo-cache" \
+    -e CARGO_HOME=/usr/local/cargo-cache \
+    -e CARGO_TARGET_DIR=/usr/local/cargo-cache/target \
+    -e HOST_HASH="$host_hash" \
+    --user 0:0 \
+    omp-sandbox:latest bash -c '\
+      set -euo pipefail; \
+      # rsync source into /out, excluding ephemera and host-built artifacts that
+      # would clash with linux-arm64 (darwin .node, host node_modules, .git, etc).
+      rsync -a --delete \
+        --exclude=.git --exclude=node_modules --exclude=target \
+        --exclude="packages/natives/native/*.node" \
+        /src/ /out/; \
+      cd /out; \
+      echo "[dsbx-omp-build] bun install" >&2; \
+      bun install --frozen-lockfile || bun install; \
+      echo "[dsbx-omp-build] cargo build linux-arm64 native" >&2; \
+      bun run --cwd packages/natives build; \
+      # Stamp the host HEAD hash for diagnostics. Computed on the host because
+      # /src is RO and may have permission/owner mismatches that confuse git.
+      printf "%s\n" "$HOST_HASH" > /out/.dsbx-fork-hash; \
+      echo "[dsbx-omp-build] ready @ ${HOST_HASH:-unknown}" >&2; \
+    '
+}
+
+# Wipe the build cache. Bun + cargo named volumes are kept by default (cold
+# rebuild from those is still fast); pass --all to nuke everything.
+dsbx-omp-clean() {
+  rm -rf "$_DSBX_OMP_FORK_CACHE_DIR"
+  if [ "${1:-}" = --all ]; then
+    docker volume rm -f "$_DSBX_OMP_FORK_BUN_VOLUME" "$_DSBX_OMP_FORK_CARGO_VOLUME" >/dev/null 2>&1 || true
+  fi
+  echo "[dsbx-omp-clean] removed $_DSBX_OMP_FORK_CACHE_DIR${1:+ + named volumes}" >&2
+}
+
 # Build sandbox name from prefix, cwd, and any extra workspaces.
 _dsbx_name() {
   local prefix="$1"
@@ -173,6 +260,9 @@ _dsbx_purge_orphans() {
 
 # Helper: create with template on first run, reconnect on subsequent runs.
 # Auto-detects git worktrees and mounts the source repo for git access.
+#
+# Args:
+#   template, agent, prefix, print_cmd
 #
 # Flags:
 #   --recreate     Tear down an existing sandbox before creating a new one.

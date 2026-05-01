@@ -41,6 +41,7 @@ services:
         GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-consolo-dev-vertex-wsky}
         GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-us}
         OMP_MODEL: ${OMP_MODEL:-anthropic-vertex/claude-opus-4-7}
+        OMP_VERSION: ${OMP_VERSION:-14.5.7}
         GIT_USER_NAME: ${GIT_USER_NAME}
         GIT_USER_EMAIL: ${GIT_USER_EMAIL}
     image: omp-sandbox:latest
