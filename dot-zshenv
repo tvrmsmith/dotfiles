@@ -32,5 +32,13 @@ export JIRA_USERNAME="trevor.smith@wellsky.com"
 export JIRA_BASE_URL="https://wellsky.atlassian.net"
 export JIRA_API_TOKEN="op://Employee/JIRA CLI Token/credential"
 
+
+# Route SSH agent traffic through 1Password so sandboxes (and any non-interactive
+# shell) see the same keys ssh(1) uses via IdentityAgent in ~/.ssh/config.
+# macOS default SSH_AUTH_SOCK points at an empty launchd agent.
+_ONEP_SSH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+[ -S "$_ONEP_SSH_SOCK" ] && export SSH_AUTH_SOCK="$_ONEP_SSH_SOCK"
+unset _ONEP_SSH_SOCK
+
 LOCAL="$HOME/.zshenv.local"
 [ -f "$LOCAL" ] && source "$LOCAL"
