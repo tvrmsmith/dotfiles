@@ -84,10 +84,6 @@ _dsbx_sync_github_secret() {
 }
 
 dsbx-build() {
-  GITHUB_TOKEN="$(op read "$GIT_TOKEN")" \
-  GITHUB_TOKEN_PERSONAL="$(OP_ACCOUNT=my.1password.com op read "$GIT_TOKEN_PERSONAL")" \
-  GIT_USER_NAME="$(git config --global user.name)" \
-  GIT_USER_EMAIL="$(git config --global user.email)" \
   docker compose -f "$_SBX_DIR/docker-compose.yml" build "$@" && \
   for img in $(docker compose -f "$_SBX_DIR/docker-compose.yml" config --images); do
     echo "Loading $img into sbx..." && \
