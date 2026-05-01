@@ -35,13 +35,22 @@ export JIRA_USERNAME="trevor.smith@wellsky.com"
 export JIRA_BASE_URL="https://wellsky.atlassian.net"
 export JIRA_API_TOKEN="op://Employee/JIRA CLI Token/credential"
 
-
 # Route SSH agent traffic through 1Password so sandboxes (and any non-interactive
 # shell) see the same keys ssh(1) uses via IdentityAgent in ~/.ssh/config.
 # macOS default SSH_AUTH_SOCK points at an empty launchd agent.
 _ONEP_SSH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 [ -S "$_ONEP_SSH_SOCK" ] && export SSH_AUTH_SOCK="$_ONEP_SSH_SOCK"
 unset _ONEP_SSH_SOCK
+
+# OMP's "bash" tool isn't /bin/bash — it's brush-core, an in-process Rust shell
+# that doesn't honor BASH_ENV. The native shell does honor PI_SHELL_PREFIX,
+# which prepends to every tool command (see pi-utils/procmgr.ts:getShellPrefix
+# and pi-coding-agent/src/exec/bash-executor.ts). We use it to source our
+# wrapper file, which scope-guards on OMPCODE=1 and registers a `bunx` wrapper
+# that strips CI for `bunx sherif` (sherif --fix refuses to run when CI is set,
+# and OMP injects CI=1 unconditionally via NON_INTERACTIVE_ENV).
+export PI_SHELL_PREFIX="source $HOME/.omp/bash-env.sh;"
+
 
 LOCAL="$HOME/.zshenv.local"
 [ -f "$LOCAL" ] && source "$LOCAL"
