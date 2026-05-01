@@ -28,3 +28,10 @@ settings\.local\.json
 
 # Stow-related
 ^/\.stow-.*
+
+
+# dot-warp is managed by setup_warp() in install.sh, not by stow.
+# Warp writes runtime data into ~/.warp (worktrees, language servers,
+# generated tab configs); folding ~/.warp -> dot-warp/ would route
+# those writes into this repo.
+^/dot-warp$
