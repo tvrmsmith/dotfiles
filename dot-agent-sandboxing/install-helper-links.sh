@@ -11,13 +11,22 @@
 # Effects:
 #   1. Symlink ~/.config/gcloud/application_default_credentials.json -> bind mount
 #   2. Symlink ~/.claude/plugins -> bind mount
-#   3. stow host dotfiles into ~ with --no-folding so leaf files become symlinks
+#   3. Symlink ~/.omp-fork -> $HOME/.cache/dsbx-omp-fork (built fork bind mount).
+#      Stable in-container path so the omp launcher shim doesn't need to know
+#      the host $HOME. Symlink is created unconditionally; the dangling case
+#      (no host build yet) is handled by the shim's existence check.
+#   4. stow host dotfiles into ~ with --no-folding so leaf files become symlinks
 #      into the read-only bind mount; sandbox-baked files (.bashrc, .gitconfig,
 #      .ssh/allowed_signers) and absolute-target symlinks are skipped via
 #      --ignore. .claude/settings.json is intentionally allowed: claude's
 #      first-run stub is removed first so the host config wins.
-#   4. Append pinned SSH known_hosts so first git@github.com clone does not
+#   5. Append pinned SSH known_hosts so first git@github.com clone does not
 #      prompt.
+#
+# The omp fork build itself runs from the host via `dsbx-omp-build` (in
+# 20-dsbx.zsh). It writes to ~/.cache/dsbx-omp-fork/ on the host, which is
+# bind-mounted RO into every dsbx-omp sandbox. Host edits go live in every
+# running sandbox the moment dsbx-omp-build completes — no --recreate.
 set -euo pipefail
 
 : "${HOST_HOME:?HOST_HOME required}"
@@ -37,7 +46,12 @@ if [ -d "$HOST_HOME/.claude/plugins" ]; then
   ln -sfn "$HOST_HOME/.claude/plugins" "$HOME/.claude/plugins"
 fi
 
-# 3. stow host dotfiles
+# 3. omp fork (built tree, bind-mounted from host cache). Symlink unconditionally:
+# the launcher shim probes ~/.omp-fork/packages/coding-agent/src/cli.ts and falls
+# back to the published omp install if the symlink is dangling (no host build yet).
+ln -sfn "$HOST_HOME/.cache/dsbx-omp-fork" "$HOME/.omp-fork"
+
+# 4. stow host dotfiles
 DOTFILES_MOUNT="$DEV_PERSONAL/dotfiles"
 if [ -d "$DOTFILES_MOUNT" ]; then
   cd "$DOTFILES_MOUNT"
