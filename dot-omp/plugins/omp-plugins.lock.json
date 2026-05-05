@@ -1,7 +1,7 @@
 {
   "plugins": {
     "@tvrmsmith/omp-extension-anthropic-vertex": {
-      "version": "0.1.3",
+      "version": "0.1.5",
       "enabledFeatures": null,
       "enabled": true
     }

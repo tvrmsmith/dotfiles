@@ -94,9 +94,9 @@ RUN --mount=type=cache,target=/opt/bun/install/cache \
 
 # OMP plugin link (independent of dotfiles — baked once). Run as root because
 # the base image's /home/agent may not be agent-owned at this stage.
-RUN install -d -o agent -g agent /home/agent/.omp /home/agent/.omp/plugins /home/agent/.omp/plugins/node_modules && \
-  ln -s /opt/omp-extensions/anthropic-vertex /home/agent/.omp/plugins/node_modules/omp-extension-anthropic-vertex && \
-  chown -h agent:agent /home/agent/.omp/plugins/node_modules/omp-extension-anthropic-vertex
+RUN install -d -o agent -g agent /home/agent/.omp /home/agent/.omp/plugins /home/agent/.omp/plugins/node_modules /home/agent/.omp/plugins/node_modules/@tvrmsmith && \
+  ln -s /opt/omp-extensions/anthropic-vertex /home/agent/.omp/plugins/node_modules/@tvrmsmith/omp-extension-anthropic-vertex && \
+  chown -h agent:agent /home/agent/.omp/plugins/node_modules/@tvrmsmith/omp-extension-anthropic-vertex
 
 # Allow git operations on bind-mounted volumes regardless of host uid. System
 # scope (not --global) so it applies to the agent runtime user, and dodges
