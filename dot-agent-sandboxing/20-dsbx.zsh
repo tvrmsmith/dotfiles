@@ -88,7 +88,14 @@ dsbx-build() {
   for img in $(docker compose -f "$_SBX_DIR/docker-compose.yml" config --images); do
     echo "Loading $img into sbx..." && \
     docker save "$img" | sbx template load /dev/stdin
-  done
+  done || return
+
+  # Auto-chain personal omp fork build when omp-sandbox was (re)built and the
+  # fork worktree exists. No args = built everything, so omp-sandbox is in.
+  if [ -d "$_DSBX_OMP_FORK_HOST_DIR" ] && { [ $# -eq 0 ] || (( ${@[(I)omp-sandbox]} )); }; then
+    echo "[dsbx-build] chaining dsbx-omp-build" >&2
+    dsbx-omp-build
+  fi
 }
 
 # Helper bind mounts. Workspaces appended to `sbx create` but excluded from
