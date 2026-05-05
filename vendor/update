@@ -26,6 +26,15 @@ ensure_remote() {
   fi
 }
 
+require_clean_tree() {
+  if ! git diff-index --quiet HEAD -- 2>/dev/null || \
+     [ -n "$(git ls-files --others --exclude-standard)" ]; then
+    echo "error: working tree has uncommitted changes; commit or stash first" >&2
+    git status --short >&2
+    exit 1
+  fi
+}
+
 update_one() {
   local entry=$1
   IFS='|' read -r prefix remote branch url <<<"$entry"
@@ -49,6 +58,7 @@ if [[ ${1:-} == "--list" || ${1:-} == "-l" ]]; then
 fi
 
 if [[ $# -eq 0 ]]; then
+  require_clean_tree
   for e in "${SUBTREES[@]}"; do update_one "$e"; done
   exit 0
 fi
@@ -57,6 +67,7 @@ target=$1
 for e in "${SUBTREES[@]}"; do
   IFS='|' read -r prefix _ _ _ <<<"$e"
   if [[ "$prefix" == "$target" ]]; then
+    require_clean_tree
     update_one "$e"; exit 0
   fi
 done

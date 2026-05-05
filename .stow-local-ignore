@@ -12,6 +12,10 @@
 ^/install\.sh$
 ^/setup-vertex-credentials\.sh$
 
+# Vendored third-party content (subtrees). Pulled into ~/.claude via
+# symlinks under dot-claude/skills/, not stowed directly.
+^/vendor
+
 # Documentation
 ^/docs
 
