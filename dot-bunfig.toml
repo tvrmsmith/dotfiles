@@ -1,0 +1,2 @@
+[install.scopes]
+"@tvrmsmith" = { url = "https://npm.pkg.github.com", token = "$NODE_AUTH_TOKEN" }
