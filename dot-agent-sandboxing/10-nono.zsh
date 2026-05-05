@@ -2,9 +2,6 @@
 
 # ── Nono (nsjail) ────────────────────────────────────────────────────────────
 
-_OMP_VERTEX="GOOGLE_CLOUD_PROJECT=$ANTHROPIC_VERTEX_PROJECT_ID GOOGLE_CLOUD_LOCATION=$CLOUD_ML_REGION"
-alias pi="$_OMP_VERTEX command pi --model $OMP_MODEL"
-alias omp="$_OMP_VERTEX command omp --model $OMP_MODEL"
 
 nono-agent() {
   local worktree_args=()
