@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Update vendored subtrees from upstream.
+#
+# Usage:
+#   vendor/update                    # update all registered subtrees
+#   vendor/update 1password-skill    # update one
+#   vendor/update --list             # show registered subtrees
+#
+# To register a new subtree, add a line to SUBTREES below:
+#   <prefix-under-vendor>|<remote-name>|<branch>|<upstream-url>
+set -euo pipefail
+
+# prefix|remote|branch|url
+SUBTREES=(
+  "1password-skill|petejm-1password|main|https://github.com/petejm/1password-skill.git"
+)
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+ensure_remote() {
+  local remote=$1 url=$2
+  if ! git remote get-url "$remote" >/dev/null 2>&1; then
+    echo "→ adding remote $remote → $url"
+    git remote add "$remote" "$url"
+  fi
+}
+
+update_one() {
+  local entry=$1
+  IFS='|' read -r prefix remote branch url <<<"$entry"
+  ensure_remote "$remote" "$url"
+  echo "→ updating vendor/$prefix from $remote/$branch"
+  git fetch --quiet "$remote" "$branch"
+  git subtree pull --prefix="vendor/$prefix" "$remote" "$branch" --squash \
+    -m "vendor: update $prefix from $remote/$branch"
+}
+
+list() {
+  printf "%-24s %-22s %-8s %s\n" PREFIX REMOTE BRANCH URL
+  for e in "${SUBTREES[@]}"; do
+    IFS='|' read -r prefix remote branch url <<<"$e"
+    printf "%-24s %-22s %-8s %s\n" "$prefix" "$remote" "$branch" "$url"
+  done
+}
+
+if [[ ${1:-} == "--list" || ${1:-} == "-l" ]]; then
+  list; exit 0
+fi
+
+if [[ $# -eq 0 ]]; then
+  for e in "${SUBTREES[@]}"; do update_one "$e"; done
+  exit 0
+fi
+
+target=$1
+for e in "${SUBTREES[@]}"; do
+  IFS='|' read -r prefix _ _ _ <<<"$e"
+  if [[ "$prefix" == "$target" ]]; then
+    update_one "$e"; exit 0
+  fi
+done
+
+echo "error: no registered subtree named '$target'" >&2
+echo "registered:" >&2
+list >&2
+exit 1
