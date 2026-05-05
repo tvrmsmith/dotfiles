@@ -1,14 +1,28 @@
-if command -v zoxide > /dev/null; then
+if command -v zoxide >/dev/null; then
   eval "$(zoxide init bash)"
 fi
-# Source the Lazyman shell initialization for aliases and nvims selector
+
+# mise — interactive activation. dot-zshenv handles non-interactive shells via
+# `mise activate zsh --shims`; bash sandbox shells reach mise through the
+# /mise/shims dir prepended to PATH in the Dockerfiles.
+if command -v mise &>/dev/null; then
+  eval "$(mise activate bash)"
+fi
+
+# Lazyman nvim helpers (host-only; absent in sandboxes)
 # shellcheck source=.config/nvim-Lazyman/.lazymanrc
 [ -f ~/.config/nvim-Lazyman/.lazymanrc ] && source ~/.config/nvim-Lazyman/.lazymanrc
-# Source the Lazyman .nvimsbind for nvims key binding
 # shellcheck source=.config/nvim-Lazyman/.nvimsbind
 [ -f ~/.config/nvim-Lazyman/.nvimsbind ] && source ~/.config/nvim-Lazyman/.nvimsbind
 
-source /Users/trevor.smith/dev/wellsky/consolo.docker-dev/.helpers/compose.sh
-source /Users/trevor.smith/dev/wellsky/consolo.docker-dev/.helpers/git.sh
-source /Users/trevor.smith/dev/wellsky/consolo.docker-dev/.helpers/system.sh
-source <(just --completions bash)
+# Consolo dev helpers — work-machine path; missing on sandboxes and any other
+# host. Mirrors the guard in dot-zshrc.
+if [ -d "$CONSOLO_DOCKER_DEV_DIR/.helpers" ]; then
+  source "$CONSOLO_DOCKER_DEV_DIR/.helpers/compose.sh"
+  source "$CONSOLO_DOCKER_DEV_DIR/.helpers/git.sh"
+  source "$CONSOLO_DOCKER_DEV_DIR/.helpers/system.sh"
+fi
+
+if command -v just &>/dev/null; then
+  source <(just --completions bash)
+fi

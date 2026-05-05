@@ -15,11 +15,12 @@
 #      Stable in-container path so the omp launcher shim doesn't need to know
 #      the host $HOME. Symlink is created unconditionally; the dangling case
 #      (no host build yet) is handled by the shim's existence check.
-#   4. stow host dotfiles into ~ with --no-folding so leaf files become symlinks
-#      into the read-only bind mount; sandbox-baked files (.bashrc, .gitconfig,
-#      .ssh/allowed_signers) and absolute-target symlinks are skipped via
-#      --ignore. .claude/settings.json is intentionally allowed: claude's
-#      first-run stub is removed first so the host config wins.
+#   4. stow host dotfiles into ~ with --no-folding so leaf files become
+#      symlinks into the read-only bind mount. Base-image stub files
+#      (~/.bashrc, ~/.gitconfig, ~/.claude/settings.json) are removed first
+#      so stow can land the host versions; absolute-target symlinks are
+#      skipped via --ignore. The dir `dot-claude/sandbox/` (Dockerfiles,
+#      docker-compose.yml) is also ignored — it has no place in $HOME.
 #   5. Append pinned SSH known_hosts so first git@github.com clone does not
 #      prompt.
 #
@@ -56,37 +57,29 @@ DOTFILES_MOUNT="$DEV_PERSONAL/dotfiles"
 if [ -d "$DOTFILES_MOUNT" ]; then
   cd "$DOTFILES_MOUNT"
 
-  # claude writes a 6-line stub at first run; remove it so stow can land the
-  # full host settings.json as a leaf symlink.
-  rm -f "$HOME/.claude/settings.json"
+  # Base-image / first-run stubs that would conflict with stow. Remove them
+  # so the host-stowed leaf wins. ~/.gitconfig.sandbox is image-baked and
+  # included by the host ~/.gitconfig — leave it alone.
+  rm -f \
+    "$HOME/.bashrc" \
+    "$HOME/.gitconfig" \
+    "$HOME/.claude/settings.json"
 
-  # Sandbox-baked files owned by Dockerfile / setup-signing-key.sh. Stowing
-  # over them would corrupt the in-container identity, so skip them.
-  # The repo ships .stow-local-ignore at its root, which (per stow semantics)
-  # takes precedence over ~/.stow-global-ignore. Sandbox-only ignores must go
-  # through --ignore on the command line.
-  ignores=(
-    bashrc
-    gitconfig
-    allowed_signers
-    sandbox
-  )
-
-  # Absolute-target symlinks point at host-only repos that are not bind-mounted
-  # into the sandbox; stow refuses them as fatal conflicts (no --skip flag).
-  # Discover dynamically so adding a new host-linked skill does not silently
-  # break sandbox creation.
+  # `dot-claude/sandbox/` (Dockerfiles, docker-compose.yml) has no place in
+  # $HOME. Absolute-target symlinks point at host-only repos that are not
+  # bind-mounted into the sandbox; stow refuses them as fatal conflicts
+  # (no --skip flag), so discover them dynamically — adding a new host-linked
+  # skill must not silently break sandbox creation.
+  ignore_args=(--ignore=sandbox)
   while IFS= read -r abs; do
-    ignores+=("$(basename "$abs")")
+    ignore_args+=(--ignore="$(basename "$abs")")
   done < <(find . -type l ! -path "./.git/*" -exec sh -c \
     'tgt=$(readlink "$1"); case "$tgt" in /*) echo "$1";; esac' _ {} \;)
 
-  ignore_args=()
-  for pat in "${ignores[@]}"; do ignore_args+=(--ignore="$pat"); done
   stow --no-folding --dotfiles -t "$HOME" "${ignore_args[@]}" .
 
-  # 4. Pinned SSH known_hosts. ~/.ssh is sandbox-baked (signing keys), so we
-  # append rather than symlink, then dedupe.
+  # 5. Pinned SSH known_hosts. ~/.ssh may be sandbox-baked, so we append rather
+  # than symlink, then dedupe.
   if [ -f "$DOTFILES_MOUNT/dot-ssh/known_hosts.pinned" ]; then
     install -d -m 700 "$HOME/.ssh"
     cat "$DOTFILES_MOUNT/dot-ssh/known_hosts.pinned" >> "$HOME/.ssh/known_hosts"
