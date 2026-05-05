@@ -21,7 +21,8 @@ export default function cavemanReminder(pi: ExtensionAPI) {
 	pi.setLabel("Caveman Lite Reminder");
 
 	pi.on("before_agent_start", async (event) => {
-		if (event.systemPrompt.includes(SENTINEL)) return;
-		return { systemPrompt: event.systemPrompt + REMINDER };
+		const joined = event.systemPrompt.join("\n");
+		if (joined.includes(SENTINEL)) return;
+		return { systemPrompt: [...event.systemPrompt, REMINDER.trim()] };
 	});
 }
