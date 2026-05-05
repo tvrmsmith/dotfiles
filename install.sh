@@ -47,6 +47,16 @@ init_submodules() {
 	fi
 }
 
+update_vendored_skills() {
+	# Refresh subtree-vendored content (e.g. third-party Claude skills).
+	# vendor/update is idempotent — no-op when subtrees are already current.
+	if [ -x "$SCRIPT_DIR/vendor/update" ]; then
+		echo "Updating vendored subtrees..."
+		"$SCRIPT_DIR/vendor/update"
+		echo "Vendored subtrees up to date."
+	fi
+}
+
 setup_dotfiles() {
 	# ~/.warp must exist as a real directory before stow runs: Warp writes
 	# runtime data into it (worktrees/, typescript-language-server/, generated
@@ -61,5 +71,6 @@ setup_dotfiles() {
 
 install_gnu_stow
 init_submodules
+update_vendored_skills
 setup_dotfiles
 echo "Dot files installed."
