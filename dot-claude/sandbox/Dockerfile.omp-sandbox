@@ -98,11 +98,24 @@ RUN install -d -o agent -g agent /home/agent/.omp /home/agent/.omp/plugins /home
   ln -s /opt/omp-extensions/anthropic-vertex /home/agent/.omp/plugins/node_modules/omp-extension-anthropic-vertex && \
   chown -h agent:agent /home/agent/.omp/plugins/node_modules/omp-extension-anthropic-vertex
 
-# SSH commit signing relies on the host 1Password agent forwarded by sbx
-# (>=v0.28). The signing key lives in 1Password; ssh-add -L inside the
-# sandbox lists it, and the host's stowed dot-gitconfig provides the
-# matching `signingkey` value. setup-signing-key.sh is retained in the repo
-# but no longer baked into the image.
+# Allow git operations on bind-mounted volumes regardless of host uid. System
+# scope (not --global) so it applies to the agent runtime user, and dodges
+# the Docker Desktop /root-ownership-remap quirk that breaks --global writes.
+RUN git config --system --add safe.directory '*'
+
+# SSH commit signing uses the host 1Password agent forwarded by sbx (>=0.28):
+# `ssh-add -L` inside the sandbox lists the host signing key. The stowed host
+# dot-gitconfig provides the matching `signingkey` value, but its
+# `gpg.ssh.program` points at the macOS 1Password helper. Override it via
+# ~/.gitconfig.sandbox (already included by the host gitconfig) so signing
+# uses the linux ssh-keygen. Pin allowedSignersFile to the stowed host file.
+RUN install -d -o agent -g agent /home/agent && \
+  printf '%s\n' \
+    '[gpg "ssh"]' \
+    '	program = /usr/bin/ssh-keygen' \
+    '	allowedSignersFile = /home/agent/.ssh/allowed_signers' \
+    > /home/agent/.gitconfig.sandbox && \
+  chown agent:agent /home/agent/.gitconfig.sandbox
 
 # Build args last — only affect ENV, not tool installs above
 ARG GOOGLE_CLOUD_PROJECT
@@ -112,12 +125,13 @@ ENV GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
 ENV GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION}
 ENV OMP_MODEL=${OMP_MODEL}
 
-# Mise shell integration. The dotfiles are bind-mounted at runtime by
-# `_dsbx_install_helper_links` and stowed into ~/, so we add only sandbox-essential
-# lines to ~/.bashrc here. setup-signing-key.sh appends the sandbox gitconfig
-# include logic separately. Everything user-facing comes from the host RO mount.
-# Run as root: the base image may not pre-create an agent-owned ~/.bashrc.
-RUN echo 'eval "$(mise activate bash)"' >> /home/agent/.bashrc && \
-  chown agent:agent /home/agent/.bashrc
+# Stamp /home/agent ownership before USER agent. The host dotfiles tree is
+# bind-mounted RO at runtime by `_dsbx_install_helper_links` and stowed into
+# ~/, so shell rc files (.bashrc, .gitconfig) come from the host — nothing
+# user-facing is baked here. Docker Desktop's containerd snapshotter
+# intermittently remaps unstamped dir ownership to nobody:nogroup across
+# layer transitions, leaving the runtime agent user unable to write its own
+# home; re-stamping here pins ownership into the exported image.
+RUN chown agent:agent /home/agent
 
 USER agent
