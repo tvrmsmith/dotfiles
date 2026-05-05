@@ -108,9 +108,23 @@ if [ -n "$SUPERSET_TERMINAL_ID" ]; then
   export PI_NOTIFICATIONS=off
 fi
 
+# Vertex env prefix shared by pi/omp and nono-omp-*
+_OMP_VERTEX="GOOGLE_CLOUD_PROJECT=$ANTHROPIC_VERTEX_PROJECT_ID GOOGLE_CLOUD_LOCATION=$CLOUD_ML_REGION"
+alias pi="$_OMP_VERTEX command pi --model $OMP_MODEL"
+omp() {
+  case "$1" in
+    agents|commit|config|grep|grievances|jupyter|plugin|read|search|setup|shell|ssh|stats|update|--help|-h|--version)
+      env ${=_OMP_VERTEX} command omp "$@"
+      ;;
+    *)
+      env ${=_OMP_VERTEX} command omp --model $OMP_MODEL "$@"
+      ;;
+  esac
+}
+
 alias cc='claude'
 
-# Agent sandboxing (nono, sbx) and pi/omp aliases
+# Agent sandboxing (nono, sbx); relies on $_OMP_VERTEX defined above
 [ -d ~/.agent-sandboxing ] && for _f in ~/.agent-sandboxing/*.zsh; do source "$_f"; done; unset _f
 
 # bun completions
