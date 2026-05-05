@@ -93,8 +93,11 @@ RUN --mount=type=cache,target=/usr/local/bundle/cache \
 # Create helper script for bundle exec
 RUN printf '#!/bin/bash\nbundle exec "$@"' > /usr/local/bin/b && chmod 755 /usr/local/bin/b
 
-# Configure git to allow operations in mounted volumes
-RUN git config --global --add safe.directory '*'
+# Configure git to allow operations in mounted volumes (system-wide so it
+# applies to the agent user at runtime; --global would target /root which
+# is irrelevant and additionally gets chowned to nobody by an upstream
+# BuildKit cache-mount quirk in the bundler step above).
+RUN git config --system --add safe.directory '*'
 
 COPY . /home/agent/.claude
 
