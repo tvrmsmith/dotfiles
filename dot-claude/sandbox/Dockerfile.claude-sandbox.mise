@@ -37,19 +37,26 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     openssh-client \
     stow
 
-# Mise shell integration. Dotfiles are bind-mounted at runtime (RO) and stowed
-# into ~/ by `_dsbx_install_helper_links`; nothing user-facing is baked here.
-USER agent
-RUN echo 'eval "$(mise activate bash)"' >> /home/agent/.bashrc
-
-# SSH commit signing relies on the host 1Password agent forwarded by sbx
-# (>=v0.28). The signing key lives in 1Password; ssh-add -L inside the
-# sandbox lists it, and the host's stowed dot-gitconfig provides the
-# matching `signingkey` value. setup-signing-key.sh is retained in the repo
-# but no longer baked into the image.
+# Shell integration (mise activation, helper sources) lives in the host
+# dot-bashrc, which is bind-mounted RO and stowed into ~/.bashrc by
+# `_dsbx_install_helper_links`. The /mise/shims dir on PATH (set above) is
+# enough for non-interactive `mise exec`; activate is the interactive sugar.
+#
+# SSH commit signing uses the host 1Password agent forwarded by sbx (>=0.28):
+# `ssh-add -L` inside the sandbox lists the host signing key. The stowed host
+# dot-gitconfig provides the matching `signingkey` value, but its
+# `gpg.ssh.program` points at the macOS 1Password helper. Override it via
+# ~/.gitconfig.sandbox (already included by the host gitconfig) so signing
+# uses the linux ssh-keygen. Pin allowedSignersFile to the stowed host file.
+RUN install -d -o agent -g agent /home/agent && \
+  printf '%s\n' \
+    '[gpg "ssh"]' \
+    '	program = /usr/bin/ssh-keygen' \
+    '	allowedSignersFile = /home/agent/.ssh/allowed_signers' \
+    > /home/agent/.gitconfig.sandbox && \
+  chown agent:agent /home/agent/.gitconfig.sandbox
 
 # Build args last — only affect ENV, not tool installs above
-USER root
 ARG CLAUDE_CODE_USE_VERTEX
 ARG CLOUD_ML_REGION
 ARG ANTHROPIC_VERTEX_PROJECT_ID
