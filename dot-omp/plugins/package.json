@@ -1,7 +1,10 @@
 {
   "name": "omp-plugins",
   "private": true,
+  "scripts": {
+    "postinstall": "ln -sfn ${BUN_INSTALL:-$HOME/.bun}/install/global/node_modules/@oh-my-pi node_modules/@oh-my-pi"
+  },
   "dependencies": {
-    "omp-extension-anthropic-vertex": "file:node_modules/omp-extension-anthropic-vertex"
+    "@tvrmsmith/omp-extension-anthropic-vertex": "0.1.3"
   }
 }
