@@ -1,0 +1,214 @@
+/* Tokyo Night — Vimium C Custom CSS
+ * Based on https://github.com/tokyo-night/tokyo-night-vscode-theme (Night variant)
+ *
+ * Paste into Vimium C Options → Custom CSS
+ */
+
+/* #ui */
+
+/* Hint markers */
+.LH {
+  background: linear-gradient(#1e2440, #171c32) !important;
+  border: 1px solid #29355a !important;
+  border-radius: 4px !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6) !important;
+  color: #a9b1d6 !important;
+  font-family: "JetBrains Mono", "Fira Code", Menlo, monospace !important;
+  font-size: 13px !important;
+  padding: 2px 5px !important;
+}
+
+/* Matched/typed hint characters */
+.MC, .MH {
+  color: #545c7e !important;
+}
+
+/* Current/active hint character */
+.BH {
+  color: #f7768e !important;
+}
+
+/* Inactive hints */
+.IH {
+  background: #16161e80 !important;
+  border: 1px solid #414868 !important;
+}
+
+/* Dark mode hints */
+.D > .LH {
+  background: linear-gradient(#1e2440, #171c32) !important;
+  border-color: #29355a !important;
+}
+
+/* HUD */
+.HUD {
+  color: #787c99 !important;
+}
+
+.HUD:after {
+  background: #16161e !important;
+  border: 1px solid #101014 !important;
+  border-radius: 4px 4px 0 0 !important;
+}
+
+.HUD.D {
+  color: #787c99 !important;
+}
+
+.HUD.D:after {
+  background: #16161e !important;
+  border-color: #101014 !important;
+}
+
+/* Flash highlight */
+.Flash {
+  box-shadow: 0 0 6px 3px #7aa2f7 !important;
+}
+
+/* Selection indicator */
+.Sel {
+  box-shadow: 0 0 6px 3px #ff9e64 !important;
+}
+
+/* Frame border */
+.Frame {
+  border-color: #7aa2f7 !important;
+}
+
+/* Find bar */
+.r {
+  background: #16161e !important;
+  border-radius: 4px 4px 0 0 !important;
+  box-shadow: inset 0 0 2px 1px #101014 !important;
+  color: #a9b1d6 !important;
+}
+
+.r.D {
+  background: #16161e !important;
+  color: #a9b1d6 !important;
+}
+
+/* #omni */
+
+body {
+  background: #1a1b26 !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7) !important;
+}
+
+body::after {
+  border-color: #101014 !important;
+}
+
+#bar {
+  background: #1a1b26 !important;
+  border-bottom: 1px solid #101014 !important;
+}
+
+#input {
+  background: #16161e !important;
+  border: 1px solid #0f0f14 !important;
+  box-shadow: 0 0 2px #101014 !important;
+  color: #a9b1d6 !important;
+  caret-color: #c0caf5 !important;
+  font-family: "JetBrains Mono", "Fira Code", Menlo, monospace !important;
+}
+
+#input::placeholder {
+  color: #787c998A !important;
+}
+
+#toolbar {
+  color: #787c99 !important;
+}
+
+.button:hover {
+  background: #202330 !important;
+  color: #a9b1d6 !important;
+}
+
+#list {
+  background: #1a1b26 !important;
+}
+
+.item {
+  border-bottom: 1px solid #101014 !important;
+}
+
+.item:hover {
+  background-color: #1e202e !important;
+}
+
+.item.s {
+  background-color: #202330 !important;
+  border-left: 3px solid #3d59a1 !important;
+}
+
+.p {
+  border-color: #3d59a1 !important;
+}
+
+.top {
+  color: #a9b1d6 !important;
+}
+
+match {
+  color: #668ac4 !important;
+  font-weight: bold !important;
+}
+
+.title > match {
+  text-decoration: underline !important;
+  text-decoration-color: #668ac440 !important;
+}
+
+a {
+  color: #6183bb !important;
+}
+
+a:hover {
+  color: #7dcfff !important;
+}
+
+.label, .time {
+  color: #515670 !important;
+}
+
+.icon {
+  fill: #787c99 !important;
+  fill: var(--vc-c, #787c99) !important;
+}
+
+.tab, .math {
+  stroke: #787c99 !important;
+  stroke: var(--vc-c, #787c99) !important;
+}
+
+.item.s .icon {
+  fill: #a9b1d6 !important;
+  fill: var(--vc-c, #a9b1d6) !important;
+}
+
+.item.s .tab, .item.s .math {
+  stroke: #a9b1d6 !important;
+  stroke: var(--vc-c, #a9b1d6) !important;
+}
+
+.alt .alt-index::after {
+  background: #1a1b26 !important;
+  color: #bb9af7 !important;
+}
+
+/* #find */
+
+::selection {
+  background: #515c7e4d !important;
+}
+
+/* #find:host */
+
+/* #find:selection */
+
+::selection {
+  background: #515c7e4d !important;
+  color: #a9b1d6 !important;
+}
