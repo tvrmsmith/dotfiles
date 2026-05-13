@@ -19,6 +19,12 @@
 # Documentation
 ^/docs
 
+# Non-stowed extras (browser themes, etc.)
+^/extras
+
+# Bat theme conversion scripts
+^/bat-into-tokyonight
+
 # Version control
 ^/\.git
 ^/\.gitignore$
