@@ -317,15 +317,16 @@
     "security-screener@wellsky-plugins": true,
     "shared@wellsky-plugins": true,
     "skill-creator@claude-plugins-official": true,
-    "sourcegraph@claude-plugins-official": true,
+    "sourcegraph@claude-plugins-official": false,
     "superpowers@claude-plugins-official": true,
-    "terraform-code-generation@hashicorp": true,
-    "terraform-module-generation@hashicorp": true,
+    "terraform-code-generation@hashicorp": false,
+    "terraform-module-generation@hashicorp": false,
     "typescript-lsp@claude-plugins-official": true,
     "unit-gen@wellsky-plugins": true,
     "workflow@wellsky-plugins": true,
     "ws-atlassian@wellsky-plugins": true,
-    "zapier@claude-plugins-official": true
+    "zapier@claude-plugins-official": false,
+    "warp@claude-code-warp": true
   },
   "extraKnownMarketplaces": {
     "caveman": {
@@ -374,6 +375,12 @@
       "source": {
         "source": "git",
         "url": "git@github.com:mediwareinc/wellsky-claude-code-plugins.git"
+      }
+    },
+    "claude-code-warp": {
+      "source": {
+        "source": "github",
+        "repo": "warpdotdev/claude-code-warp"
       }
     }
   },
