@@ -122,7 +122,7 @@ omp() {
   esac
 }
 
-alias cc='claude'
+alias cc='claude --dangerously-skip-permissions'
 
 # Agent sandboxing (nono, sbx); relies on $_OMP_VERTEX defined above
 [ -d ~/.agent-sandboxing ] && for _f in ~/.agent-sandboxing/*.zsh; do source "$_f"; done; unset _f
