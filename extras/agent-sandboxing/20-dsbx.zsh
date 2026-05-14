@@ -1,6 +1,6 @@
 # Docker Sandbox (sbx) launchers and credential sync
 
-_SBX_DIR="$DEV_PERSONAL/dotfiles/dot-claude/sandbox"
+_SBX_DIR="$_AGENT_SBX_ROOT/templates"
 _DSBX_AUTH_DIR="$HOME/.cache/dsbx-auth"
 _DSBX_LOG="$HOME/.cache/dsbx-auth/dsbx.log"
 _DSBX_SECRET_TTL=3600  # 1 hour: skip GitHub secret resync if cached marker is fresher than this
@@ -145,18 +145,10 @@ _dsbx_helper_mounts_stale() {
   return 1
 }
 
-# Run the in-container helper-link installer once per sandbox-create. The script
-# itself lives in the dotfiles repo and is executed via the read-only bind mount
-# at $DEV_PERSONAL/dotfiles inside the container.
-#
-# stderr from the in-container script propagates through (no log redirection)
-# so failures surface to the user; details still go to the dsbx log via `tee`.
-_dsbx_install_helper_links() {
-  local name="$1"
-  local script_path="$DEV_PERSONAL/dotfiles/dot-agent-sandboxing/install-helper-links.sh"
-  sbx exec -i -e HOST_HOME="$HOME" -e DEV_PERSONAL="$DEV_PERSONAL" "$name" \
-    -- bash "$script_path" 2> >(tee -a "$_DSBX_LOG" >&2)
-}
+# Kit paths
+_DSBX_KITS_PERSONAL="$_AGENT_SBX_ROOT/kits/personal"
+_DSBX_KITS_ATLASSIAN="$_AGENT_SBX_ROOT/kits/atlassian"
+_DSBX_KITS_OMP="$_AGENT_SBX_ROOT/kits/omp"
 
 # Build the personal-build oh-my-pi worktree on the host into a cache dir that
 # every dsbx-omp sandbox bind-mounts RO. Replaces the per-sandbox sbx-cp + bun
@@ -265,17 +257,26 @@ _dsbx_purge_orphans() {
 # Auto-detects git worktrees and mounts the source repo for git access.
 #
 # Args:
-#   template, agent, prefix, print_cmd
+#   template (empty string if agent kit provides it), agent, prefix, print_cmd,
+#   kit_paths... -- [user_args...]
 #
-# Flags:
+# Kit paths are listed before `--`; user args (--recreate, --print, workspaces)
+# follow after `--`.
+#
+# Flags (in user args):
 #   --recreate     Tear down an existing sandbox before creating a new one.
 #   --print | -p   Skip the interactive `sbx run` attach; run `<print_cmd> -p <prompt>`
 #                  via `sbx exec -i` instead. Remaining positional args form the prompt.
-#                  Use this from inside another agent's bash tool: interactive attach
-#                  grabs /dev/tty and on exit EPIPEs the parent's renderer.
 _dsbx_run() {
   local template="$1" agent="$2" prefix="$3" print_cmd="$4"
   shift 4
+
+  local -a kits=()
+  while [[ $# -gt 0 && "$1" != "--" ]]; do
+    kits+=("$1"); shift
+  done
+  [[ "${1:-}" == "--" ]] && shift
+
   local recreate=0 print_mode=0
   local -a positional=()
   for arg in "$@"; do
@@ -285,7 +286,6 @@ _dsbx_run() {
       *)           positional+=("$arg") ;;
     esac
   done
-  # In interactive mode positional args are workspace mounts; in print mode they're prompt tokens.
   local -a extra_ws=() agent_args=()
   if (( print_mode )); then
     agent_args=("${positional[@]}")
@@ -297,8 +297,6 @@ _dsbx_run() {
   fi
   local name
   name="$(_dsbx_name "$prefix" "${extra_ws[@]}")"
-  # Helper mounts (gcloud ADC, claude plugins) are appended after extra_ws but
-  # NOT fed to _dsbx_name — they're shared host state, not part of identity.
   local -a helper_mounts=()
   helper_mounts=(${(f)"$(_dsbx_helper_mounts)"})
   if ! (( recreate )) && sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
@@ -313,25 +311,25 @@ _dsbx_run() {
     _dsbx_purge_orphans "$name"
     rm -f "$(_dsbx_secret_marker "$name")"
   fi
-  local created=0
   if ! sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
     echo "$(date -Iseconds) Creating $name" >> "$_DSBX_LOG"
-    if ! sbx create -t "$template" --name "$name" "$agent" . "${extra_ws[@]}" "${helper_mounts[@]}" 2> >(tee -a "$_DSBX_LOG" >&2) >> "$_DSBX_LOG"; then
+    local -a kit_args=()
+    for k in "${kits[@]}"; do
+      kit_args+=(--kit "$k")
+    done
+    local -a tmpl_args=()
+    [[ -n "$template" ]] && tmpl_args=(-t "$template")
+    if ! sbx create "${tmpl_args[@]}" --name "$name" "${kit_args[@]}" \
+        -e HOST_HOME="$HOME" -e DEV_PERSONAL="$DEV_PERSONAL" \
+        "$agent" . "${extra_ws[@]}" "${helper_mounts[@]}" 2> >(tee -a "$_DSBX_LOG" >&2) >> "$_DSBX_LOG"; then
       echo "$(date -Iseconds) Create failed; purging orphans and retrying $name" >> "$_DSBX_LOG"
       _dsbx_purge_orphans "$name"
-      if ! sbx create -t "$template" --name "$name" "$agent" . "${extra_ws[@]}" "${helper_mounts[@]}" 2> >(tee -a "$_DSBX_LOG" >&2) >> "$_DSBX_LOG"; then
+      if ! sbx create "${tmpl_args[@]}" --name "$name" "${kit_args[@]}" \
+          -e HOST_HOME="$HOME" -e DEV_PERSONAL="$DEV_PERSONAL" \
+          "$agent" . "${extra_ws[@]}" "${helper_mounts[@]}" 2> >(tee -a "$_DSBX_LOG" >&2) >> "$_DSBX_LOG"; then
         echo "[dsbx] sbx create failed for $name (see $_DSBX_LOG)" >&2
         return 1
       fi
-    fi
-    created=1
-  fi
-  # Symlinks are install-once: re-run only on fresh create. The bind mounts
-  # themselves stay live across container restarts.
-  if (( created )); then
-    if ! _dsbx_time "install-helper-links($name)" _dsbx_install_helper_links "$name"; then
-      echo "[dsbx] failed to install helper links in $name (see $_DSBX_LOG)" >&2
-      return 1
     fi
   fi
   _dsbx_time "sync-gh-secret($name)" _dsbx_sync_github_secret "$name" || return 1
@@ -342,9 +340,18 @@ _dsbx_run() {
   sbx run "$name"
 }
 
-dsbx-cc()      { _dsbx_run claude-sandbox-mise:latest        claude dsbx-cc      claude "$@"; }
-dsbx-ruby-cc() { _dsbx_run claude-sandbox-ruby-2.6.10:latest claude dsbx-ruby-cc claude "$@"; }
-dsbx-omp()     { _dsbx_run omp-sandbox:latest                claude dsbx-omp     omp    "$@"; }
+dsbx-cc() {
+  _dsbx_run claude-sandbox-mise:latest claude dsbx-cc claude \
+    "$_DSBX_KITS_PERSONAL" "$_DSBX_KITS_ATLASSIAN" -- "$@"
+}
+dsbx-ruby-cc() {
+  _dsbx_run claude-sandbox-ruby-2.6.10:latest claude dsbx-ruby-cc claude \
+    "$_DSBX_KITS_PERSONAL" "$_DSBX_KITS_ATLASSIAN" -- "$@"
+}
+dsbx-omp() {
+  _dsbx_run "" claude dsbx-omp omp \
+    "$_DSBX_KITS_PERSONAL" "$_DSBX_KITS_ATLASSIAN" "$_DSBX_KITS_OMP" -- "$@"
+}
 
 _dsbx_exec() {
   local prefix="$1"
