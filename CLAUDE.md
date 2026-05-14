@@ -16,4 +16,4 @@ Files/dirs prefixed `dot-` are symlinked into `$HOME` with the prefix replaced b
 
 - Shell configs source `$CONSOLO_DOCKER_DEV_DIR/.helpers/{compose,git,system}.sh` — work-machine path, may not exist elsewhere; guard new sources similarly
 - `NVIM_APPNAME` (set in `dot-zshenv`) selects the active neovim config: `nvim-LazyVim` (default), `nvim` (kickstart), or `nvim-Lazyman`. `nvims` command (Lazyman) switches interactively
-- Agent sandboxing (`dsbx-*`, `nono-*`, files under `dot-agent-sandboxing/` or `dot-claude/sandbox/`): see the repo-scoped `agent-sandboxing` skill at `.claude/skills/agent-sandboxing/SKILL.md`.
+- Agent sandboxing (`dsbx-*`, `nono-*`, files under `extras/agent-sandboxing/`): see the repo-scoped `agent-sandboxing` skill at `.claude/skills/agent-sandboxing/SKILL.md`.
