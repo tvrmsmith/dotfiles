@@ -308,8 +308,11 @@ _dsbx_run() {
   fi
   local name
   name="$(_dsbx_name "$prefix" "${extra_ws[@]}")"
+  local sandbox_state_dir="$_DSBX_STATE_DIR/sandboxes/$name"
+  mkdir -p "$sandbox_state_dir"/{sessions,plans,projects}
+  [ -f "$sandbox_state_dir/history.jsonl" ] || touch "$sandbox_state_dir/history.jsonl"
   local -a helper_mounts=()
-  helper_mounts=(${(f)"$(_dsbx_helper_mounts)"})
+  helper_mounts=(${(f)"$(_dsbx_helper_mounts "$sandbox_state_dir")"})
   if ! (( recreate )) && sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
     if _dsbx_helper_mounts_stale "$name" "${helper_mounts[@]}"; then
       echo "$(date -Iseconds) Helper mounts stale on $name, auto-recreating" >> "$_DSBX_LOG"
@@ -320,7 +323,7 @@ _dsbx_run() {
     echo "$(date -Iseconds) Recreating $name" >> "$_DSBX_LOG"
     sbx rm -f "$name" >> "$_DSBX_LOG" 2>&1 || true
     _dsbx_purge_orphans "$name"
-    rm -f "$(_dsbx_secret_marker "$name")"
+    rm -f "$_DSBX_STATE_DIR/markers/${name}.gh-secret"
   fi
   if ! sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
     echo "$(date -Iseconds) Creating $name" >> "$_DSBX_LOG"
