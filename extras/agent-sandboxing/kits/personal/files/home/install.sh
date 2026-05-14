@@ -51,6 +51,14 @@ if [ -d "$DOTFILES_MOUNT" ]; then
     'tgt=$(readlink "$1"); case "$tgt" in /*) echo "$1";; esac' _ {} \;)
 
   stow --no-folding --dotfiles -t "$HOME" "${ignore_args[@]}" .
+
+  # When the dotfiles repo IS the workspace (RW), stow symlinks point into
+  # the writable mount. Copy mutable files so sandbox tools don't modify the repo.
+  if [ -w "$DOTFILES_MOUNT/dot-gitconfig" ]; then
+    for f in .gitconfig .config/gh/hosts.yml .claude/settings.json; do
+      [ -L "$HOME/$f" ] && cp --remove-destination "$(readlink -f "$HOME/$f")" "$HOME/$f"
+    done
+  fi
 fi
 
 # 5. SSH known_hosts merge (kit places known_hosts.pinned at ~/. ssh/)
