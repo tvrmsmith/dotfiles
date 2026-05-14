@@ -113,22 +113,26 @@ _DSBX_OMP_FORK_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/dsbx/omp-fork"
 _DSBX_OMP_FORK_BUN_VOLUME="dsbx-omp-fork-buncache"
 _DSBX_OMP_FORK_CARGO_VOLUME="dsbx-omp-fork-cargocache"
 
-# Build the helper-mount argv. Skips entries whose host path is missing so a
-# user without gcloud or claude plugins doesn't break sandbox creation.
+# Helper bind mounts. Workspaces appended to `sbx create` but excluded from
+# the sandbox name (so they don't bloat sandbox identity). Candidates carry
+# their own access-mode suffix: `:ro` for read-only, bare path for read-write.
+# Entries whose host path is missing are silently skipped.
 _dsbx_helper_mounts() {
+  local sandbox_state="$1"
   local -a mounts=()
   local cwd; cwd="$(pwd -P)"
   local -a candidates=(
-    "$_DSBX_HELPER_ADC_DIR"
-    "$_DSBX_HELPER_PLUGINS_DIR"
-    "$_DSBX_HELPER_DOTFILES_DIR"
-    "$_DSBX_OMP_FORK_CACHE_DIR"
+    "$_DSBX_HELPER_ADC_DIR:ro"
+    "$_DSBX_HELPER_PLUGINS_DIR:ro"
+    "$_DSBX_HELPER_DOTFILES_DIR:ro"
+    "$_DSBX_OMP_FORK_CACHE_DIR:ro"
+    "$sandbox_state"
   )
-  for d in "${candidates[@]}"; do
+  for entry in "${candidates[@]}"; do
+    local d="${entry%%:*}"
     [ -d "$d" ] || continue
-    # Skip if this mount is a parent or equal to CWD (already mounted as workspace)
     [[ "$cwd" == "$d"* ]] && continue
-    mounts+=("${d}:ro")
+    mounts+=("$entry")
   done
   printf '%s\n' "${mounts[@]}"
 }
