@@ -137,3 +137,7 @@ alias cc='claude --dangerously-skip-permissions'
 # bun
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
+
+source /Users/trevor.smith/dev/wellsky/consolo.docker-dev/.helpers/compose.sh
+source /Users/trevor.smith/dev/wellsky/consolo.docker-dev/.helpers/git.sh
+source /Users/trevor.smith/dev/wellsky/consolo.docker-dev/.helpers/system.sh
