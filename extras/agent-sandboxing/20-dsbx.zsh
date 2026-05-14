@@ -1,8 +1,8 @@
 # Docker Sandbox (sbx) launchers and credential sync
 
 _SBX_DIR="$_AGENT_SBX_ROOT/templates"
-_DSBX_AUTH_DIR="$HOME/.cache/dsbx-auth"
-_DSBX_LOG="$HOME/.cache/dsbx-auth/dsbx.log"
+_DSBX_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dsbx"
+_DSBX_LOG="$_DSBX_STATE_DIR/dsbx.log"
 _DSBX_SECRET_TTL=3600  # 1 hour: skip GitHub secret resync if cached marker is fresher than this
 
 # Sub-ms wall-clock without subprocess overhead.
@@ -109,7 +109,7 @@ _DSBX_HELPER_DOTFILES_DIR="$DEV_PERSONAL/dotfiles"
 # Personal omp fork: source of truth (RO), and built tree (RO into sandboxes).
 # Build is host-side via `dsbx-omp-build`; sandboxes mount the built tree.
 _DSBX_OMP_FORK_HOST_DIR="$DEV_PERSONAL/oh-my-pi-personal-build"
-_DSBX_OMP_FORK_CACHE_DIR="$HOME/.cache/dsbx-omp-fork"
+_DSBX_OMP_FORK_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/dsbx/omp-fork"
 _DSBX_OMP_FORK_BUN_VOLUME="dsbx-omp-fork-buncache"
 _DSBX_OMP_FORK_CARGO_VOLUME="dsbx-omp-fork-cargocache"
 
