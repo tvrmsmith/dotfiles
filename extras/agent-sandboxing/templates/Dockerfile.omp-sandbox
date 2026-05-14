@@ -77,7 +77,7 @@ RUN cat > /usr/local/bin/claude <<'SH' && chmod +x /usr/local/bin/claude
 # and skip the Vertex provider. Strip it before exec.
 unset ANTHROPIC_API_KEY
 # Prefer the host-built fork if dsbx-omp-build has produced one.
-# ~/.omp-fork is a symlink to the bind-mounted host cache (~/.cache/dsbx-omp-fork);
+# ~/.omp-fork is a symlink to the bind-mounted host cache (~/.cache/dsbx/omp-fork);
 # install-helper-links creates it unconditionally, so the existence check is on
 # the cli.ts file (dangling symlink => fall through to published omp).
 FORK_CLI="$HOME/.omp-fork/packages/coding-agent/src/cli.ts"
