@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${HOST_HOME:?HOST_HOME required}"
-: "${DEV_PERSONAL:?DEV_PERSONAL required}"
+# Discover host paths from bind mounts (mirrored at their host paths).
+HOST_HOME="" DEV_PERSONAL=""
+for _base in /Users/* /home/*; do
+  [ -d "$_base/dev/personal/dotfiles" ] && [ "$_base" != "$HOME" ] && {
+    HOST_HOME="$_base"
+    DEV_PERSONAL="$_base/dev/personal"
+    break
+  }
+done
+if [ -z "$HOST_HOME" ]; then
+  echo "ERROR: could not discover host home from bind mounts" >&2
+  exit 1
+fi
 
 # 1. gcloud ADC
 if [ -d "$HOST_HOME/.config/gcloud" ]; then
@@ -13,11 +24,13 @@ fi
 
 # 2. Claude plugins
 if [ -d "$HOST_HOME/.claude/plugins" ]; then
+  mkdir -p "$HOME/.claude"
   rm -rf "$HOME/.claude/plugins"
   ln -sfn "$HOST_HOME/.claude/plugins" "$HOME/.claude/plugins"
 fi
 
 # 3. omp fork (dangling if no host build — launcher shim handles fallback)
+mkdir -p "$HOME/.cache"
 ln -sfn "$HOST_HOME/.cache/dsbx-omp-fork" "$HOME/.omp-fork"
 
 # 4. stow host dotfiles
@@ -25,6 +38,7 @@ DOTFILES_MOUNT="$DEV_PERSONAL/dotfiles"
 if [ -d "$DOTFILES_MOUNT" ]; then
   cd "$DOTFILES_MOUNT"
 
+  mkdir -p "$HOME/.claude"
   rm -f \
     "$HOME/.bashrc" \
     "$HOME/.gitconfig" \

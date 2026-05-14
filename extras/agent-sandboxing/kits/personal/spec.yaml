@@ -5,7 +5,7 @@ displayName: Personal Dotfiles
 description: Static personal configs and bind-mount symlink setup
 
 commands:
-  install:
-    - command: "bash /home/agent/install.sh"
+  startup:
+    - command: ["bash", "/home/agent/install.sh"]
       user: "1000"
       description: Set up bind-mount symlinks, stow dotfiles, merge SSH known_hosts

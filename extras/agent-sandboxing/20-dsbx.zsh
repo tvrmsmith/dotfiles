@@ -26,15 +26,15 @@ _dsbx_time() {
 # Resolve the GitHub identity for the current cwd.
 # Personal: under $DEV_PERSONAL/ → personal account, per-sandbox scope.
 # Work: everything else → work account, global scope.
-# Echoes: "<op_account> <op_path> <scope_flag>" where scope_flag is `-g` or the sandbox name.
+# Echoes tab-delimited: "<op_account>\t<op_path>\t<scope_flag>"
 _dsbx_github_identity() {
   local sandbox_name="$1"
   case "$PWD/" in
     "$DEV_PERSONAL/"*)
-      echo "my.1password.com $GIT_TOKEN_PERSONAL $sandbox_name"
+      printf '%s\t%s\t%s\n' "my.1password.com" "$GIT_TOKEN_PERSONAL" "$sandbox_name"
       ;;
     *)
-      echo "wellsky.1password.com $GIT_TOKEN -g"
+      printf '%s\t%s\t%s\n' "wellsky.1password.com" "$GIT_TOKEN" "-g"
       ;;
   esac
 }
@@ -64,7 +64,7 @@ _dsbx_sync_github_secret() {
   mkdir -p "$_DSBX_AUTH_DIR"
 
   local op_account op_path scope
-  read -r op_account op_path scope <<< "$(_dsbx_github_identity "$sandbox_name")"
+  IFS=$'\t' read -r op_account op_path scope <<< "$(_dsbx_github_identity "$sandbox_name")"
 
   local token
   if ! token=$(OP_ACCOUNT="$op_account" op read "$op_path" 2>>"$_DSBX_LOG"); then
@@ -117,12 +117,19 @@ _DSBX_OMP_FORK_CARGO_VOLUME="dsbx-omp-fork-cargocache"
 # user without gcloud or claude plugins doesn't break sandbox creation.
 _dsbx_helper_mounts() {
   local -a mounts=()
-  [ -d "$_DSBX_HELPER_ADC_DIR" ] && mounts+=("${_DSBX_HELPER_ADC_DIR}:ro")
-  [ -d "$_DSBX_HELPER_PLUGINS_DIR" ] && mounts+=("${_DSBX_HELPER_PLUGINS_DIR}:ro")
-  [ -d "$_DSBX_HELPER_DOTFILES_DIR" ] && mounts+=("${_DSBX_HELPER_DOTFILES_DIR}:ro")
-  # Built fork is mounted RO; absent if the user has not run dsbx-omp-build yet,
-  # in which case the launcher shim falls back to the published omp install.
-  [ -d "$_DSBX_OMP_FORK_CACHE_DIR" ] && mounts+=("${_DSBX_OMP_FORK_CACHE_DIR}:ro")
+  local cwd; cwd="$(pwd -P)"
+  local -a candidates=(
+    "$_DSBX_HELPER_ADC_DIR"
+    "$_DSBX_HELPER_PLUGINS_DIR"
+    "$_DSBX_HELPER_DOTFILES_DIR"
+    "$_DSBX_OMP_FORK_CACHE_DIR"
+  )
+  for d in "${candidates[@]}"; do
+    [ -d "$d" ] || continue
+    # Skip if this mount is a parent or equal to CWD (already mounted as workspace)
+    [[ "$cwd" == "$d"* ]] && continue
+    mounts+=("${d}:ro")
+  done
   printf '%s\n' "${mounts[@]}"
 }
 
@@ -320,12 +327,10 @@ _dsbx_run() {
     local -a tmpl_args=()
     [[ -n "$template" ]] && tmpl_args=(-t "$template")
     if ! sbx create "${tmpl_args[@]}" --name "$name" "${kit_args[@]}" \
-        -e HOST_HOME="$HOME" -e DEV_PERSONAL="$DEV_PERSONAL" \
         "$agent" . "${extra_ws[@]}" "${helper_mounts[@]}" 2> >(tee -a "$_DSBX_LOG" >&2) >> "$_DSBX_LOG"; then
       echo "$(date -Iseconds) Create failed; purging orphans and retrying $name" >> "$_DSBX_LOG"
       _dsbx_purge_orphans "$name"
       if ! sbx create "${tmpl_args[@]}" --name "$name" "${kit_args[@]}" \
-          -e HOST_HOME="$HOME" -e DEV_PERSONAL="$DEV_PERSONAL" \
           "$agent" . "${extra_ws[@]}" "${helper_mounts[@]}" 2> >(tee -a "$_DSBX_LOG" >&2) >> "$_DSBX_LOG"; then
         echo "[dsbx] sbx create failed for $name (see $_DSBX_LOG)" >&2
         return 1
@@ -349,7 +354,7 @@ dsbx-ruby-cc() {
     "$_DSBX_KITS_PERSONAL" "$_DSBX_KITS_ATLASSIAN" -- "$@"
 }
 dsbx-omp() {
-  _dsbx_run "" claude dsbx-omp omp \
+  _dsbx_run "" omp dsbx-omp omp \
     "$_DSBX_KITS_PERSONAL" "$_DSBX_KITS_ATLASSIAN" "$_DSBX_KITS_OMP" -- "$@"
 }
 
