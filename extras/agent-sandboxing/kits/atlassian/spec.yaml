@@ -1,0 +1,29 @@
+schemaVersion: "1"
+kind: mixin
+name: atlassian
+displayName: Atlassian Access
+description: Proxy-managed Jira and Confluence credentials
+
+network:
+  allowedDomains:
+    - "*.atlassian.net"
+  serviceDomains:
+    "wellsky.atlassian.net": atlassian
+  serviceAuth:
+    atlassian:
+      headerName: Authorization
+      valueFormat: "Basic %s"
+
+credentials:
+  sources:
+    atlassian:
+      env:
+        - JIRA_API_TOKEN
+      priority: env-first
+
+environment:
+  variables:
+    JIRA_USERNAME: "proxy-managed"
+    JIRA_BASE_URL: "https://wellsky.atlassian.net"
+  proxyManaged:
+    - JIRA_API_TOKEN

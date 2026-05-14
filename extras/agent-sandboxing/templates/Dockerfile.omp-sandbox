@@ -103,20 +103,6 @@ RUN install -d -o agent -g agent /home/agent/.omp /home/agent/.omp/plugins /home
 # the Docker Desktop /root-ownership-remap quirk that breaks --global writes.
 RUN git config --system --add safe.directory '*'
 
-# SSH commit signing uses the host 1Password agent forwarded by sbx (>=0.28):
-# `ssh-add -L` inside the sandbox lists the host signing key. The stowed host
-# dot-gitconfig provides the matching `signingkey` value, but its
-# `gpg.ssh.program` points at the macOS 1Password helper. Override it via
-# ~/.gitconfig.sandbox (already included by the host gitconfig) so signing
-# uses the linux ssh-keygen. Pin allowedSignersFile to the stowed host file.
-RUN install -d -o agent -g agent /home/agent && \
-  printf '%s\n' \
-    '[gpg "ssh"]' \
-    '	program = /usr/bin/ssh-keygen' \
-    '	allowedSignersFile = /home/agent/.ssh/allowed_signers' \
-    > /home/agent/.gitconfig.sandbox && \
-  chown agent:agent /home/agent/.gitconfig.sandbox
-
 # Build args last — only affect ENV, not tool installs above
 ARG GOOGLE_CLOUD_PROJECT
 ARG GOOGLE_CLOUD_LOCATION
