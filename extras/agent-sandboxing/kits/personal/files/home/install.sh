@@ -33,31 +33,37 @@ fi
 mkdir -p "$HOME/.cache"
 ln -sfn "$HOST_HOME/.cache/dsbx-omp-fork" "$HOME/.omp-fork"
 
-# 4. stow host dotfiles
+# Copy dot-prefixed entries from source dir into $HOME, translating
+# the "dot-" prefix to "." (e.g. dot-gitconfig → .gitconfig).
+# Directories are rsync'd recursively; files are cp'd.
+_copy_dotfiles() {
+  local src="$1"
+  for entry in "$src"/dot-*; do
+    [ -e "$entry" ] || continue
+    local target="$HOME/.${entry##*/dot-}"
+    if [ -d "$entry" ]; then
+      rsync -a "$entry/" "$target/"
+    else
+      cp "$entry" "$target"
+    fi
+  done
+}
+
+# 4. Install host dotfiles
 DOTFILES_MOUNT="$DEV_PERSONAL/dotfiles"
 if [ -d "$DOTFILES_MOUNT" ]; then
-  cd "$DOTFILES_MOUNT"
-
   mkdir -p "$HOME/.claude"
   rm -f \
     "$HOME/.bashrc" \
     "$HOME/.gitconfig" \
     "$HOME/.claude/settings.json"
 
-  ignore_args=(--ignore=extras)
-  while IFS= read -r abs; do
-    ignore_args+=(--ignore="$(basename "$abs")")
-  done < <(find . -type l ! -path "./.git/*" -exec sh -c \
-    'tgt=$(readlink "$1"); case "$tgt" in /*) echo "$1";; esac' _ {} \;)
-
-  stow --no-folding --dotfiles -t "$HOME" "${ignore_args[@]}" .
-
-  # When the dotfiles repo IS the workspace (RW), stow symlinks point into
-  # the writable mount. Copy mutable files so sandbox tools don't modify the repo.
   if [ -w "$DOTFILES_MOUNT/dot-gitconfig" ]; then
-    for f in .gitconfig .config/gh/hosts.yml .claude/settings.json; do
-      [ -L "$HOME/$f" ] && cp --remove-destination "$(readlink -f "$HOME/$f")" "$HOME/$f"
-    done
+    # Dotfiles repo is the RW workspace — copy to avoid mutating the repo
+    _copy_dotfiles "$DOTFILES_MOUNT"
+  else
+    # RO helper mount — symlink via stow so host changes propagate live
+    stow --no-folding --dotfiles -d "$DEV_PERSONAL" -t "$HOME" dotfiles
   fi
 fi
 
