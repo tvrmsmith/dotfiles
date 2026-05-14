@@ -49,7 +49,9 @@ zsh -c 'source ~/dev/personal/dotfiles/extras/agent-sandboxing/init.zsh && dsbx-
 2. Runs `docker compose -f extras/agent-sandboxing/templates/docker-compose.yml build "$@"`
 3. `docker save | sbx template load` per built image
 
-Args = compose service names (`claude-sandbox-mise`, `claude-sandbox-ruby-2.6.10`, `omp-sandbox`); omit to build all.
+Args = compose service names (`claude-sandbox-mise`, `claude-sandbox-ruby-2-6-10`, `omp-sandbox`); omit to build all.
+
+**Build order matters:** `claude-sandbox-ruby-2-6-10` depends on `claude-sandbox-mise:latest`. Build mise first: `dsbx-build claude-sandbox-mise && dsbx-build claude-sandbox-ruby-2-6-10 omp-sandbox`.
 
 When invoking from a bash tool:
 
@@ -69,7 +71,7 @@ Mounted read-only into every `dsbx-*` at create time, at the same path inside th
 | `~/.config/gcloud`  | gcloud SDK / Application Default Credentials              |
 | `~/.claude/plugins` | Claude plugin registry + cache (omp and cc both consume) |
 
-The personal kit's `install.sh` (runs at sandbox create via kit install command) symlinks canonical lookup paths to the mounts:
+The personal kit's `install.sh` (runs via kit `commands.startup` — `startup` runs after `files/` are copied and workspaces mounted; `install` runs before both) symlinks canonical lookup paths to the mounts:
 
 - `~/.config/gcloud/application_default_credentials.json` → bind mount
 - `~/.claude/plugins` → bind mount
