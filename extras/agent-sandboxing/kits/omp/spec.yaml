@@ -2,15 +2,9 @@ schemaVersion: "1"
 kind: agent
 name: omp
 displayName: Oh My Pi Agent
-description: OMP coding agent with Vertex AI
+description: OMP coding agent with Vertex AI (env vars baked via Dockerfile build args)
 
 agent:
   image: "omp-sandbox:latest"
   entrypoint:
     run: ["/usr/local/bin/claude"]
-
-environment:
-  variables:
-    GOOGLE_CLOUD_PROJECT: "${GOOGLE_CLOUD_PROJECT}"
-    GOOGLE_CLOUD_LOCATION: "${GOOGLE_CLOUD_LOCATION}"
-    OMP_MODEL: "${OMP_MODEL}"
