@@ -74,3 +74,22 @@ if [ -f "$HOME/.ssh/known_hosts.pinned" ]; then
   sort -u "$HOME/.ssh/known_hosts" -o "$HOME/.ssh/known_hosts"
   chmod 644 "$HOME/.ssh/known_hosts"
 fi
+
+# 6. Claude session state persistence
+# Discover sandbox state dir from bind mounts — the host-side
+# $XDG_STATE_HOME/dsbx/sandboxes/<name>/ is mounted RW at its host path.
+DSBX_STATE=""
+if [ -n "$HOST_HOME" ]; then
+  for _d in "$HOST_HOME/.local/state/dsbx/sandboxes"/*/; do
+    [ -d "${_d}sessions" ] && { DSBX_STATE="${_d%/}"; break; }
+  done
+fi
+
+if [ -n "$DSBX_STATE" ]; then
+  mkdir -p "$HOME/.claude"
+  for subdir in sessions plans projects; do
+    [ -d "$DSBX_STATE/$subdir" ] && ln -sfn "$DSBX_STATE/$subdir" "$HOME/.claude/$subdir"
+  done
+  [ -f "$DSBX_STATE/history.jsonl" ] && \
+    ln -sf "$DSBX_STATE/history.jsonl" "$HOME/.claude/history.jsonl"
+fi
