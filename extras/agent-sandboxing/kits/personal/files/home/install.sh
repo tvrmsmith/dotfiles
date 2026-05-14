@@ -31,7 +31,7 @@ fi
 
 # 3. omp fork (dangling if no host build — launcher shim handles fallback)
 mkdir -p "$HOME/.cache"
-ln -sfn "$HOST_HOME/.cache/dsbx-omp-fork" "$HOME/.omp-fork"
+ln -sfn "$HOST_HOME/.cache/dsbx/omp-fork" "$HOME/.omp-fork"
 
 # Copy dot-prefixed entries from source dir into $HOME, translating
 # the "dot-" prefix to "." (e.g. dot-gitconfig → .gitconfig).
