@@ -41,7 +41,7 @@ _dsbx_github_identity() {
 
 _dsbx_secret_marker() {
   local sandbox_name="$1"
-  echo "$_DSBX_AUTH_DIR/${sandbox_name}.gh-secret"
+  echo "$_DSBX_STATE_DIR/markers/${sandbox_name}.gh-secret"
 }
 
 _dsbx_secret_fresh() {
@@ -61,7 +61,7 @@ _dsbx_sync_github_secret() {
   if _dsbx_secret_fresh "$marker"; then
     return 0
   fi
-  mkdir -p "$_DSBX_AUTH_DIR"
+  mkdir -p "$_DSBX_STATE_DIR/markers"
 
   local op_account op_path scope
   IFS=$'\t' read -r op_account op_path scope <<< "$(_dsbx_github_identity "$sandbox_name")"
