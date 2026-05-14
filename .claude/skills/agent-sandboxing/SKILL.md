@@ -1,6 +1,6 @@
 ---
 name: agent-sandboxing
-description: Use when working with agent sandboxes in this dotfiles repo (`dsbx-*`, `nono-*` aliases, files under `dot-agent-sandboxing/` or `dot-claude/sandbox/`), invoking sandbox helpers from an agent's bash tool, or rebuilding sandbox images. Triggers on: dsbx, dsbx-omp, dsbx-cc, dsbx-build, sbx, nono, sandbox, omp-sandbox, claude-sandbox.
+description: Use when working with agent sandboxes in this dotfiles repo (`dsbx-*`, `nono-*` aliases, files under `extras/agent-sandboxing/`), invoking sandbox helpers from an agent's bash tool, or rebuilding sandbox images. Triggers on: dsbx, dsbx-omp, dsbx-cc, dsbx-build, sbx, nono, sandbox, omp-sandbox, claude-sandbox.
 ---
 
 # Agent Sandboxing (this repo)
@@ -9,10 +9,12 @@ Two stacks. Edit the source files directly — don't duplicate aliases elsewhere
 
 | Stack    | Backend                                               | Source                                                                              |
 | -------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `nono-*` | [nsjail](https://nono.sh/docs/)                       | `dot-agent-sandboxing/10-nono.zsh`                                                  |
-| `dsbx-*` | [Docker `sbx`](https://docs.docker.com/ai/sandboxes/) | `dot-agent-sandboxing/20-dsbx.zsh` + `dot-claude/sandbox/` (Dockerfiles + compose) |
+| `nono-*` | [nsjail](https://nono.sh/docs/)                       | `extras/agent-sandboxing/10-nono.zsh`                                                  |
+| `dsbx-*` | [Docker `sbx`](https://docs.docker.com/ai/sandboxes/) | `extras/agent-sandboxing/20-dsbx.zsh` + `extras/agent-sandboxing/templates/` (Dockerfiles + compose) |
 
-Shared helpers: `dot-agent-sandboxing/00-shared.zsh`. The whole dir is glob-sourced by the shell rc.
+Shared helpers: `extras/agent-sandboxing/00-shared.zsh`. Sourced via `extras/agent-sandboxing/init.zsh` from `.zshrc`.
+
+Kits: `extras/agent-sandboxing/kits/` — personal (static configs + install.sh), atlassian (proxy-managed creds), omp (agent kit).
 
 ## `sbx` runs in an embedded containerd
 
@@ -36,7 +38,7 @@ Without it, `sbx run` grabs `/dev/tty` and EPIPEs the parent's renderer on exit,
 `dsbx-*` are **functions** sourced only by the interactive rc. Plain `zsh -c 'dsbx-build'` won't see them. Source the file first:
 
 ```bash
-zsh -c 'source ~/dev/personal/dotfiles/dot-agent-sandboxing/20-dsbx.zsh && dsbx-build omp-sandbox'
+zsh -c 'source ~/dev/personal/dotfiles/extras/agent-sandboxing/init.zsh && dsbx-build omp-sandbox'
 ```
 
 ## Rebuilding sandbox images
@@ -44,7 +46,7 @@ zsh -c 'source ~/dev/personal/dotfiles/dot-agent-sandboxing/20-dsbx.zsh && dsbx-
 `dsbx-build` is the one entry point. It:
 
 1. Reads `GIT_TOKEN` (work) and `GIT_TOKEN_PERSONAL` (personal) via `op read` — auths through 1Password desktop on demand, no `op signin` needed
-2. Runs `docker compose -f dot-claude/sandbox/docker-compose.yml build "$@"`
+2. Runs `docker compose -f extras/agent-sandboxing/templates/docker-compose.yml build "$@"`
 3. `docker save | sbx template load` per built image
 
 Args = compose service names (`claude-sandbox-mise`, `claude-sandbox-ruby-2.6.10`, `omp-sandbox`); omit to build all.
@@ -67,7 +69,7 @@ Mounted read-only into every `dsbx-*` at create time, at the same path inside th
 | `~/.config/gcloud`  | gcloud SDK / Application Default Credentials              |
 | `~/.claude/plugins` | Claude plugin registry + cache (omp and cc both consume) |
 
-`_dsbx_install_helper_links` (post-create, idempotent) symlinks canonical lookup paths to the mounts:
+The personal kit's `install.sh` (runs at sandbox create via kit install command) symlinks canonical lookup paths to the mounts:
 
 - `~/.config/gcloud/application_default_credentials.json` → bind mount
 - `~/.claude/plugins` → bind mount

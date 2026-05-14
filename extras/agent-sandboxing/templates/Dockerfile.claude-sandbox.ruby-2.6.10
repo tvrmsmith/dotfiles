@@ -99,7 +99,5 @@ RUN printf '#!/bin/bash\nbundle exec "$@"' > /usr/local/bin/b && chmod 755 /usr/
 # BuildKit cache-mount quirk in the bundler step above).
 RUN git config --system --add safe.directory '*'
 
-COPY . /home/agent/.claude
-
 # Switch to agent user for Claude Code operations
 USER agent
