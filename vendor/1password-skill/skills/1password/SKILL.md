@@ -1,15 +1,6 @@
 ---
 name: 1password
-description: |
-  Interact with 1Password CLI (op) — auth recovery, secret retrieval, SSH agent,
-  git commit signing, and troubleshooting. Use this skill when the user mentions
-  1Password, op CLI, or when you know their environment uses the 1Password SSH agent.
-  Also trigger on SSH "Permission denied" errors when 1Password agent is configured,
-  secret retrieval requests mentioning vaults or op://, or git signing with SSH keys
-  stored in 1Password. Trigger phrases: '1password', 'op cli', 'op account get',
-  'op run', 'op read', 'op inject', 'secret reference', 'op://',
-  'ssh agent 1password', 'git signing 1password', 'biometric prompt', 'vault',
-  '1password ssh'.
+description: "1Password CLI (op) — auth recovery, secret retrieval (op run/read/inject, op://), SSH agent, git signing, vault access, biometric troubleshooting. Triggers on: 1password, op cli, op account get, op://, vault, SSH Permission denied with 1Password agent, git signing errors."
 ---
 
 > Requires: `op` CLI 2.18+ with desktop app integration enabled. Run `op --version` to check.
