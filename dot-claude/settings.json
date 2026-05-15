@@ -50,15 +50,6 @@
   "hooks": {
     "Notification": [
       {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/claude-island-state.py"
-          }
-        ]
-      },
-      {
         "matcher": "",
         "hooks": [
           {
@@ -75,31 +66,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/hooks/claude-island-state.py",
-            "timeout": 86400
-          }
-        ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
             "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && SUPERSET_AGENT_ID=claude \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
           }
         ]
       }
     ],
     "PostToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/claude-island-state.py"
-          }
-        ]
-      },
       {
         "matcher": "*",
         "hooks": [
@@ -139,26 +111,6 @@
         ]
       }
     ],
-    "PreCompact": [
-      {
-        "matcher": "auto",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/claude-island-state.py"
-          }
-        ]
-      },
-      {
-        "matcher": "manual",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/claude-island-state.py"
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -168,26 +120,9 @@
             "command": "bash \"/Users/trevor.smith/.wellsky-claude/hooks/pre-commit-claudemd-review.sh\""
           }
         ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/claude-island-state.py"
-          }
-        ]
       }
     ],
     "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/claude-island-state.py"
-          }
-        ]
-      },
       {
         "matcher": "",
         "hooks": [
@@ -212,28 +147,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/hooks/claude-island-state.py"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "[ -n \"$SUPERSET_HOME_DIR\" ] && [ -x \"$SUPERSET_HOME_DIR/hooks/notify.sh\" ] && SUPERSET_AGENT_ID=claude \"$SUPERSET_HOME_DIR/hooks/notify.sh\" || true"
           }
         ]
       }
     ],
     "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/claude-island-state.py"
-          }
-        ]
-      },
       {
         "hooks": [
           {
@@ -261,25 +180,7 @@
         ]
       }
     ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/claude-island-state.py"
-          }
-        ]
-      }
-    ],
     "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/claude-island-state.py"
-          }
-        ]
-      },
       {
         "hooks": [
           {
