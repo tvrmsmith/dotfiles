@@ -68,7 +68,16 @@ if [ -d "$DOTFILES_MOUNT" ]; then
     _copy_dotfiles "$DOTFILES_MOUNT"
   else
     # RO helper mount — symlink via stow so host changes propagate live
-    stow --no-folding --dotfiles -d "$DEV_PERSONAL" -t "$HOME" dotfiles
+    stow --dotfiles -d "$DEV_PERSONAL" -t "$HOME" dotfiles
+  fi
+
+  # sbx's agent runtime overwrites ~/.claude/settings.json on launch.
+  # Stash our copy and prepend a restore line to .bashrc so it runs
+  # before the agent reads config.
+  if [ -f "$HOME/.claude/settings.json" ]; then
+    cp "$HOME/.claude/settings.json" "$HOME/.claude/settings.json.dotfiles"
+    echo '[ -f "$HOME/.claude/settings.json.dotfiles" ] && cp "$HOME/.claude/settings.json.dotfiles" "$HOME/.claude/settings.json"' \
+      >> "$HOME/.bashrc"
   fi
 fi
 
