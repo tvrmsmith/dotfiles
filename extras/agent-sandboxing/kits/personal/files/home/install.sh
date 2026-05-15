@@ -24,9 +24,14 @@ fi
 
 # 2. Claude plugins
 if [ -d "$HOST_HOME/.claude/plugins" ]; then
-  mkdir -p "$HOME/.claude"
-  rm -rf "$HOME/.claude/plugins"
-  ln -sfn "$HOST_HOME/.claude/plugins" "$HOME/.claude/plugins"
+  mkdir -p "$HOME/.claude/plugins"
+  for entry in "$HOST_HOME/.claude/plugins"/*; do
+    [ -e "$entry" ] || continue
+    case "$(basename "$entry")" in
+      known_marketplaces.json|installed_plugins.json) continue ;;
+    esac
+    ln -sfn "$entry" "$HOME/.claude/plugins/$(basename "$entry")"
+  done
 fi
 
 # 3. omp fork (dangling if no host build — launcher shim handles fallback)
