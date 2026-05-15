@@ -27,10 +27,15 @@ if [ -d "$HOST_HOME/.claude/plugins" ]; then
   mkdir -p "$HOME/.claude/plugins"
   for entry in "$HOST_HOME/.claude/plugins"/*; do
     [ -e "$entry" ] || continue
-    case "$(basename "$entry")" in
-      known_marketplaces.json|installed_plugins.json) continue ;;
+    local_name="$(basename "$entry")"
+    case "$local_name" in
+      known_marketplaces.json|installed_plugins.json)
+        sed "s|$HOST_HOME|$HOME|g" "$entry" > "$HOME/.claude/plugins/$local_name"
+        ;;
+      *)
+        ln -sfn "$entry" "$HOME/.claude/plugins/$local_name"
+        ;;
     esac
-    ln -sfn "$entry" "$HOME/.claude/plugins/$(basename "$entry")"
   done
 fi
 
