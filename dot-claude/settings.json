@@ -223,13 +223,13 @@
     "code-review@claude-plugins-official": true,
     "code-simplifier@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true,
-    "csharp-lsp@claude-plugins-official": true,
+    "csharp-lsp@claude-plugins-official": false,
     "hookify@claude-plugins-official": true,
-    "iac-assistant@wellsky-plugins": true,
+    "iac-assistant@wellsky-plugins": false,
     "otel-telemetry@wellsky-plugins": true,
     "pr-review-toolkit@claude-plugins-official": true,
     "product-management@wellsky-plugins": true,
-    "ruby-lsp@claude-plugins-official": true,
+    "ruby-lsp@claude-plugins-official": false,
     "security-guidance@claude-plugins-official": true,
     "security-screener@wellsky-plugins": true,
     "shared@wellsky-plugins": true,
@@ -238,7 +238,7 @@
     "superpowers@claude-plugins-official": true,
     "terraform-code-generation@hashicorp": false,
     "terraform-module-generation@hashicorp": false,
-    "typescript-lsp@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": false,
     "unit-gen@wellsky-plugins": true,
     "workflow@wellsky-plugins": true,
     "ws-atlassian@wellsky-plugins": true,
@@ -291,7 +291,8 @@
     "wellsky-plugins": {
       "source": {
         "source": "git",
-        "url": "git@github.com:mediwareinc/wellsky-claude-code-plugins.git"
+        "url": "git@github.com:mediwareinc/wellsky-claude-code-plugins.git",
+        "ref": "fix/combined-skill-descriptions"
       }
     },
     "claude-code-warp": {
@@ -309,5 +310,29 @@
   "editorMode": "vim",
   "skipAutoPermissionPrompt": true,
   "skillListingBudgetFraction": 0.02,
-  "skillListingMaxDescChars": 275
+  "skillListingMaxDescChars": 500,
+  "skillOverrides": {
+    "claude-code-setup:claude-automation-recommender": "user-invocable-only",
+    "shared:pr-comments-analyzer": "user-invocable-only",
+    "claude-md-management:claude-md-improver": "user-invocable-only",
+    "shared:skill-builder": "off",
+    "superpowers:writing-skills": "off",
+    "caveman:caveman-compress": "user-invocable-only",
+    "caveman:caveman-stats": "user-invocable-only",
+    "product-management:roadmap-management": "user-invocable-only",
+    "product-management:competitive-analysis": "user-invocable-only",
+    "product-management:user-research-synthesis": "user-invocable-only",
+    "product-management:metrics-tracking": "user-invocable-only",
+    "product-management:stakeholder-comms": "user-invocable-only",
+    "workflow:spec-metadata": "user-invocable-only",
+    "shared:learnings-capturer": "user-invocable-only",
+    "hookify:writing-rules": "user-invocable-only",
+    "shared:roi-feedback-tracker": "user-invocable-only",
+    "caveman:caveman-help": "user-invocable-only",
+    "skill-audit": "user-invocable-only",
+    "ws-atlassian:ws-atlassian": "user-invocable-only",
+    "shared:framework-detector": "off",
+    "shared:code-analyzer": "off",
+    "shared:test-planner": "off"
+  }
 }
