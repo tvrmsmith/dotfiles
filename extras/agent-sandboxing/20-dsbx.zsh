@@ -31,7 +31,7 @@ _dsbx_github_identity() {
   local sandbox_name="$1"
   case "$PWD/" in
     "$DEV_PERSONAL/"*)
-      printf '%s\t%s\t%s\n' "my.1password.com" "$GIT_TOKEN_PERSONAL" "$sandbox_name"
+      printf '%s\t%s\t%s\n' "my.1password.com" "op://Private/GitHub Personal Access Token/token" "$sandbox_name"
       ;;
     *)
       printf '%s\t%s\t%s\n' "wellsky.1password.com" "$GIT_TOKEN" "-g"
@@ -122,10 +122,10 @@ _dsbx_helper_mounts() {
   local -a mounts=()
   local cwd; cwd="$(pwd -P)"
   local -a candidates=(
-    "$_DSBX_HELPER_ADC_DIR:ro"
-    "$_DSBX_HELPER_PLUGINS_DIR:ro"
-    "$_DSBX_HELPER_DOTFILES_DIR:ro"
-    "$_DSBX_OMP_FORK_CACHE_DIR:ro"
+    "${_DSBX_HELPER_ADC_DIR}:ro"
+    "${_DSBX_HELPER_PLUGINS_DIR}:ro"
+    "${_DSBX_HELPER_DOTFILES_DIR}:ro"
+    "${_DSBX_OMP_FORK_CACHE_DIR}:ro"
     "$sandbox_state"
   )
   for entry in "${candidates[@]}"; do
