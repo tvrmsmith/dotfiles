@@ -169,3 +169,13 @@ Use `AskUserQuestion` to offer:
 ### Step 4.4 — Apply and verify
 
 Apply any setting changes. Suggest the user run `/doctor` to verify the final state — it shows truncated/dropped skills and actual budget usage.
+
+## Known Limitations
+
+### Plugin skill overrides are ignored by Claude Code
+
+Claude Code hardcodes `source==="plugin"` to return `"on"`, bypassing `skillOverrides` in `settings.json`. This means `user-invocable-only` and `off` overrides set during Phase 3 **only take effect for user-level skills** — plugin-scoped skills (e.g. `pr-review-toolkit:review-pr`) will remain active regardless of the override.
+
+**Workaround (macOS only):** A binary patch script is included at `references/claude-code-patch.sh`. It replaces the hardcoded check so `skillOverrides` applies to all skill sources. Safe to re-run (detects if already patched), creates a `.bak` backup, and re-signs with original entitlements. Re-run after each Claude Code update.
+
+**Preferred fix:** File a feature request with Anthropic to support `skillOverrides` for plugin skills natively.
