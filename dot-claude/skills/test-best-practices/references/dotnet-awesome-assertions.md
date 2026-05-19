@@ -1,5 +1,7 @@
 # .NET Assertions: AwesomeAssertions / FluentAssertions + NUnit
 
+AwesomeAssertions is a fork of FluentAssertions — the API is identical. Everything in this reference applies to both libraries.
+
 Technology-specific patterns implementing the principles from the parent skill.
 
 ## Combining Assertions: `BeEquivalentTo` with Anonymous Objects
