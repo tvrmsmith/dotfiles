@@ -1,25 +1,11 @@
 services:
-  # Base mise-enabled Claude Code sandbox
-  claude-sandbox-mise:
-    build:
-      context: .
-      dockerfile: Dockerfile.claude-sandbox.mise
-      args:
-        CLAUDE_CODE_USE_VERTEX: ${CLAUDE_CODE_USE_VERTEX:-1}
-        CLOUD_ML_REGION: ${CLOUD_ML_REGION:-us}
-        ANTHROPIC_VERTEX_PROJECT_ID: ${ANTHROPIC_VERTEX_PROJECT_ID:-consolo-dev-vertex-wsky}
-    image: claude-sandbox-mise:latest
-    container_name: claude-sandbox-mise
-
-  # Ruby 2.6.10 sandbox (extends mise sandbox)
+  # Ruby 2.6.10 sandbox (extends base claude-code-docker with compiled Ruby)
   claude-sandbox-ruby-2-6-10:
     build:
       context: .
       dockerfile: Dockerfile.claude-sandbox.ruby-2.6.10
     image: claude-sandbox-ruby-2.6.10:latest
     container_name: claude-sandbox-ruby-2-6-10
-    depends_on:
-      - claude-sandbox-mise
 
 
   # Oh My Pi coding agent sandbox

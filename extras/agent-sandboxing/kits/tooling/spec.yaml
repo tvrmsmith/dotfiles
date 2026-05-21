@@ -1,0 +1,27 @@
+schemaVersion: "1"
+kind: mixin
+name: tooling
+displayName: Development Tooling
+description: mise (tool manager), gcloud SDK, and stow
+
+commands:
+  install:
+    - command: >-
+        echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main"
+        | tee /etc/apt/sources.list.d/google-cloud-sdk.list &&
+        curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg &&
+        apt-get update &&
+        apt-get install -y --no-install-recommends google-cloud-cli stow &&
+        install -d -o agent -g agent /mise /mise/cache
+      description: Install gcloud SDK, stow, and prepare mise dirs
+    - command: "curl -fsSL https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh"
+      description: Install mise
+
+environment:
+  variables:
+    MISE_DATA_DIR: "/mise"
+    MISE_CONFIG_DIR: "/mise"
+    MISE_CACHE_DIR: "/mise/cache"
+    MISE_INSTALL_PATH: "/usr/local/bin/mise"
+    MISE_TRUSTED_CONFIG_PATHS: "/"

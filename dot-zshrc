@@ -123,7 +123,7 @@ omp() {
 }
 
 alias claude-patch='$DEV_PERSONAL/dotfiles/extras/claude-code-patch.sh'
-alias cc='claude-patch 2>/dev/null; claude --dangerously-skip-permissions'
+alias cc='claude-patch; claude --dangerously-skip-permissions'
 
 # Agent sandboxing (nono, sbx); relies on $_OMP_VERTEX defined above
 [ -f "$DEV_PERSONAL/dotfiles/extras/agent-sandboxing/init.zsh" ] && \

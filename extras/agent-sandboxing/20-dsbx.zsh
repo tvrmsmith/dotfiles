@@ -3,7 +3,7 @@
 _SBX_DIR="$_AGENT_SBX_ROOT/templates"
 _DSBX_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dsbx"
 _DSBX_LOG="$_DSBX_STATE_DIR/dsbx.log"
-_DSBX_SECRET_TTL=3600  # 1 hour: skip GitHub secret resync if cached marker is fresher than this
+_DSBX_SECRET_TTL=3600  # 1 hour: skip secret resync if cached marker is fresher than this
 
 # Sub-ms wall-clock without subprocess overhead.
 zmodload zsh/datetime 2>/dev/null
@@ -39,9 +39,11 @@ _dsbx_github_identity() {
   esac
 }
 
+_dsbx_is_personal() { [[ "$PWD/" == "$DEV_PERSONAL/"* ]]; }
+
 _dsbx_secret_marker() {
-  local sandbox_name="$1"
-  echo "$_DSBX_STATE_DIR/markers/${sandbox_name}.gh-secret"
+  local sandbox_name="$1" suffix="${2:-gh-secret}"
+  echo "$_DSBX_STATE_DIR/markers/${sandbox_name}.${suffix}"
 }
 
 _dsbx_secret_fresh() {
@@ -78,6 +80,30 @@ _dsbx_sync_github_secret() {
   if [ "$scope" = "-g" ]; then scope_arg="-g"; else scope_arg="$scope"; fi
   if ! printf '%s' "$token" | sbx secret set $scope_arg github -f >>"$_DSBX_LOG" 2>&1; then
     echo "[dsbx] failed to write GitHub secret to sbx (scope=$scope)" >&2
+    return 1
+  fi
+  touch "$marker"
+}
+
+_dsbx_sync_atlassian_secret() {
+  local sandbox_name="$1"
+  local marker; marker=$(_dsbx_secret_marker "$sandbox_name" "atlassian-secret")
+  if _dsbx_secret_fresh "$marker"; then
+    return 0
+  fi
+  mkdir -p "$_DSBX_STATE_DIR/markers"
+
+  local token
+  if ! token=$(OP_ACCOUNT="wellsky.1password.com" op read "op://Employee/JIRA CLI Token/credential" 2>>"$_DSBX_LOG"); then
+    echo "[dsbx] failed to read Atlassian token from 1Password" >&2
+    echo "[dsbx] is your op session active? try: eval \$(op signin --account wellsky.1password.com)" >&2
+    return 1
+  fi
+
+  local b64
+  b64=$(printf '%s:%s' "$JIRA_USERNAME" "$token" | base64)
+  if ! printf '%s' "$b64" | sbx secret set -g atlassian -f >>"$_DSBX_LOG" 2>&1; then
+    echo "[dsbx] failed to write Atlassian secret to sbx" >&2
     return 1
   fi
   touch "$marker"
@@ -157,6 +183,8 @@ _dsbx_helper_mounts_stale() {
 }
 
 # Kit paths
+_DSBX_KITS_TOOLING="$_AGENT_SBX_ROOT/kits/tooling"
+_DSBX_KITS_CLAUDE_PATCH="$_AGENT_SBX_ROOT/kits/claude-code-patch"
 _DSBX_KITS_PERSONAL="$_AGENT_SBX_ROOT/kits/personal"
 _DSBX_KITS_ATLASSIAN="$_AGENT_SBX_ROOT/kits/atlassian"
 _DSBX_KITS_OMP="$_AGENT_SBX_ROOT/kits/omp"
@@ -323,7 +351,7 @@ _dsbx_run() {
     echo "$(date -Iseconds) Recreating $name" >> "$_DSBX_LOG"
     sbx rm -f "$name" >> "$_DSBX_LOG" 2>&1 || true
     _dsbx_purge_orphans "$name"
-    rm -f "$_DSBX_STATE_DIR/markers/${name}.gh-secret"
+    rm -f "$_DSBX_STATE_DIR/markers/${name}".{gh,atlassian}-secret
   fi
   if ! sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
     echo "$(date -Iseconds) Creating $name" >> "$_DSBX_LOG"
@@ -345,6 +373,9 @@ _dsbx_run() {
     fi
   fi
   _dsbx_time "sync-gh-secret($name)" _dsbx_sync_github_secret "$name" || return 1
+  if ! _dsbx_is_personal; then
+    _dsbx_time "sync-atlassian-secret($name)" _dsbx_sync_atlassian_secret "$name" || return 1
+  fi
   if (( print_mode )); then
     sbx exec -i "$name" -- "$print_cmd" -p "${agent_args[@]}"
     return $?
@@ -353,16 +384,20 @@ _dsbx_run() {
 }
 
 dsbx-cc() {
-  _dsbx_run claude-sandbox-mise:latest claude dsbx-cc claude \
-    "$_DSBX_KITS_PERSONAL" "$_DSBX_KITS_ATLASSIAN" -- "$@"
+  local -a kits=("$_DSBX_KITS_TOOLING" "$_DSBX_KITS_CLAUDE_PATCH" "$_DSBX_KITS_PERSONAL")
+  _dsbx_is_personal || kits+=("$_DSBX_KITS_ATLASSIAN")
+  _dsbx_run "" claude dsbx-cc claude "${kits[@]}" -- "$@"
 }
 dsbx-ruby-cc() {
-  _dsbx_run claude-sandbox-ruby-2.6.10:latest claude dsbx-ruby-cc claude \
-    "$_DSBX_KITS_PERSONAL" "$_DSBX_KITS_ATLASSIAN" -- "$@"
+  local -a kits=("$_DSBX_KITS_TOOLING" "$_DSBX_KITS_CLAUDE_PATCH" "$_DSBX_KITS_PERSONAL")
+  _dsbx_is_personal || kits+=("$_DSBX_KITS_ATLASSIAN")
+  _dsbx_run claude-sandbox-ruby-2.6.10:latest claude dsbx-ruby-cc claude "${kits[@]}" -- "$@"
 }
 dsbx-omp() {
-  _dsbx_run "" omp dsbx-omp omp \
-    "$_DSBX_KITS_PERSONAL" "$_DSBX_KITS_ATLASSIAN" "$_DSBX_KITS_OMP" -- "$@"
+  local -a kits=("$_DSBX_KITS_PERSONAL")
+  _dsbx_is_personal || kits+=("$_DSBX_KITS_ATLASSIAN")
+  kits+=("$_DSBX_KITS_OMP")
+  _dsbx_run "" omp dsbx-omp omp "${kits[@]}" -- "$@"
 }
 
 _dsbx_exec() {
@@ -373,6 +408,28 @@ _dsbx_exec() {
   sbx exec -it "$name" -- "$@"
 }
 
+# Re-apply a kit to a running sandbox (e.g. to update tools).
+dsbx-update() {
+  local -a prefixes=(dsbx-cc dsbx-ruby-cc dsbx-omp)
+  local -a kits=("$_DSBX_KITS_TOOLING" "$_DSBX_KITS_CLAUDE_PATCH" "$_DSBX_KITS_PERSONAL")
+  _dsbx_is_personal || kits+=("$_DSBX_KITS_ATLASSIAN")
+  local found=0
+  for prefix in "${prefixes[@]}"; do
+    local name
+    name="$(_dsbx_name "$prefix")"
+    sbx ls 2>/dev/null | awk '{print $1}' | grep -qx "$name" || continue
+    found=1
+    for kit in "${kits[@]}"; do
+      echo "[dsbx] applying $(basename "$kit") to $name" >&2
+      sbx kit add "$name" "$kit"
+    done
+  done
+  if (( ! found )); then
+    echo "[dsbx] no sandboxes found for this directory" >&2
+    return 1
+  fi
+}
+
 # Check whether sandboxes for the current working directory are running on the
 # latest built image. Inspects each existing sandbox's actual container image ID
 # (via sbx's embedded daemon) and compares to the current outer docker image ID
@@ -380,7 +437,6 @@ _dsbx_exec() {
 # Exit non-zero if any existing cwd sandbox is stale.
 dsbx-check() {
   local -a entries=(
-    'dsbx-cc:claude-sandbox-mise:latest'
     'dsbx-ruby-cc:claude-sandbox-ruby-2.6.10:latest'
     'dsbx-omp:omp-sandbox:latest'
   )
