@@ -3,8 +3,8 @@ if command -v zoxide >/dev/null; then
 fi
 
 # mise — interactive activation. dot-zshenv handles non-interactive shells via
-# `mise activate zsh --shims`; bash sandbox shells reach mise through the
-# /mise/shims dir prepended to PATH in the Dockerfiles.
+# `mise activate zsh --shims`; sandbox shells get mise env vars from the
+# tooling kit and activate here via the stowed dotfiles.
 if command -v mise &>/dev/null; then
   eval "$(mise activate bash)"
 fi

@@ -59,30 +59,51 @@ _copy_dotfiles() {
   done
 }
 
-# 4. Install host dotfiles
+# 4. Install host dotfiles (first run only — guarded for startup idempotency)
 DOTFILES_MOUNT="$DEV_PERSONAL/dotfiles"
 if [ -d "$DOTFILES_MOUNT" ]; then
-  mkdir -p "$HOME/.claude"
-  rm -f \
-    "$HOME/.bashrc" \
-    "$HOME/.gitconfig" \
-    "$HOME/.claude/settings.json"
+  if [ ! -f "$HOME/.dotfiles-installed" ]; then
+    mkdir -p "$HOME/.claude"
 
-  if [ -w "$DOTFILES_MOUNT/dot-gitconfig" ]; then
-    # Dotfiles repo is the RW workspace — copy to avoid mutating the repo
-    _copy_dotfiles "$DOTFILES_MOUNT"
-  else
-    # RO helper mount — symlink via stow so host changes propagate live
-    stow --dotfiles -d "$DEV_PERSONAL" -t "$HOME" dotfiles
+    # Preserve sbx's gitconfig (safe.directory, checkStat) — prepend after install
+    sbx_gitconfig=$(cat "$HOME/.gitconfig" 2>/dev/null || true)
+
+    rm -f \
+      "$HOME/.bashrc" \
+      "$HOME/.gitconfig" \
+      "$HOME/.claude/settings.json"
+
+    if [ -w "$DOTFILES_MOUNT/dot-gitconfig" ]; then
+      _copy_dotfiles "$DOTFILES_MOUNT"
+    else
+      stow --dotfiles -d "$DEV_PERSONAL" -t "$HOME" dotfiles
+
+      # Stow creates RO symlinks — make writable copies for files we need to modify
+      for f in "$HOME/.bashrc" "$HOME/.gitconfig" "$HOME/.gitignore"; do
+        [ -L "$f" ] && cp --remove-destination "$(readlink -f "$f")" "$f"
+      done
+    fi
+
+    # Prepend sbx's gitconfig so ours wins on overlapping keys (last wins)
+    if [ -n "$sbx_gitconfig" ]; then
+      printf '%s\n\n%s\n' "$sbx_gitconfig" "$(cat "$HOME/.gitconfig")" > "$HOME/.gitconfig"
+    fi
+
+    # Merge sbx's gitignore patterns into ours
+    if [ -f "$HOME/.gitignore_global" ]; then
+      cat "$HOME/.gitignore_global" >> "$HOME/.gitignore"
+    fi
+
+    # Stash settings.json for restores after sbx overwrites it on launch
+    if [ -f "$HOME/.claude/settings.json" ]; then
+      cp "$HOME/.claude/settings.json" "$HOME/.claude/settings.json.dotfiles"
+    fi
+    touch "$HOME/.dotfiles-installed"
   fi
 
-  # sbx's agent runtime overwrites ~/.claude/settings.json on launch.
-  # Stash our copy and prepend a restore line to .bashrc so it runs
-  # before the agent reads config.
-  if [ -f "$HOME/.claude/settings.json" ]; then
-    cp "$HOME/.claude/settings.json" "$HOME/.claude/settings.json.dotfiles"
-    echo '[ -f "$HOME/.claude/settings.json.dotfiles" ] && cp "$HOME/.claude/settings.json.dotfiles" "$HOME/.claude/settings.json"' \
-      >> "$HOME/.bashrc"
+  # Restore settings.json — sbx overwrites it on every launch
+  if [ -f "$HOME/.claude/settings.json.dotfiles" ]; then
+    cp "$HOME/.claude/settings.json.dotfiles" "$HOME/.claude/settings.json"
   fi
 fi
 
