@@ -5,6 +5,10 @@ displayName: Claude Code Skill Override Patch
 description: Patches Claude Code to allow skillOverrides for plugin-scoped skills
 
 commands:
-  install:
-    - command: "bash /home/agent/patch-claude-code.sh"
-      description: Patch Claude Code binary for plugin skill overrides
+  startup:
+    - command: ["bash", "-c", "claude update 2>/dev/null; bash /home/agent/patch-claude-code.sh"]
+      description: Update Claude Code, then patch binary for plugin skill overrides
+
+environment:
+  variables:
+    DISABLE_AUTOUPDATER: "1"
