@@ -1,4 +1,6 @@
 {
+  "skillListingMaxDescChars": 500,
+  "skillListingBudgetFraction": 0.02,
   "env": {
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
     "ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTS": "effort,thinking,adaptive_thinking,interleaved_thinking,web_search",
@@ -44,9 +46,33 @@
       "Bash(npm install -g *)",
       "Bash(pip install --user *)"
     ],
-    "defaultMode": "auto"
+    "defaultMode": "default"
   },
   "model": "claude-opus-4-6",
+  "skillOverrides": {
+    "claude-code-setup:claude-automation-recommender": "user-invocable-only",
+    "shared:pr-comments-analyzer": "user-invocable-only",
+    "claude-md-management:claude-md-improver": "user-invocable-only",
+    "shared:skill-builder": "off",
+    "superpowers:writing-skills": "off",
+    "caveman:caveman-compress": "user-invocable-only",
+    "caveman:caveman-stats": "user-invocable-only",
+    "product-management:roadmap-management": "user-invocable-only",
+    "product-management:competitive-analysis": "user-invocable-only",
+    "product-management:user-research-synthesis": "user-invocable-only",
+    "product-management:metrics-tracking": "user-invocable-only",
+    "product-management:stakeholder-comms": "user-invocable-only",
+    "workflow:spec-metadata": "user-invocable-only",
+    "shared:learnings-capturer": "user-invocable-only",
+    "hookify:writing-rules": "user-invocable-only",
+    "shared:roi-feedback-tracker": "user-invocable-only",
+    "caveman:caveman-help": "user-invocable-only",
+    "skill-audit": "user-invocable-only",
+    "ws-atlassian:ws-atlassian": "user-invocable-only",
+    "shared:framework-detector": "off",
+    "shared:code-analyzer": "off",
+    "shared:test-planner": "off"
+  },
   "hooks": {
     "Notification": [
       {
@@ -208,6 +234,9 @@
       }
     ]
   },
+  "worktree": {
+    "baseRef": "fresh"
+  },
   "statusLine": {
     "type": "command",
     "command": "mise exec node@25 -- claude-powerline --theme=tokyo-night --style=powerline"
@@ -305,34 +334,12 @@
   "syntaxHighlightingDisabled": false,
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
+  "tui": "fullscreen",
   "autoDreamEnabled": true,
   "skipDangerousModePermissionPrompt": true,
   "editorMode": "vim",
+  "preferredNotifChannel": "auto",
+  "showTurnDuration": true,
   "skipAutoPermissionPrompt": true,
-  "skillListingBudgetFraction": 0.02,
-  "skillListingMaxDescChars": 500,
-  "skillOverrides": {
-    "claude-code-setup:claude-automation-recommender": "user-invocable-only",
-    "shared:pr-comments-analyzer": "user-invocable-only",
-    "claude-md-management:claude-md-improver": "user-invocable-only",
-    "shared:skill-builder": "off",
-    "superpowers:writing-skills": "off",
-    "caveman:caveman-compress": "user-invocable-only",
-    "caveman:caveman-stats": "user-invocable-only",
-    "product-management:roadmap-management": "user-invocable-only",
-    "product-management:competitive-analysis": "user-invocable-only",
-    "product-management:user-research-synthesis": "user-invocable-only",
-    "product-management:metrics-tracking": "user-invocable-only",
-    "product-management:stakeholder-comms": "user-invocable-only",
-    "workflow:spec-metadata": "user-invocable-only",
-    "shared:learnings-capturer": "user-invocable-only",
-    "hookify:writing-rules": "user-invocable-only",
-    "shared:roi-feedback-tracker": "user-invocable-only",
-    "caveman:caveman-help": "user-invocable-only",
-    "skill-audit": "user-invocable-only",
-    "ws-atlassian:ws-atlassian": "user-invocable-only",
-    "shared:framework-detector": "off",
-    "shared:code-analyzer": "off",
-    "shared:test-planner": "off"
-  }
+  "useAutoModeDuringPlan": false
 }

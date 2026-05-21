@@ -1,7 +1,8 @@
-# Dockerfile for Claude Code Docker Sandbox
-# Extends the mise-enabled Claude Code sandbox template with Ruby
+# Dockerfile for Claude Code Docker Sandbox with Ruby
+# Extends the base Claude Code sandbox template directly.
+# Runtime tooling (gcloud, stow) comes from the tooling kit at sandbox creation.
 
-FROM claude-sandbox-mise:latest
+FROM docker/sandbox-templates:claude-code-docker
 
 # Build argument for Ruby version
 ARG RUBY_VERSION=2.6.10
@@ -11,6 +12,16 @@ USER root
 
 # Set shell options for better error handling
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# mise — build-time only; runtime values come from the tooling kit
+ARG MISE_DATA_DIR="/mise"
+ARG MISE_CONFIG_DIR="/mise"
+ARG MISE_CACHE_DIR="/mise/cache"
+ARG MISE_INSTALL_PATH="/usr/local/bin/mise"
+ARG MISE_TRUSTED_CONFIG_PATHS="/"
+ENV PATH="/mise/shims:$PATH"
+RUN install -d -o agent -g agent /mise /mise/cache && \
+  curl -fsSL https://mise.run | sh
 
 # Install system dependencies for Ruby
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
