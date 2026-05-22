@@ -17,6 +17,10 @@ commands:
       description: Install gcloud SDK, stow, and prepare mise dirs
     - command: "curl -fsSL https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh"
       description: Install mise
+    - command: >-
+        /usr/local/bin/mise use -g node@22
+      description: Install Node 22 LTS via mise
+      user: agent
 
 environment:
   variables:
