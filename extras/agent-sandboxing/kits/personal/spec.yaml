@@ -13,5 +13,5 @@ commands:
 environment:
   variables:
     CLAUDE_CODE_USE_VERTEX: "1"
-    CLOUD_ML_REGION: "us"
+    CLOUD_ML_REGION: "global"
     ANTHROPIC_VERTEX_PROJECT_ID: "consolo-dev-vertex-wsky"
