@@ -32,5 +32,6 @@ Match found → use existing copy instead of cloning. No match → clone to temp
 ## Tool Preferences
 
 - Prefer ripgrep (`rg`) over `grep` — use Grep tool or `rg` via Bash
+- Git commit messages → use `caveman:caveman-commit` skill for terse, conventional commit format
 - JIRA operations → use `acli jira` (see `acli` skill for commands). Single commands (view, search) run directly in main thread. Multi-step operations (create + link, bulk edits) use subagent. Do NOT use `shared:jira-connector` agent — it is only for sandbox environments where acli is unavailable
 - Never use MCP servers — use built-in tools, skills, and agents instead
