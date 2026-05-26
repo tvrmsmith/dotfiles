@@ -1,13 +1,9 @@
 ---
-name: jira
-description: Use when interacting with JIRA tickets, work items, sprints, backlogs, or Confluence pages. Triggers on: jira, ticket, work item, acli, sprint, backlog, issue tracking, create ticket, transition status, confluence, wiki page.
+name: acli
+description: Atlassian CLI (acli) command reference for Jira operations. Triggers on: acli, acli jira, atlassian cli.
 ---
 
-# JIRA & Confluence
-
-**Jira**: Use `acli jira` (preferred) for all Jira operations. Falls back to the `ws-atlassian` plugin's `jira-rest.ts` CLI if acli is unavailable or a feature requires it (custom fields, team UUID resolution).
-
-**Confluence**: Use the `ws-atlassian` plugin's `confluence-rest.ts` CLI. Invoke `/ws-atlassian` for full Confluence command reference.
+# Atlassian CLI (acli) Reference
 
 ## Quick Reference
 
