@@ -7,7 +7,20 @@
     "ANTHROPIC_VERTEX_PROJECT_ID": "consolo-dev-vertex-wsky",
     "CLAUDE_CODE_USE_VERTEX": "1",
     "CLOUD_ML_REGION": "global",
-    "SUPERSET_DEBUG_HOOKS": "1"
+    "SUPERSET_DEBUG_HOOKS": "1",
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "https://claude-otel-collector.entanalytics-prod-app.prj.gcp.wellsky.io",
+    "OTEL_METRICS_INCLUDE_ACCOUNT_UUID": "true",
+    "OTEL_METRICS_INCLUDE_SESSION_ID": "true",
+    "OTEL_METRICS_INCLUDE_VERSION": "true",
+    "OTEL_LOG_USER_PROMPTS": "0",
+    "OTEL_LOG_TOOL_DETAILS": "0",
+    "OTEL_LOG_TOOL_CONTENT": "0",
+    "OTEL_RESOURCE_ATTRIBUTES": "user.email=trevor.smith@wellsky.com,billing.project_id=consolo-dev-vertex-wsky,default.region=global",
+    "CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS": "5000"
   },
   "permissions": {
     "allow": [
@@ -272,7 +285,20 @@
     "workflow@wellsky-plugins": true,
     "ws-atlassian@wellsky-plugins": true,
     "zapier@claude-plugins-official": false,
-    "warp@claude-code-warp": true
+    "warp@claude-code-warp": true,
+    "hp@wellsky-home": true,
+    "shared@wellsky-home": true,
+    "wsh-api@wellsky-home": true,
+    "wsh-cicd@wellsky-home": true,
+    "wsh-data@wellsky-home": true,
+    "wsh-develop@wellsky-home": true,
+    "wsh-diagrams@wellsky-home": true,
+    "wsh-infra@wellsky-home": true,
+    "wsh-libs@wellsky-home": true,
+    "wsh-navigator@wellsky-home": true,
+    "wsh-observability@wellsky-home": true,
+    "wsh-ops@wellsky-home": true,
+    "wsh-research@wellsky-home": true
   },
   "extraKnownMarketplaces": {
     "caveman": {
@@ -329,8 +355,15 @@
         "source": "github",
         "repo": "warpdotdev/claude-code-warp"
       }
+    },
+    "wellsky-home": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/trevor.smith/dev/wellsky/wellsky-home-ai-hub"
+      }
     }
   },
+  "otelHeadersHelper": "python3 /Users/trevor.smith/.claude/plugins/cache/wellsky-plugins/otel-telemetry/1.3.0/scripts/otel-token-helper.py",
   "syntaxHighlightingDisabled": false,
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
