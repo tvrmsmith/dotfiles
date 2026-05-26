@@ -21,6 +21,19 @@ credentials:
         - JIRA_API_TOKEN
       priority: env-first
 
+memory: |
+  ## Atlassian Credentials
+
+  Jira and Confluence credentials are proxy-managed. The env vars
+  `JIRA_USERNAME`, `JIRA_API_TOKEN`, and `JIRA_BASE_URL` contain
+  placeholder values — the sandbox proxy replaces the Authorization
+  header with real credentials on outbound requests to
+  `wellsky.atlassian.net`. Never prompt for real credentials.
+
+  A dummy `.claude/atlassian-credentials.json` is pre-populated in
+  the workspace for tools that read credentials from file (e.g.,
+  jira-connector agent). Use these values as-is.
+
 environment:
   variables:
     JIRA_USERNAME: "proxy-managed"
