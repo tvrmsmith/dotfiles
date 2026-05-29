@@ -1,6 +1,6 @@
 ---
 name: test-best-practices
-description: Use when writing, reviewing, or refactoring tests in any language/framework. Covers assertion style, test structure, naming, isolation, and common anti-patterns. Triggers on: test, unit test, integration test, acceptance test, assertion, should, expect, assert, test style, test review, test refactor, TDD, test coverage.
+description: Use when writing, reviewing, or refactoring tests. Covers assertion style, test structure, naming, isolation, and common anti-patterns.
 ---
 
 # Test Best Practices
