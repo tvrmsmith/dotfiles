@@ -114,7 +114,16 @@
     "hookify:list": "user-invocable-only",
     "security-screener:test-mcp-analyze": "user-invocable-only",
     "keybindings-help": "user-invocable-only",
-    "init": "user-invocable-only"
+    "init": "user-invocable-only",
+    "workflow:commit": "user-invocable-only",
+    "workflow:plan": "user-invocable-only",
+    "workflow:iterate_plan": "user-invocable-only",
+    "workflow:implement": "user-invocable-only",
+    "commit-commands:clean_gone": "user-invocable-only",
+    "security-screener:mcp-analyze": "user-invocable-only",
+    "security-screener:sbom-generate": "user-invocable-only",
+    "claude-api": "name-only",
+    "update-config": "user-invocable-only"
   },
   "hooks": {
     "Notification": [
@@ -180,17 +189,7 @@
         ]
       }
     ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"/Users/trevor.smith/.wellsky-claude/hooks/pre-commit-claudemd-review.sh\""
-          }
-        ]
-      }
-    ],
+    "PreToolUse": [],
     "SessionEnd": [
       {
         "matcher": "",
@@ -290,7 +289,7 @@
     "chrome-devtools-mcp@chrome-devtools-plugins": false,
     "claude-code-setup@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,
-    "code-review@claude-plugins-official": true,
+    "code-review@claude-plugins-official": false,
     "code-simplifier@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true,
     "csharp-lsp@claude-plugins-official": false,
