@@ -108,7 +108,13 @@
     "terraform-module-generation:terraform-stacks": "user-invocable-only",
     "terraform-module-generation:refactor-module": "user-invocable-only",
     "otel-telemetry:otel-configure": "user-invocable-only",
-    "otel-telemetry:otel-status": "user-invocable-only"
+    "otel-telemetry:otel-status": "user-invocable-only",
+    "hookify:configure": "user-invocable-only",
+    "hookify:help": "user-invocable-only",
+    "hookify:list": "user-invocable-only",
+    "security-screener:test-mcp-analyze": "user-invocable-only",
+    "keybindings-help": "user-invocable-only",
+    "init": "user-invocable-only"
   },
   "hooks": {
     "Notification": [
