@@ -17,7 +17,7 @@ SETTINGS_PATH=$(readlink -f ~/.claude/settings.json 2>/dev/null || echo ~/.claud
 
 ## Step 0 — Inventory
 
-Run the bundled scanner to collect all loaded skills, filter to enabled plugins, extract descriptions, and produce a sorted table:
+Run the bundled scanner to collect all loaded skills and commands, filter to enabled plugins, extract descriptions, and produce a sorted table:
 
 ```bash
 python3 "$(dirname "$0")/scripts/scan_skills.py"
@@ -34,8 +34,8 @@ Use `--json` for structured output. The script reads `~/.claude/settings.json` a
 
 The scanner outputs:
 - Current budget settings and usage percentage
-- Skill counts (active, hidden, disabled)
-- Full table: skill name, plugin, description size, frontmatter status, current override
+- Counts (active, hidden, disabled) — includes both skills and commands
+- Full table: skill name, plugin, kind (skl/cmd), description size, frontmatter status, current override
 
 ## Phase 1: Per-Project Plugin Scoping
 
@@ -136,8 +136,8 @@ Common overlap patterns to look for:
 - Multiple "test" skills (test-coverage, test-quality, test-planner, tdd)
 - Multiple "plan" skills (writing-plans, executing-plans, plan-reviewer)
 - Multiple "skill creation" skills (skill-creator, skill-builder, writing-skills)
-- Skills that duplicate functionality of commands in the same plugin
-- User-level skills that overlap with plugin skills
+- A skill and command in the same plugin that cover the same action (e.g., `workflow:spec` skill + `spec` command both creating specs)
+- User-level skills that overlap with plugin skills or commands
 
 ### Step 2.2 — Present overlaps interactively
 
@@ -202,11 +202,12 @@ Options for each:
 - **Mark user-invocable-only** — removed from listing, still callable via `/name`
 - **Fully disable (off)** — completely removed
 
-Auto-suggest `user-invocable-only` for skills matching these patterns:
+Auto-suggest `user-invocable-only` for skills and commands matching these patterns:
 - Help/info skills (name contains `help`, `stats`, `status`, `info`)
 - Compress/utility skills
 - Skills the user explicitly invokes by name (setup wizards, one-time config)
 - Skills with very niche triggers unlikely to fire organically
+- Sub-commands that drill into a specific topic already covered by a parent skill (e.g., `hp-emr`, `hp-billing` when `hp` skill already exists)
 
 Skip skills already set to `user-invocable-only` or `off` in `skillOverrides`.
 
@@ -267,11 +268,17 @@ Verified from Claude Code v2.1.150 binary source (function `checkEnabledPlugins`
 5. **Merge bug:** `enabledPlugins` in `settings.local.json` is silently ignored unless `enabledPlugins` key exists in `settings.json` (even as `{}`). See [#27247](https://github.com/anthropics/claude-code/issues/27247).
 6. **Builtin plugins** (from `claude-plugins-official`) use a different code path with `defaultEnabled ?? true` fallback — these DO load by default even without being listed. External/marketplace plugins do not.
 
+## Key Concepts
+
+### Commands count toward skill budget
+
+Plugin **commands** (`.md` files in a plugin's `commands/` directory) are unified with skills — both appear in the system prompt skill listing and consume budget identically. When auditing, count commands alongside skills. The `skillOverrides` setting applies to both (with the binary patch below).
+
 ## Known Limitations
 
 ### Plugin skill overrides are ignored by Claude Code
 
-Claude Code hardcodes `source==="plugin"` to return `"on"`, bypassing `skillOverrides` in `settings.json`. This means `user-invocable-only` and `off` overrides set during Phase 4 **only take effect for user-level skills** — plugin-scoped skills (e.g. `pr-review-toolkit:review-pr`) will remain active regardless of the override.
+Claude Code hardcodes `source==="plugin"` to return `"on"`, bypassing `skillOverrides` in `settings.json`. This means `user-invocable-only` and `off` overrides set during Phase 4 **only take effect for user-level skills** — plugin-scoped skills and commands (e.g. `pr-review-toolkit:review-pr`, `hookify:configure`) will remain active regardless of the override.
 
 **Workaround (macOS only):** A binary patch script is included at `references/claude-code-patch.sh`. It replaces the hardcoded check so `skillOverrides` applies to all skill sources. Safe to re-run (detects if already patched), creates a `.bak` backup, and re-signs with original entitlements. Re-run after each Claude Code update.
 

@@ -53,18 +53,25 @@ def scan_plugin_skills(cache_dir, enabled_plugins, active_versions, overrides):
     skills = []
     for root, _, files in os.walk(cache_dir):
         for fname in files:
-            if fname.lower() != "skill.md":
-                continue
             fpath = os.path.join(root, fname)
             rel = os.path.relpath(fpath, cache_dir)
             parts = rel.split(os.sep)
-            if len(parts) < 5 or parts[3] != "skills":
+
+            # Skills: marketplace/plugin/version/skills/skill_name/SKILL.md
+            if fname.lower() == "skill.md" and len(parts) >= 5 and parts[3] == "skills":
+                marketplace, plugin, version, _, skill_name = parts[:5]
+                kind = "skill"
+            # Commands: marketplace/plugin/version/commands/command_name.md
+            elif fname.endswith(".md") and len(parts) >= 4 and parts[3] == "commands":
+                marketplace, plugin, version = parts[:3]
+                skill_name = os.path.splitext(fname)[0]
+                kind = "command"
+            else:
                 continue
 
-            marketplace, plugin, version, _, skill_name = parts[:5]
             plugin_key = f"{plugin}@{marketplace}"
 
-            if enabled_plugins.get(plugin_key) is False:
+            if not enabled_plugins.get(plugin_key):
                 continue
             active_ver = active_versions.get(plugin_key)
             if active_ver and version != active_ver:
@@ -79,6 +86,7 @@ def scan_plugin_skills(cache_dir, enabled_plugins, active_versions, overrides):
                 "plugin": plugin,
                 "marketplace": marketplace,
                 "plugin_key": plugin_key,
+                "kind": kind,
                 "desc": desc,
                 "desc_size": desc_size,
                 "has_frontmatter": has_fm,
@@ -111,6 +119,7 @@ def scan_user_skills(skills_dir, overrides):
                     "plugin": "(user)",
                     "marketplace": "(user)",
                     "plugin_key": "(user)",
+                    "kind": "skill",
                     "desc": desc,
                     "desc_size": desc_size,
                     "has_frontmatter": has_fm,
@@ -169,11 +178,12 @@ def main():
         print(f"Skills: {len(all_skills)} total | {len(active)} active | {len(hidden)} hidden | {len(disabled)} disabled")
         print(f"Budget: {usage_chars:,} / {int(budget_chars):,} chars ({usage_pct:.0f}% used)")
         print()
-        print(f"{'#':>3} | {'Skill':<35} | {'Plugin':<25} | {'Size':>5} | {'FM':>3} | {'Override':<20}")
-        print("-" * 105)
+        print(f"{'#':>3} | {'Skill':<35} | {'Plugin':<25} | {'Kind':<4} | {'Size':>5} | {'FM':>3} | {'Override':<20}")
+        print("-" * 112)
         for i, s in enumerate(all_skills, 1):
             fm = "Y" if s["has_frontmatter"] else "NO!"
-            print(f"{i:3} | {s['name']:<35} | {s['plugin']:<25} | {s['desc_size']:>5} | {fm:>3} | {s['override']:<20}")
+            kind = "cmd" if s.get("kind") == "command" else "skl"
+            print(f"{i:3} | {s['name']:<35} | {s['plugin']:<25} | {kind:<4} | {s['desc_size']:>5} | {fm:>3} | {s['override']:<20}")
 
 
 if __name__ == "__main__":
