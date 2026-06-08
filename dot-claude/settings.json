@@ -20,7 +20,8 @@
     "OTEL_LOG_TOOL_DETAILS": "0",
     "OTEL_LOG_TOOL_CONTENT": "0",
     "OTEL_RESOURCE_ATTRIBUTES": "user.email=trevor.smith@wellsky.com,billing.project_id=consolo-dev-vertex-wsky,default.region=global",
-    "CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS": "5000"
+    "CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS": "5000",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "65"
   },
   "permissions": {
     "allow": [
@@ -305,7 +306,6 @@
     "typescript-lsp@claude-plugins-official": false,
     "unit-gen@wellsky-plugins": true,
     "workflow@wellsky-plugins": true,
-    "warp@claude-code-warp": true,
     "zapier@claude-plugins-official": false,
     "architect@wellsky-plugins": false,
     "bug-fix@wellsky-plugins": false,
@@ -332,7 +332,9 @@
     "dotnet-upgrade@dotnet-agent-skills": false,
     "dotnet11@dotnet-agent-skills": false,
     "terragrunt-skill@jfr992": false,
-    "terrashark@terrashark": false
+    "terrashark@terrashark": false,
+    "warp@claude-code-warp": true,
+    "playwright@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "caveman": {
@@ -384,16 +386,16 @@
         "ref": "fix/combined-skill-descriptions"
       }
     },
-    "claude-code-warp": {
-      "source": {
-        "source": "github",
-        "repo": "warpdotdev/claude-code-warp"
-      }
-    },
     "wellsky-home": {
       "source": {
         "source": "directory",
         "path": "/Users/trevor.smith/dev/wellsky/wellsky-home-ai-hub"
+      }
+    },
+    "claude-code-warp": {
+      "source": {
+        "source": "github",
+        "repo": "warpdotdev/claude-code-warp"
       }
     }
   },
