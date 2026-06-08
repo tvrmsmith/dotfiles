@@ -29,6 +29,11 @@ Match found → use existing copy instead of cloning. No match → clone to temp
 
 - Always use `caveman` skill in **lite** mode — no filler, no hedging, professional but tight
 
+## Planning
+
+- Never use plan mode (`EnterPlanMode`). For any creative/feature/design work, invoke `superpowers:brainstorming` skill instead — always, before implementation.
+- Trigger words ("build/add/implement/design/create X", "fix Y") → brainstorming skill, not plan mode.
+
 ## Tool Preferences
 
 - Prefer ripgrep (`rg`) over `grep` — use Grep tool or `rg` via Bash
