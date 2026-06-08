@@ -3,8 +3,12 @@ dotnet = "latest"
 go = "1.25.1"
 node = "25"
 opentofu = "latest"
+pnpm = "9"
 ruby = "3.4.7"
 terraform = "latest"
+uv = "latest"
+java = "21"
+postgres = "latest"
 
 [settings]
 
