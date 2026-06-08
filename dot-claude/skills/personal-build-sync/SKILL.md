@@ -229,6 +229,30 @@ git -C "$WORKTREE_DIR" merge --no-ff <branch> -m "Merge <branch> into personal-b
 
 Do not ask user whether to resolve — always resolve. Only ask if conflict genuinely ambiguous.
 
+#### Migration / generated-file conflicts — NEVER hand-edit
+
+Drizzle migration files are auto-generated. **Never hand-edit** `drizzle/*.sql`, `drizzle/meta/_journal.json`, or `drizzle/meta/*_snapshot.json` to resolve a conflict — including renumbering colliding migrations or hand-building snapshots. This applies to both ORM dirs: `packages/db/drizzle/` (Postgres) and `packages/local-db/drizzle/` (SQLite).
+
+Common collision: two feature branches each generated the next sequential migration (e.g. both `0042_*`), so journal, snapshot, and SQL all conflict.
+
+Resolve by **regenerating**, not editing:
+
+1. Resolve only the hand-written **schema** conflict (`packages/local-db/src/schema/*.ts` and/or `packages/db/src/schema/*.ts`) — keep both branches' column/table additions.
+2. Discard the conflicted generated artifacts so the migration dir matches main plus only the cleanly-applied (non-conflicting) migrations:
+   ```bash
+   git checkout --theirs packages/local-db/drizzle/meta/_journal.json   # or resolve to main's journal
+   # remove the colliding generated migration(s) + their snapshots that conflict
+   ```
+   Simplest reliable approach: reset the whole drizzle dir to one side, then regenerate the missing migration from the merged schema.
+3. Regenerate the migration from the resolved schema:
+   ```bash
+   bunx drizzle-kit generate --name="<combined_change_snake_case>"
+   ```
+   Run this from the package whose schema changed (`packages/local-db` or `packages/db`). Drizzle reads the current schema + last snapshot and emits a correctly-numbered SQL file, journal entry, and snapshot.
+4. Stage the regenerated files and commit.
+
+Per repo `AGENTS.md`: never run a production migration; only generate. If `drizzle-kit generate` cannot run in this environment, stop and ask the user to run it rather than hand-editing the generated files.
+
 ## Step 6 — CI Check, Push, and Summary
 
 After all branches merged, run CI checks one final time **in the worktree** to validate combined result (merge conflict resolutions can introduce issues no single branch had):
