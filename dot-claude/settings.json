@@ -21,7 +21,8 @@
     "OTEL_LOG_TOOL_CONTENT": "0",
     "OTEL_RESOURCE_ATTRIBUTES": "user.email=trevor.smith@wellsky.com,billing.project_id=consolo-dev-vertex-wsky,default.region=global",
     "CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS": "5000",
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "65"
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "65",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000"
   },
   "permissions": {
     "allow": [
