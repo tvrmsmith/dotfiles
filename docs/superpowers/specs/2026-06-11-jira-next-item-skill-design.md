@@ -30,7 +30,10 @@ off to the brainstorming skill seeded with the ticket's details.
 - `acli` (authenticated; see `acli` skill) for all read/assign/transition ops.
 - `curl` + `jq` for the Agile REST sprint-add call.
 - Env vars (already set on this machine): `JIRA_BASE_URL`, `JIRA_USERNAME`,
-  `JIRA_API_TOKEN`. REST auth = HTTP basic `"$JIRA_USERNAME:$JIRA_API_TOKEN"`.
+  `JIRA_API_TOKEN`. `JIRA_API_TOKEN` holds a **1Password secret reference** (`op://...`),
+  not the literal token — resolve it with `op read "$JIRA_API_TOKEN"` before use. REST
+  auth = HTTP basic `"$JIRA_USERNAME:$(op read "$JIRA_API_TOKEN")"`. Requires `op` CLI
+  authenticated (see `1password` skill).
 
 ## Selection logic
 
@@ -63,9 +66,10 @@ Notes:
 
 1. **Backlog item only:** show the item (key, summary, type) and confirm it's
    acceptable to pull into the active sprint. On **no** → stop (nothing mutated).
-   On **yes** → add via REST:
+   On **yes** → add via REST (resolve the 1Password token first):
    ```bash
-   curl -sS -w '%{http_code}' -u "$JIRA_USERNAME:$JIRA_API_TOKEN" \
+   TOKEN=$(op read "$JIRA_API_TOKEN")
+   curl -sS -w '%{http_code}' -u "$JIRA_USERNAME:$TOKEN" \
      -X POST -H 'Content-Type: application/json' \
      --data '{"issues":["<KEY>"]}' \
      "$JIRA_BASE_URL/rest/agile/1.0/sprint/<sprintId>/issue"
@@ -74,7 +78,8 @@ Notes:
 2. Assign **the selected item** to the user: `acli jira workitem assign --key <KEY> --assignee @me`.
 3. Transition **the selected item** to In Progress:
    `acli jira workitem transition --key <KEY> --status "In Progress" --yes`.
-4. Assign **all of its subtasks** to the user: search `parent = <KEY>` →
+4. Assign **all of its subtasks** to the user: search `parent = <KEY>`
+   (with `--fields "key,summary"` — `--fields "key"` alone makes acli return null rows) →
    `acli jira workitem assign --key <SUB> --assignee @me` for each. None → skip.
 5. Fetch full ticket details once: `acli jira workitem view <KEY> --json`
    (summary, description, subtasks, comments). Then invoke `superpowers:brainstorming`,
