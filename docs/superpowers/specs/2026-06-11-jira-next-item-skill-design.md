@@ -27,40 +27,50 @@ off to the brainstorming skill seeded with the ticket's details.
 
 ## Dependencies / environment
 
-- `acli` (authenticated; see `acli` skill) for all read/assign/transition ops.
-- `curl` + `jq` for the Agile REST sprint-add call.
-- Env vars (already set on this machine): `JIRA_BASE_URL`, `JIRA_USERNAME`,
-  `JIRA_API_TOKEN`. `JIRA_API_TOKEN` holds a **1Password secret reference** (`op://...`),
-  not the literal token — resolve it with `op read "$JIRA_API_TOKEN"` before use. REST
-  auth = HTTP basic `"$JIRA_USERNAME:$(op read "$JIRA_API_TOKEN")"`. Requires `op` CLI
-  authenticated (see `1password` skill).
+- `acli` (authenticated; see `acli` skill) for assign/transition/view/subtask-search and
+  listing the board's sprints.
+- `curl` + `jq` for the Agile REST calls — **both selection and the sprint-add**. `acli`
+  can only run a raw `sprint = <id>` JQL, which ignores the board's filter; selection must
+  go through the board endpoints (see Selection logic), so REST is on the core path.
+- Env vars (already set on this machine), **required** (selection needs them, not just the
+  sprint-add): `JIRA_BASE_URL`, `JIRA_USERNAME`, `JIRA_API_TOKEN`. `JIRA_API_TOKEN` holds
+  a **1Password secret reference** (`op://...`), not the literal token — resolve it once
+  with `TOKEN=$(op read "$JIRA_API_TOKEN")` and reuse for every REST call. Requires `op`
+  CLI authenticated (see `1password` skill).
 
 ## Selection logic
 
-1. Resolve the board's project key: `acli jira board view --id <board> --json`.
-2. Resolve the active sprint: `acli jira board list-sprints --id <board> --state active --json`.
-3. **Sprint pass** — if an active sprint exists, query:
+**Select through the board's Agile endpoints, never a raw `sprint = <id>` JQL.** A sprint
+is a container; the board is a *filtered view* over it (board 987 only renders issues whose
+Team is Bedrock, per its saved filter). An issue can be in the active sprint yet absent
+from the board. `sprint = <id>` returns those off-board issues, so the skill would start
+something the user can't see on their board — the exact bug found in the first dry-run
+(HCON-34900: in sprint 44250, no Bedrock team, invisible on board 987). The board
+endpoints AND the board's saved filter in automatically, returning exactly the board view.
+
+1. Resolve the active sprint: `acli jira board list-sprints --id <board> --state active --json`.
+   (Project key is no longer needed — the board endpoints scope by board, not project.)
+2. Shared predicate (ANDed onto the board filter via the `jql` query param):
    ```
-   sprint = <sprintId> AND assignee is EMPTY AND statusCategory = "To Do"
+   assignee is EMPTY AND statusCategory = "To Do"
      AND issuetype not in subTaskIssueTypes() AND issuetype != Epic
      ORDER BY Rank ASC
    ```
-   First result = the next item. No sprint-add needed (already in sprint).
+3. **Sprint pass** — if an active sprint exists, GET
+   `/rest/agile/1.0/board/<board>/sprint/<sprintId>/issue?jql=<predicate>&maxResults=1`.
+   First result = the next item; already in sprint *and* on the board — no sprint-add.
 4. **Backlog fallback** — only if the sprint pass returns nothing (or no active sprint):
-   ```
-   project = <KEY> AND sprint is EMPTY AND assignee is EMPTY
-     AND statusCategory = "To Do" AND issuetype not in subTaskIssueTypes()
-     AND issuetype != Epic ORDER BY Rank ASC
-   ```
-   First result = the next item; this path triggers the sprint-add confirm flow.
+   GET `/rest/agile/1.0/board/<board>/backlog?jql=<predicate>&maxResults=1`. The
+   `/backlog` endpoint is board-filtered and already excludes anything in an active/future
+   sprint, so the predicate needs no project or `sprint is EMPTY` clause. First result =
+   the next item; this path triggers the sprint-add confirm flow.
 5. Nothing in either pass → report "no startable items" and stop.
 
 Notes:
-- `ORDER BY Rank ASC` = board/backlog order = priority (per requirement, not the
-  priority field).
+- `ORDER BY Rank ASC` = board order = priority (per requirement, not the priority field).
 - `subTaskIssueTypes()` excludes orphan subtasks; `issuetype != Epic` excludes epics.
   Result set is real work items (Story / Task / Bug level) only.
-- Use `--fields "key,summary,status,issuetype" --json --limit 1` for the picks.
+- REST basic auth = `-u "$JIRA_USERNAME:$TOKEN"`; pass `jql` via `curl -G --data-urlencode`.
 
 ## Start actions (after an item is selected)
 

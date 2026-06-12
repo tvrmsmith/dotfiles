@@ -48,12 +48,15 @@ with the user before it's pulled into the sprint.
 
 ## Prerequisites
 
-- `acli` authenticated (see the `acli` skill). All reads, assigns, and transitions go
-  through it.
-- `jq` for parsing JSON output.
-- For pulling a backlog item into the sprint, these env vars must be set (they provide
-  REST basic auth): `JIRA_BASE_URL`, `JIRA_USERNAME`, `JIRA_API_TOKEN`. If any is
-  missing, tell the user to source their environment and stop before mutating anything.
+- `acli` authenticated (see the `acli` skill). Used for assigns, transitions, viewing a
+  ticket, listing the board's sprints, and finding subtasks.
+- `curl` + `jq`. Item **selection** and the sprint-add both go through the Jira Agile
+  REST API (`acli` can only query a raw `sprint = <id>` JQL — it cannot scope to a
+  board's filter, which is exactly the bug this skill must avoid; see Step 2).
+- These env vars must be set (REST basic auth) — selection needs them, so required:
+  `JIRA_BASE_URL`, `JIRA_USERNAME`, `JIRA_API_TOKEN`. If any is missing, tell the user to
+  source their environment and stop. `JIRA_API_TOKEN` is a 1Password `op://` reference;
+  resolve once with `TOKEN=$(op read "$JIRA_API_TOKEN")` and reuse for every REST call.
 ````
 
 - [ ] **Step 3: Verify the file parses as a skill (frontmatter present)**
@@ -73,7 +76,7 @@ git -C ~/.claude add skills/jira-next-item/SKILL.md && git -C ~/.claude commit -
 
 ---
 
-### Task 2: Document board / project / sprint resolution
+### Task 2: Document board + active sprint resolution
 
 **Files:**
 - Modify: `~/.claude/skills/jira-next-item/SKILL.md` (append "Resolve the board" section)
@@ -81,7 +84,7 @@ git -C ~/.claude add skills/jira-next-item/SKILL.md && git -C ~/.claude commit -
 - [ ] **Step 1: Append the resolution section**
 
 ````markdown
-## Step 1 — Resolve board, project, and active sprint
+## Step 1 — Resolve board and active sprint
 
 Accept an optional argument: a board **name or ID**. Resolve it to a numeric board ID:
 
@@ -96,12 +99,6 @@ Accept an optional argument: a board **name or ID**. Resolve it to a numeric boa
   If exactly one row matches the name, use its ID. If several match, show the list and
   ask the user which one. If none match, say so and stop.
 
-Derive the project key from the board (the JQL backlog query needs it):
-
-```bash
-acli jira board list-projects --id <BOARD> --json | jq -r '.projects[0].key'
-```
-
 Resolve the active sprint (its ID changes every sprint, so never hardcode it):
 
 ```bash
@@ -110,21 +107,21 @@ acli jira board list-sprints --id <BOARD> --state active --json \
 ```
 
 If there is no active sprint, note it and skip straight to the backlog pass in Step 2.
+(Project key is not needed — Step 2 scopes by board, not project.)
 ````
 
-- [ ] **Step 2: Verify the resolution commands against the default board**
+- [ ] **Step 2: Verify the resolution command against the default board**
 
 Run:
 ```bash
-acli jira board list-projects --id 987 --json | jq -r '.projects[0].key'
 acli jira board list-sprints --id 987 --state active --json | jq -r '.sprints[0] | "\(.id)\t\(.name)"'
 ```
-Expected: prints `HCON`, then a sprint id + name (e.g. `44250<TAB>Bedrock Sprint 251`).
+Expected: prints a sprint id + name (e.g. `44250<TAB>Bedrock Sprint 251`).
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git -C ~/.claude add skills/jira-next-item/SKILL.md && git -C ~/.claude commit -m "feat(skill): jira-next-item board/project/sprint resolution" || echo "~/.claude not a git repo — skipping commit"
+git -C ~/.claude add skills/jira-next-item/SKILL.md && git -C ~/.claude commit -m "feat(skill): jira-next-item board + sprint resolution" || echo "~/.claude not a git repo — skipping commit"
 ```
 
 ---
@@ -139,31 +136,46 @@ git -C ~/.claude add skills/jira-next-item/SKILL.md && git -C ~/.claude commit -
 ````markdown
 ## Step 2 — Find the next startable item
 
-Two passes, sprint first. In both, `ORDER BY Rank ASC` returns items in board order, so
-the first row is the highest-priority candidate. `issuetype not in subTaskIssueTypes()`
-drops orphan subtasks and `issuetype != Epic` drops epics, leaving real work items
-(Story / Task / Bug level).
+**Select through the board's Agile endpoints, not a raw `sprint = <id>` JQL.** A sprint is
+just a container of issues; the *board* is a filtered view over it (board 987, for example,
+only shows issues whose Team is Bedrock). An issue can sit in the active sprint yet never
+appear on the board. Querying `sprint = <id>` returns those off-board issues too, so the
+skill would "start" something the user can't even see on their board. The Agile board
+endpoints AND the board's saved filter in automatically, so they return exactly what the
+user sees. `acli` cannot do this — hence `curl`.
 
-**Sprint pass** (only if there is an active sprint):
+The same predicate drives both passes (board order via `ORDER BY Rank ASC`;
+`subTaskIssueTypes()` drops orphan subtasks; `!= Epic` drops epics):
 
 ```bash
-acli jira workitem search \
-  --jql 'sprint = <SPRINT_ID> AND assignee is EMPTY AND statusCategory = "To Do" AND issuetype not in subTaskIssueTypes() AND issuetype != Epic ORDER BY Rank ASC' \
-  --fields "key,summary,status,issuetype" --json --limit 1 \
-  | jq -r '.[0] | "\(.key)\t\(.fields.issuetype.name)\t\(.fields.summary)"'
+PRED='assignee is EMPTY AND statusCategory = "To Do" AND issuetype not in subTaskIssueTypes() AND issuetype != Epic ORDER BY Rank ASC'
 ```
 
-If this returns a row, that is the next item and it is **already in the sprint** — no
-sprint-add needed. Skip to Step 3, going straight to the assignment actions.
-
-**Backlog fallback** (only if the sprint pass returned nothing, or there is no active
-sprint). `sprint is EMPTY` scopes to items not in any sprint — the backlog:
+**Sprint pass** (only if there is an active sprint). The board filter + sprint scope are
+applied by the endpoint; the predicate is ANDed on via `jql`:
 
 ```bash
-acli jira workitem search \
-  --jql 'project = <KEY> AND sprint is EMPTY AND assignee is EMPTY AND statusCategory = "To Do" AND issuetype not in subTaskIssueTypes() AND issuetype != Epic ORDER BY Rank ASC' \
-  --fields "key,summary,status,issuetype" --json --limit 1 \
-  | jq -r '.[0] | "\(.key)\t\(.fields.issuetype.name)\t\(.fields.summary)"'
+curl -sS -u "$JIRA_USERNAME:$TOKEN" -G \
+  --data-urlencode "jql=$PRED" \
+  --data-urlencode "fields=key,summary,issuetype" --data-urlencode "maxResults=1" \
+  "$JIRA_BASE_URL/rest/agile/1.0/board/<BOARD>/sprint/<SPRINT_ID>/issue" \
+  | jq -r '.issues[0] | "\(.key)\t\(.fields.issuetype.name)\t\(.fields.summary)" // "none"'
+```
+
+If this returns a row, that is the next item and it is **already in the sprint and on the
+board** — no sprint-add needed. Skip to Step 3, going straight to the assignment actions.
+
+**Backlog fallback** (only if the sprint pass returned nothing, or there is no active
+sprint). The `/backlog` endpoint is already board-filtered *and* excludes anything in an
+active or future sprint, so the predicate stays identical — no project or `sprint is EMPTY`
+clause needed:
+
+```bash
+curl -sS -u "$JIRA_USERNAME:$TOKEN" -G \
+  --data-urlencode "jql=$PRED" \
+  --data-urlencode "fields=key,summary,issuetype" --data-urlencode "maxResults=1" \
+  "$JIRA_BASE_URL/rest/agile/1.0/board/<BOARD>/backlog" \
+  | jq -r '.issues[0] | "\(.key)\t\(.fields.issuetype.name)\t\(.fields.summary)" // "none"'
 ```
 
 A row here is the next item and it came from the backlog — it must be confirmed and
@@ -172,14 +184,17 @@ pulled into the sprint (Step 3) before being started.
 If both passes return nothing, report "no startable items on this board" and stop.
 ````
 
-- [ ] **Step 2: Verify both queries return board-ordered results**
+- [ ] **Step 2: Verify both board endpoints return board-filtered, board-ordered results**
 
 Run (substitute the sprint id from Task 2):
 ```bash
-acli jira workitem search --jql 'sprint = 44250 AND assignee is EMPTY AND statusCategory = "To Do" AND issuetype not in subTaskIssueTypes() AND issuetype != Epic ORDER BY Rank ASC' --fields "key,summary,issuetype" --json --limit 3 | jq -r '.[] | "\(.key)\t\(.fields.issuetype.name)\t\(.fields.summary)"'
-acli jira workitem search --jql 'project = HCON AND sprint is EMPTY AND assignee is EMPTY AND statusCategory = "To Do" AND issuetype not in subTaskIssueTypes() AND issuetype != Epic ORDER BY Rank ASC' --fields "key,summary,issuetype" --json --limit 3 | jq -r '.[] | "\(.key)\t\(.fields.issuetype.name)\t\(.fields.summary)"'
+TOKEN=$(op read "$JIRA_API_TOKEN")
+PRED='assignee is EMPTY AND statusCategory = "To Do" AND issuetype not in subTaskIssueTypes() AND issuetype != Epic ORDER BY Rank ASC'
+curl -sS -u "$JIRA_USERNAME:$TOKEN" -G --data-urlencode "jql=$PRED" --data-urlencode "fields=key,summary,issuetype" --data-urlencode "maxResults=3" "$JIRA_BASE_URL/rest/agile/1.0/board/987/sprint/44250/issue" | jq -r '.issues[] | "\(.key)\t\(.fields.issuetype.name)\t\(.fields.summary)"'
+curl -sS -u "$JIRA_USERNAME:$TOKEN" -G --data-urlencode "jql=$PRED" --data-urlencode "fields=key,summary,issuetype" --data-urlencode "maxResults=3" "$JIRA_BASE_URL/rest/agile/1.0/board/987/backlog" | jq -r '.issues[] | "\(.key)\t\(.fields.issuetype.name)\t\(.fields.summary)"'
 ```
-Expected: each prints up to 3 rows; **no row has issuetype `Sub-task` or `Epic`**.
+Expected: each prints up to 3 rows; **no row has issuetype `Sub-task` or `Epic`**, and
+every row is an item that actually shows on board 987 (Bedrock-team filtered).
 
 - [ ] **Step 3: Commit**
 
@@ -205,12 +220,10 @@ git -C ~/.claude add skills/jira-next-item/SKILL.md && git -C ~/.claude commit -
 1. Show the user the item (key, type, summary) and ask whether it's acceptable to pull
    it into the active sprint. If they decline, stop — nothing has been changed yet.
 
-2. On approval, add it. `JIRA_API_TOKEN` is a 1Password reference, so resolve it with
-   `op read` first; then POST with basic auth, capturing the HTTP status so a failure is
-   caught:
+2. On approval, add it. Reuse the `$TOKEN` resolved in the prerequisites; POST with basic
+   auth, capturing the HTTP status so a failure is caught:
 
    ```bash
-   TOKEN=$(op read "$JIRA_API_TOKEN")
    HTTP=$(curl -sS -o /tmp/jira-sprint-add.out -w '%{http_code}' \
      -u "$JIRA_USERNAME:$TOKEN" \
      -X POST -H 'Content-Type: application/json' \
@@ -339,8 +352,13 @@ is underway on it.
 - **No active sprint** → state it, go straight to the backlog pass.
 - **Nothing startable in sprint or backlog** → report it, stop.
 - **REST sprint-add returns non-2xx** → report status + body, stop before assigning.
-- **Missing `JIRA_BASE_URL` / `JIRA_USERNAME` / `JIRA_API_TOKEN`** (only needed for a
-  backlog pick) → tell the user to source their env, stop.
+- **Missing `JIRA_BASE_URL` / `JIRA_USERNAME` / `JIRA_API_TOKEN`** (needed for selection,
+  not just the sprint-add) → tell the user to source their env, stop.
+- **`op read` fails / `op` not signed in** → point the user at the `1password` skill to
+  re-auth, stop before any REST call.
+- **Item in the sprint but not on the board** → impossible by construction: selection goes
+  through the board endpoint, which applies the board's filter, so only board-visible items
+  are picked. (This is the bug the Step 2 design exists to prevent.)
 - **In-progress transition name differs** → list the item's transitions, pick the
   in-progress one instead of failing.
 - **Item has no subtasks** → skip the subtask assignment.
@@ -371,8 +389,8 @@ git -C ~/.claude add skills/jira-next-item/SKILL.md && git -C ~/.claude commit -
 - [ ] **Step 1: Invoke the skill end-to-end on the default board**
 
 In a Claude session, run `/jira-next-item`. Confirm it:
-1. resolves board 987 → project HCON → active sprint,
-2. finds a sprint item (board order, no subtask/epic),
+1. resolves board 987 → active sprint,
+2. finds a sprint item via the board endpoint (board-filtered, board order, no subtask/epic),
 3. for a sprint item, skips the sprint-add and goes straight to claiming,
 4. assigns it to you, moves it to In Progress, assigns its subtasks,
 5. hands off to brainstorming framed as "working on Jira issue HCON-XXXX".
@@ -411,4 +429,4 @@ git -C ~/.claude add skills/jira-next-item/SKILL.md && git -C ~/.claude commit -
 
 **Placeholder scan:** No `TODO`/`TBD`. The `<KEY>`/`<BOARD>`/`<SPRINT_ID>` tokens are intentional command substitution markers documented in the skill, not plan gaps.
 
-**Consistency:** Command flags match the validated `acli` invocations (`assign --assignee @me`, `transition --status "In Progress" --yes`, `workitem search --jql ... --json`); REST path `/rest/agile/1.0/sprint/<id>/issue` consistent across Task 4. Project-key extraction (`list-projects`) and sprint extraction (`list-sprints`) consistent between Task 2 and later usage.
+**Consistency:** Command flags match the validated `acli` invocations (`assign --assignee @me`, `transition --status "In Progress" --yes`); selection uses the Agile board endpoints (`/board/<id>/sprint/<sid>/issue`, `/board/<id>/backlog`) with the board filter auto-applied — never a raw `sprint = <id>` JQL, which is the off-board-pick bug. REST auth (`-u "$JIRA_USERNAME:$TOKEN"`, token via `op read`) and the `$PRED` predicate are consistent across Tasks 2–4. Sprint extraction (`list-sprints`) in Task 2 feeds the Task 3 sprint endpoint.
