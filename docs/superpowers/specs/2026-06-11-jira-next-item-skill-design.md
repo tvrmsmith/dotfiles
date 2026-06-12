@@ -93,6 +93,21 @@ Notes:
   source their env and stop.
 - Selected item has no subtasks → skip step 4.
 
+## Authoring conventions (per skill-creator)
+
+- **Frontmatter:** `name: jira-next-item`. The `description` is factual and scoped,
+  not eager — it states what the skill does and that it's explicitly invoked, without
+  broad keyword bait (skill-creator's default "make descriptions pushy" advice is
+  deliberately inverted here because this skill is user-invocable only).
+- **Writing style:** imperative steps; explain the *why* (e.g. that `ORDER BY Rank`
+  reflects board order = priority, the requirement) rather than terse ALL-CAPS MUSTs.
+- **Structure:** a single `SKILL.md`, comfortably under 500 lines, no bundled scripts.
+  The REST sprint-add `curl` stays inline in the markdown (skill-creator rule #4 would
+  nudge it into `scripts/`, but inline keeps it transparent and consistent with the
+  other instruction-only personal skills like `daily-standup`).
+- **Skipped:** evals, the description-optimization loop, and packaging — not needed
+  for a single-user invoke-only workflow skill.
+
 ## Out of scope
 
 - Re-ordering / re-ranking the board.
