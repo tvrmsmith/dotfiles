@@ -126,6 +126,11 @@ alias claude-patch='$DEV_PERSONAL/dotfiles/extras/claude-code-patch.sh'
 alias cc='claude-patch; claude --dangerously-skip-permissions'
 alias cca='cc agents'
 
+# Workflow tool stripped from context by default (smaller prompt).
+# ccwf = cc with Dynamic Workflows / ultracode re-enabled for the session.
+export CLAUDE_CODE_DISABLE_WORKFLOWS=1
+ccwf() { (export CLAUDE_CODE_DISABLE_WORKFLOWS=0; cc "$@"); }
+
 # Agent sandboxing (nono, sbx); relies on $_OMP_VERTEX defined above
 [ -f "$DEV_PERSONAL/dotfiles/extras/agent-sandboxing/init.zsh" ] && \
   source "$DEV_PERSONAL/dotfiles/extras/agent-sandboxing/init.zsh"

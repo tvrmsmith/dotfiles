@@ -48,6 +48,17 @@
       "Bash(which *)"
     ],
     "deny": [
+      "EnterPlanMode",
+      "ExitPlanMode",
+      "NotebookEdit",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "EnterWorktree",
+      "ExitWorktree",
+      "TeamCreate",
+      "TeamDelete",
+      "SendMessage",
       "Bash(sudo *)",
       "Bash(rm -rf /)",
       "Bash(rm -rf ~)",
@@ -335,7 +346,7 @@
     "terragrunt-skill@jfr992": false,
     "terrashark@terrashark": false,
     "warp@claude-code-warp": true,
-    "playwright@claude-plugins-official": true
+    "playwright@claude-plugins-official": false
   },
   "extraKnownMarketplaces": {
     "caveman": {
