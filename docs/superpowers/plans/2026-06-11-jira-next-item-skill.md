@@ -205,12 +205,14 @@ git -C ~/.claude add skills/jira-next-item/SKILL.md && git -C ~/.claude commit -
 1. Show the user the item (key, type, summary) and ask whether it's acceptable to pull
    it into the active sprint. If they decline, stop — nothing has been changed yet.
 
-2. On approval, add it (basic auth from the env vars; capture the HTTP status so a
-   failure is caught):
+2. On approval, add it. `JIRA_API_TOKEN` is a 1Password reference, so resolve it with
+   `op read` first; then POST with basic auth, capturing the HTTP status so a failure is
+   caught:
 
    ```bash
+   TOKEN=$(op read "$JIRA_API_TOKEN")
    HTTP=$(curl -sS -o /tmp/jira-sprint-add.out -w '%{http_code}' \
-     -u "$JIRA_USERNAME:$JIRA_API_TOKEN" \
+     -u "$JIRA_USERNAME:$TOKEN" \
      -X POST -H 'Content-Type: application/json' \
      --data '{"issues":["<KEY>"]}' \
      "$JIRA_BASE_URL/rest/agile/1.0/sprint/<SPRINT_ID>/issue")
@@ -223,12 +225,14 @@ git -C ~/.claude add skills/jira-next-item/SKILL.md && git -C ~/.claude commit -
 
 - [ ] **Step 2: Verify the REST endpoint/auth without mutating (GET the sprint)**
 
-This confirms the env vars authenticate against the Agile API. It only reads.
+This confirms the resolved token authenticates against the Agile API. It only reads.
 Run:
 ```bash
-curl -sS -o /dev/null -w '%{http_code}\n' -u "$JIRA_USERNAME:$JIRA_API_TOKEN" "$JIRA_BASE_URL/rest/agile/1.0/sprint/44250"
+TOKEN=$(op read "$JIRA_API_TOKEN")
+curl -sS -o /dev/null -w '%{http_code}\n' -u "$JIRA_USERNAME:$TOKEN" "$JIRA_BASE_URL/rest/agile/1.0/sprint/44250"
 ```
-Expected: `200`. (A `401`/`403` means the env auth is wrong — fix before relying on the POST.)
+Expected: `200`. (A `401`/`403` means auth is wrong — note `JIRA_API_TOKEN` is a
+1Password `op://` reference, so it must be resolved with `op read`, not used directly.)
 
 - [ ] **Step 3: Commit**
 
@@ -269,7 +273,8 @@ With the item selected (and, if it came from the backlog, now in the sprint):
    yours. Find them, then assign each:
 
    ```bash
-   acli jira workitem search --jql 'parent = <KEY>' --fields "key" --json \
+   # Request at least two fields — `--fields "key"` alone makes acli return null rows.
+   acli jira workitem search --jql 'parent = <KEY>' --fields "key,summary" --json \
      | jq -r '.[].key'
    # for each SUBKEY:
    acli jira workitem assign --key <SUBKEY> --assignee @me
@@ -282,7 +287,7 @@ With the item selected (and, if it came from the backlog, now in the sprint):
 
 Run (any existing HCON key works just to confirm the query parses):
 ```bash
-acli jira workitem search --jql 'parent = HCON-34900' --fields "key" --json | jq -r '.[].key'
+acli jira workitem search --jql 'parent = HCON-34900' --fields "key,summary" --json | jq -r '.[].key'
 ```
 Expected: prints zero or more subtask keys, no error.
 
