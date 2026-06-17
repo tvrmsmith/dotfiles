@@ -10,8 +10,11 @@ export GIT_TOKEN="op://Employee/GitHub Personal Access Token/token"
 export PATH="$HOME/.local/bin:$HOME/.dotnet/tools:$DEV_PERSONAL/ralph/scripts:$PATH"
 
 export CLAUDE_CODE_USE_VERTEX="1"
-export CLOUD_ML_REGION="us"
+export CLOUD_ML_REGION="global"
 export ANTHROPIC_VERTEX_PROJECT_ID="consolo-dev-vertex-wsky"
+# NOTE: do NOT export GOOGLE_APPLICATION_CREDENTIALS to the default ADC path —
+# google-auth-library finds that path automatically, and setting it makes
+# `gcloud auth application-default login` prompt for confirmation every run.
 export OMP_MODEL="anthropic-vertex/claude-opus-4-7"
 export ENABLE_LSP_TOOL=1
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
