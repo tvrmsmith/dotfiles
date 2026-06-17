@@ -1,10 +1,10 @@
-schemaVersion: "1"
-kind: agent
+schemaVersion: "2"
+kind: sandbox
 name: omp
 displayName: Oh My Pi Agent
 description: OMP coding agent with Vertex AI (env vars baked via Dockerfile build args)
 
-agent:
+sandbox:
   image: "omp-sandbox:latest"
   entrypoint:
     run: ["/usr/local/bin/claude"]
