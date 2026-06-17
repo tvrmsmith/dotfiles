@@ -1,4 +1,4 @@
-schemaVersion: "1"
+schemaVersion: "2"
 kind: mixin
 name: atlassian
 displayName: Atlassian Access
@@ -21,7 +21,7 @@ credentials:
         - JIRA_API_TOKEN
       priority: env-first
 
-memory: |
+agentContext: |
   ## Atlassian Credentials
 
   Jira and Confluence credentials are proxy-managed. The env vars
