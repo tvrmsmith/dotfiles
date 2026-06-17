@@ -9,34 +9,35 @@
 
 - `~/.gitconfig` uses `includeIf "gitdir:~/dev/personal/"` to auto-load `~/.gitconfig-personal`, sets personal `user.name`, `user.email` (`tvrmsmith@gmail.com`), personal SSH signing key
 - Repos cloned under `~/dev/personal/` auto-get personal identity — no per-repo `git config` needed
-- `GITHUB_TOKEN` provided by 1Password CLI plugin. Directory-aware:
-  - **Outside `~/dev/personal/`**: authenticates as work account (`TrevorSmith-Wellsky`) — use `github.com` directly for remotes and `gh` commands
-  - **Inside `~/dev/personal/`**: authenticates as personal account (`tvrmsmith`) — use `github-personal` SSH host alias for remotes, `gh auth switch --user tvrmsmith` before `gh` commands (PRs, issues, etc.)
-- Running `gh` commands against work repos from inside `~/dev/personal/` → `cd` to non-personal directory first (e.g. `cd ~/dev && gh repo view ...`)
-- Push fails with "Permission denied" → use `git-ssh-fix` skill
+- `GITHUB_TOKEN` from 1Password CLI plugin. Directory-aware:
+  - **Outside `~/dev/personal/`**: auth as work account (`TrevorSmith-Wellsky`) — use `github.com` direct for remotes and `gh` commands
+  - **Inside `~/dev/personal/`**: auth as personal account (`tvrmsmith`) — use `github-personal` SSH host alias for remotes, `gh auth switch --user tvrmsmith` before `gh` commands (PRs, issues, etc.)
+- `gh` commands against work repos from inside `~/dev/personal/` → `cd` to non-personal directory first (e.g. `cd ~/dev && gh repo view ...`)
+- Push fails "Permission denied" → use `git-ssh-fix` skill
 
 ## Working with Repositories
 
-Before cloning/checking out repo to temp location, search for existing local copy under `~/dev` (recursively):
+Before cloning/checkout to temp location, search existing local copy under `~/dev` recursively:
 
 ```bash
 find ~/dev -maxdepth 4 -type d -name "<repo-name>" 2>/dev/null
 ```
 
-Match found → use existing copy instead of cloning. No match → clone to temp location. Personal repos → place under `~/dev/personal/` so `includeIf` identity applies automatically.
+Match found → use existing copy, no clone. No match → clone to temp. Personal repos → place under `~/dev/personal/` so `includeIf` identity applies.
 
 ## Communication Style
 
-- Always use `caveman` skill in **lite** mode — no filler, no hedging, professional but tight
+- Always use `caveman` skill in **lite** mode — no filler, no hedging, tight but professional
 
 ## Planning
 
-- Never use plan mode (`EnterPlanMode`). For any creative/feature/design work, invoke `superpowers:brainstorming` skill instead — always, before implementation.
+- Never use plan mode (`EnterPlanMode`). Any creative/feature/design work → invoke `superpowers:brainstorming` skill instead, before implementation.
 - Trigger words ("build/add/implement/design/create X", "fix Y") → brainstorming skill, not plan mode.
 
 ## Tool Preferences
 
 - Prefer ripgrep (`rg`) over `grep` — use Grep tool or `rg` via Bash
-- Git commit messages → use `caveman:caveman-commit` skill for terse, conventional commit format. Never add `Co-Authored-By` attribution lines.
-- JIRA operations → use `acli jira` (see `acli` skill for commands). Single commands (view, search) run directly in main thread. Multi-step operations (create + link, bulk edits) use subagent. Do NOT use `shared:jira-connector` agent — it is only for sandbox environments where acli is unavailable
-- Never use MCP servers — use built-in tools, skills, and agents instead
+- Git commit messages → use `caveman:caveman-commit` skill for terse conventional format. Never add `Co-Authored-By` lines.
+- JIRA → use `acli jira` (see `acli` skill). Single commands (view, search) run direct in main thread. Multi-step ops (create + link, bulk edits) use subagent. Do NOT use `shared:jira-connector` agent — sandbox-only, where acli unavailable.
+- Never use MCP servers — use built-in tools, skills, agents instead
+- `gcloud auth login` → run direct via Bash when creds expire (`Reauthentication failed`). Browser opens on user machine, flow completes. No need to ask user run via `!`.
