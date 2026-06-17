@@ -88,7 +88,7 @@ Fast-forward fails → local main diverged. Use AskUserQuestion:
 After update, run CI checks before pushing main to origin (main is fast-forward of upstream, normally green, but verify — never push unvalidated code):
 
 ```bash
-bun run lint:fix && bun run typecheck && bun test && bunx sherif --fix
+bun run lint:fix && bun run typecheck && bun run test && bunx sherif --fix
 ```
 
 Checks pass (and `lint:fix`/`sherif --fix` made no changes) → push main:
@@ -191,7 +191,7 @@ After successful rebase, run project CI checks **before pushing**. These mirror 
 ```bash
 bun run lint:fix      # Biome formatting + linting (auto-fixes)
 bun run typecheck     # TypeScript type checking across all packages
-bun test              # Run all tests
+bun run test           # Run all tests (turbo, per-package runners — NOT raw `bun test`)
 bunx sherif --fix     # Monorepo dependency linting (auto-fixes)
 ```
 
@@ -259,7 +259,7 @@ After all branches merged, run CI checks one final time **in the worktree** to v
 
 ```bash
 cd "$WORKTREE_DIR"
-bun run lint:fix && bun run typecheck && bun test && bunx sherif --fix
+bun run lint:fix && bun run typecheck && bun run test && bunx sherif --fix
 ```
 
 Fix any failures and commit fixes onto personal-build before pushing. Then push personal-build branch to origin:
