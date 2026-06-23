@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Records argv (one arg per line) to $STUB_SBX_LOG, then exits $STUB_SBX_RC (default 0).
+# For `ls`, prints $STUB_SBX_LS_OUTPUT so existence checks can be driven.
+printf '%s\n' "$@" >> "${STUB_SBX_LOG:?STUB_SBX_LOG unset}"
+if [ "$1" = ls ]; then
+  printf '%s' "${STUB_SBX_LS_OUTPUT:-}"
+fi
+exit "${STUB_SBX_RC:-0}"
