@@ -1,0 +1,19 @@
+#!/usr/bin/env zsh
+# mysbx — faithful sbx superset with smart-agent presets. See
+# docs/superpowers/specs/2026-06-23-mysbx-sbx-wrapper-design.md
+emulate -L zsh
+setopt no_unset pipe_fail
+
+# Locate the core lib. MYSBX_CORE overrides (tests); else derive from this
+# script's real path: dot-local/bin/mysbx -> repo root -> extras/...
+local core="${MYSBX_CORE:-}"
+if [[ -z "$core" ]]; then
+  local repo_root="${0:A:h:h:h}"
+  core="$repo_root/extras/agent-sandboxing/lib/mysbx-core.zsh"
+fi
+if [[ ! -r "$core" ]]; then
+  echo "[mysbx] core lib not found: $core" >&2
+  exit 1
+fi
+source "$core"
+mysbx_dispatch "$@"
