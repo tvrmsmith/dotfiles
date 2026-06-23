@@ -198,6 +198,54 @@ _mysbx_name() {
   echo "$name"
 }
 
+# --- Helper bind mounts -----------------------------------------------------
+_MYSBX_HELPER_ADC_DIR="$HOME/.config/gcloud"
+_MYSBX_HELPER_PLUGINS_DIR="$HOME/.claude/plugins"
+_MYSBX_HELPER_DOTFILES_DIR="$DEV_PERSONAL/dotfiles"
+_MYSBX_OMP_FORK_HOST_DIR="$DEV_PERSONAL/oh-my-pi-personal-build"
+_MYSBX_OMP_FORK_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/mysbx/omp-fork"
+_MYSBX_OMP_FORK_BUN_VOLUME="mysbx-omp-fork-buncache"
+_MYSBX_OMP_FORK_CARGO_VOLUME="mysbx-omp-fork-cargocache"
+
+# Echo read-only helper mount specs (host path[:ro]) for `sbx create`. Skips
+# missing dirs and any candidate dir that contains the cwd.
+_mysbx_helper_mounts() {
+  local sandbox_state="$1"
+  local -a mounts=()
+  local cwd; cwd="$(pwd -P)"
+  local -a candidates=(
+    "${_MYSBX_HELPER_ADC_DIR}:ro"
+    "${_MYSBX_HELPER_PLUGINS_DIR}:ro"
+    "${_MYSBX_HELPER_DOTFILES_DIR}:ro"
+    "${_MYSBX_OMP_FORK_CACHE_DIR}:ro"
+    "$sandbox_state"
+  )
+  for entry in "${candidates[@]}"; do
+    local d="${entry%%:*}"
+    [ -d "$d" ] || continue
+    # Resolve both paths to their canonical forms (following symlinks).
+    local d_resolved; d_resolved="$(cd "$d" 2>/dev/null && pwd -P)" || continue
+    [[ "$cwd" == "$d_resolved"* ]] && continue
+    mounts+=("$entry")
+  done
+  printf '%s\n' "${mounts[@]}"
+}
+
+# 0 (true) if the live sandbox is missing any expected helper mount.
+_mysbx_helper_mounts_stale() {
+  local name="$1"; shift
+  local -a expected=("$@")
+  (( ${#expected[@]} )) || return 1
+  local actual
+  actual=$("$REAL_SBX" ls --json 2>/dev/null \
+    | jq -r --arg n "$name" '.sandboxes[] | select(.name==$n) | .workspaces[]') || return 1
+  local m
+  for m in "${expected[@]}"; do
+    grep -qxF -- "$m" <<< "$actual" || return 0
+  done
+  return 1
+}
+
 # --- Dispatch ---------------------------------------------------------------
 # Verb-first, identical to sbx grammar. Augmentation handled in later tasks.
 mysbx_dispatch() {
