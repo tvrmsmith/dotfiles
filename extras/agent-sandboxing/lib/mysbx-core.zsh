@@ -247,14 +247,111 @@ _mysbx_helper_mounts_stale() {
   return 1
 }
 
+# --- Orphan cleanup ---------------------------------------------------------
+_MYSBX_SBXD_SOCK="$HOME/Library/Application Support/com.docker.sandboxes/sandboxes/sandboxd/docker.sock"
+_mysbx_purge_orphans() {
+  local name="$1"
+  [ -S "$_MYSBX_SBXD_SOCK" ] || return 0
+  docker -H "unix://$_MYSBX_SBXD_SOCK" rm -f "$name" >> "$_MYSBX_LOG" 2>&1 || true
+  docker -H "unix://$_MYSBX_SBXD_SOCK" network rm "$name" >> "$_MYSBX_LOG" 2>&1 || true
+}
+
+# --- Augmented create/run ---------------------------------------------------
+# _mysbx_augmented_create <verb> <preset> <rest...>
+# <rest...> is everything after the agent positional (workdir, flags). We parse
+# out --name (honor if present) and --clone (forward), derive the name and
+# helper mounts, sync secrets (hard-fail), then invoke real sbx with one retry.
+_mysbx_augmented_create() {
+  local verb="$1" preset="$2"; shift 2
+  local agent template
+  agent="$(_mysbx_preset_agent "$preset")"
+  template="$(_mysbx_preset_template "$preset")"
+
+  # Split rest into: explicit name (if any), clone flag, and remaining args
+  # (workdir + extra workspaces + passthrough flags).
+  local explicit_name="" clone=0
+  local -a rest=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --name) explicit_name="$2"; shift 2 ;;
+      --name=*) explicit_name="${1#--name=}"; shift ;;
+      --clone) clone=1; shift ;;
+      *) rest+=("$1"); shift ;;
+    esac
+  done
+
+  # Worktree source mount (extra workspace) participates in naming.
+  local -a extra_ws=()
+  if _detect_git_worktree; then
+    extra_ws+=("$_GIT_WORKTREE_SOURCE_REPO")
+  fi
+
+  local name
+  if [[ -n "$explicit_name" ]]; then
+    name="$explicit_name"
+  else
+    name="$(_mysbx_name "mysbx-$preset" "${extra_ws[@]}")"
+  fi
+
+  local sandbox_state_dir="$_MYSBX_STATE_DIR/sandboxes/$name"
+  mkdir -p "$sandbox_state_dir"/{sessions,plans,projects}
+  [ -f "$sandbox_state_dir/history.jsonl" ] || touch "$sandbox_state_dir/history.jsonl"
+
+  local -a helper_mounts=()
+  helper_mounts=(${(f)"$(_mysbx_helper_mounts "$sandbox_state_dir")"})
+
+  local -a kit_args=() tmpl_args=() clone_args=()
+  local k
+  while IFS= read -r k; do [[ -n "$k" ]] && kit_args+=(--kit "$k"); done \
+    < <(_mysbx_preset_kits "$preset")
+  [[ -n "$template" ]] && tmpl_args=(-t "$template")
+  (( clone )) && clone_args=(--clone)
+
+  # Secrets must be in place before the sandbox runs git. Hard-fail.
+  _mysbx_sync_secrets "$name" || return 1
+
+  local -a cmd=("$verb" "${tmpl_args[@]}" --name "$name" "${kit_args[@]}" \
+    "${clone_args[@]}" "$agent" "${rest[@]}" "${extra_ws[@]}" "${helper_mounts[@]}")
+  if ! "$REAL_SBX" "${cmd[@]}" 2> >(tee -a "$_MYSBX_LOG" >&2) >> "$_MYSBX_LOG"; then
+    echo "$(date -Iseconds) Create failed; purging orphans and retrying $name" >> "$_MYSBX_LOG"
+    _mysbx_purge_orphans "$name"
+    "$REAL_SBX" "${cmd[@]}" 2> >(tee -a "$_MYSBX_LOG" >&2) >> "$_MYSBX_LOG" || {
+      echo "[mysbx] sbx $verb failed for $name (see $_MYSBX_LOG)" >&2
+      return 1
+    }
+  fi
+}
+
 # --- Dispatch ---------------------------------------------------------------
-# Verb-first, identical to sbx grammar. Augmentation handled in later tasks.
 mysbx_dispatch() {
   _mysbx_load_config
   _mysbx_resolve_real_sbx || return 1
   local verb="${1:-}"
   case "$verb" in
     "" ) exec "$REAL_SBX" ;;
-    * )  exec "$REAL_SBX" "$@" ;;   # passthrough (overridden for known verbs later)
+    create|run)
+      shift
+      # Agent positional is the first non-flag token. Peek without consuming.
+      local agent_pos=""
+      local a
+      for a in "$@"; do
+        case "$a" in
+          -*) continue ;;        # skip leading flags
+          *) agent_pos="$a"; break ;;
+        esac
+      done
+      if _mysbx_is_preset "$agent_pos"; then
+        # Re-split: drop the agent positional, keep everything else as rest.
+        local -a rest=(); local dropped=0
+        for a in "$@"; do
+          if (( ! dropped )) && [[ "$a" == "$agent_pos" ]]; then dropped=1; continue; fi
+          rest+=("$a")
+        done
+        _mysbx_augmented_create "$verb" "$agent_pos" "${rest[@]}"
+        return $?
+      fi
+      exec "$REAL_SBX" "$verb" "$@"
+      ;;
+    * ) exec "$REAL_SBX" "$@" ;;
   esac
 }
