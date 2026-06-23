@@ -352,6 +352,14 @@ mysbx_dispatch() {
       fi
       exec "$REAL_SBX" "$verb" "$@"
       ;;
+    exec)
+      local name="${2:-}"
+      if [[ -n "$name" && "$name" != -* ]]; then
+        _mysbx_sync_secrets "$name" || \
+          echo "[mysbx] secret resync failed for $name; continuing" >&2
+      fi
+      exec "$REAL_SBX" "$@"
+      ;;
     * ) exec "$REAL_SBX" "$@" ;;
   esac
 }
