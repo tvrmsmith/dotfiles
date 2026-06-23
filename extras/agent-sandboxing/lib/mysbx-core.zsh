@@ -322,6 +322,126 @@ _mysbx_augmented_create() {
   fi
 }
 
+# --- Custom verbs -----------------------------------------------------------
+_MYSBX_TEMPLATES_DIR="$_AGENT_SBX_ROOT/templates"
+
+# Ported from dsbx-build (20-dsbx.zsh:112-125).
+_mysbx_build() {
+  docker compose -f "$_MYSBX_TEMPLATES_DIR/docker-compose.yml" build "$@" && \
+  for img in $(docker compose -f "$_MYSBX_TEMPLATES_DIR/docker-compose.yml" config --images); do
+    echo "Loading $img into sbx..." && \
+    docker save "$img" | "$REAL_SBX" template load /dev/stdin
+  done || return
+  if [ -d "$_MYSBX_OMP_FORK_HOST_DIR" ] && { [ $# -eq 0 ] || (( ${@[(I)omp-sandbox]} )); }; then
+    echo "[mysbx build] chaining omp-build" >&2
+    _mysbx_omp_build
+  fi
+}
+
+# Ported from dsbx-omp-build (20-dsbx.zsh:210-257) — body unchanged except the
+# rename map. Copy that function verbatim, renaming identifiers:
+_mysbx_omp_build() {
+  if [ ! -d "$_MYSBX_OMP_FORK_HOST_DIR" ]; then
+    echo "[mysbx omp-build] fork worktree missing: $_MYSBX_OMP_FORK_HOST_DIR" >&2
+    return 1
+  fi
+  if ! docker image inspect omp-sandbox:latest >/dev/null 2>&1; then
+    echo "[mysbx omp-build] omp-sandbox:latest not built; run 'mysbx build omp-sandbox' first" >&2
+    return 1
+  fi
+  mkdir -p "$_MYSBX_OMP_FORK_CACHE_DIR"
+  docker volume inspect "$_MYSBX_OMP_FORK_BUN_VOLUME" >/dev/null 2>&1 || \
+    docker volume create "$_MYSBX_OMP_FORK_BUN_VOLUME" >/dev/null
+  docker volume inspect "$_MYSBX_OMP_FORK_CARGO_VOLUME" >/dev/null 2>&1 || \
+    docker volume create "$_MYSBX_OMP_FORK_CARGO_VOLUME" >/dev/null
+  local host_hash=""
+  if command -v git >/dev/null 2>&1; then
+    host_hash=$(git -C "$_MYSBX_OMP_FORK_HOST_DIR" rev-parse HEAD 2>/dev/null || true)
+  fi
+  echo "[mysbx omp-build] building $_MYSBX_OMP_FORK_HOST_DIR ${host_hash:+@ $host_hash} -> $_MYSBX_OMP_FORK_CACHE_DIR" >&2
+  docker run --rm \
+    -v "$_MYSBX_OMP_FORK_HOST_DIR:/src:ro" \
+    -v "$_MYSBX_OMP_FORK_CACHE_DIR:/out" \
+    -v "$_MYSBX_OMP_FORK_BUN_VOLUME:/root/.bun/install/cache" \
+    -v "$_MYSBX_OMP_FORK_CARGO_VOLUME:/usr/local/cargo-cache" \
+    -e CARGO_HOME=/usr/local/cargo-cache \
+    -e CARGO_TARGET_DIR=/usr/local/cargo-cache/target \
+    -e HOST_HASH="$host_hash" \
+    --user 0:0 \
+    omp-sandbox:latest bash -c '\
+      set -euo pipefail; \
+      rsync -a --delete \
+        --exclude=.git --exclude=node_modules --exclude=target \
+        --exclude="packages/natives/native/*.node" \
+        /src/ /out/; \
+      cd /out; \
+      echo "[mysbx omp-build] bun install" >&2; \
+      bun install --frozen-lockfile || bun install; \
+      echo "[mysbx omp-build] cargo build linux-arm64 native" >&2; \
+      bun run --cwd packages/natives build; \
+      printf "%s\n" "$HOST_HASH" > /out/.mysbx-fork-hash; \
+      echo "[mysbx omp-build] ready @ ${HOST_HASH:-unknown}" >&2; \
+    '
+}
+
+# Ported from dsbx-omp-clean (20-dsbx.zsh:261-267).
+_mysbx_omp_clean() {
+  rm -rf "$_MYSBX_OMP_FORK_CACHE_DIR"
+  if [ "${1:-}" = --all ]; then
+    docker volume rm -f "$_MYSBX_OMP_FORK_BUN_VOLUME" "$_MYSBX_OMP_FORK_CARGO_VOLUME" >/dev/null 2>&1 || true
+  fi
+  echo "[mysbx omp-clean] removed $_MYSBX_OMP_FORK_CACHE_DIR${1:+ + named volumes}" >&2
+}
+
+# Ported from dsbx-update (20-dsbx.zsh:412-431). Prefixes are now mysbx-*.
+_mysbx_update() {
+  local -a prefixes=(mysbx-cc mysbx-ruby-cc mysbx-omp)
+  local -a kits=("$_MYSBX_KITS_TOOLING" "$_MYSBX_KITS_CLAUDE_PATCH" "$_MYSBX_KITS_PERSONAL")
+  _mysbx_is_personal || kits+=("$_MYSBX_KITS_ATLASSIAN")
+  local found=0 prefix name kit
+  for prefix in "${prefixes[@]}"; do
+    name="$(_mysbx_name "$prefix")"
+    "$REAL_SBX" ls 2>/dev/null | awk '{print $1}' | grep -qx "$name" || continue
+    found=1
+    for kit in "${kits[@]}"; do
+      echo "[mysbx] applying $(basename "$kit") to $name" >&2
+      "$REAL_SBX" kit add "$name" "$kit"
+    done
+  done
+  (( found )) || { echo "[mysbx] no sandboxes found for this directory" >&2; return 1; }
+}
+
+# Ported from dsbx-check (20-dsbx.zsh:438-475). Prefixes/recreate hint mysbx-*.
+_mysbx_check() {
+  local -a entries=(
+    'mysbx-ruby-cc:claude-sandbox-ruby-2.6.10:latest'
+    'mysbx-omp:omp-sandbox:latest'
+  )
+  local rc=0 found=0 entry prefix img name container_id current_id
+  for entry in "${entries[@]}"; do
+    prefix="${entry%%:*}"; img="${entry#*:}"
+    name="$(_mysbx_name "$prefix")"
+    "$REAL_SBX" ls 2>/dev/null | awk '{print $1}' | grep -qx "$name" || continue
+    found=1
+    container_id=$(docker -H "unix://$_MYSBX_SBXD_SOCK" inspect "$name" --format '{{.Image}}' 2>/dev/null \
+      | sed 's/^sha256:\(.\{12\}\).*/\1/')
+    current_id=$(docker image inspect --format '{{.Id}}' "$img" 2>/dev/null \
+      | sed 's/^sha256:\(.\{12\}\).*/\1/')
+    if [ -z "$current_id" ]; then
+      printf 'missing-image    %s  (sandbox=%s; run mysbx build)\n' "$img" "$name"; rc=1
+    elif [ -z "$container_id" ]; then
+      printf 'unknown          %s  (could not inspect container; sbx daemon down?)\n' "$name"; rc=1
+    elif [ "$container_id" = "$current_id" ]; then
+      printf 'ok               %s  %s  (%s)\n' "$name" "$container_id" "$img"
+    else
+      printf 'stale            %s  running=%s  current=%s  (recreate: mysbx-%s --recreate)\n' \
+        "$name" "$container_id" "$current_id" "${prefix#mysbx-}"; rc=1
+    fi
+  done
+  (( found )) || echo 'no sandboxes for this cwd'
+  return $rc
+}
+
 # --- Dispatch ---------------------------------------------------------------
 mysbx_dispatch() {
   _mysbx_load_config
@@ -360,6 +480,12 @@ mysbx_dispatch() {
       fi
       exec "$REAL_SBX" "$@"
       ;;
+    build)        shift; _mysbx_build "$@"; return $? ;;
+    omp-build)    shift; _mysbx_omp_build "$@"; return $? ;;
+    omp-clean)    shift; _mysbx_omp_clean "$@"; return $? ;;
+    update)       shift; _mysbx_update "$@"; return $? ;;
+    check)        shift; _mysbx_check "$@"; return $? ;;
+    secrets-sync) shift; _mysbx_sync_secrets "${1:?usage: mysbx secrets-sync <name>}"; return $? ;;
     * ) exec "$REAL_SBX" "$@" ;;
   esac
 }
