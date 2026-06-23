@@ -41,7 +41,7 @@ fi
 
 # 3. omp fork (dangling if no host build — launcher shim handles fallback)
 mkdir -p "$HOME/.cache"
-ln -sfn "$HOST_HOME/.cache/dsbx/omp-fork" "$HOME/.omp-fork"
+ln -sfn "$HOST_HOME/.cache/mysbx/omp-fork" "$HOME/.omp-fork"
 
 # Copy dot-prefixed entries from source dir into $HOME, translating
 # the "dot-" prefix to "." (e.g. dot-gitconfig → .gitconfig).
@@ -117,19 +117,19 @@ fi
 
 # 6. Claude session state persistence
 # Discover sandbox state dir from bind mounts — the host-side
-# $XDG_STATE_HOME/dsbx/sandboxes/<name>/ is mounted RW at its host path.
-DSBX_STATE=""
+# $XDG_STATE_HOME/mysbx/sandboxes/<name>/ is mounted RW at its host path.
+MYSBX_STATE=""
 if [ -n "$HOST_HOME" ]; then
-  for _d in "$HOST_HOME/.local/state/dsbx/sandboxes"/*/; do
-    [ -d "${_d}sessions" ] && { DSBX_STATE="${_d%/}"; break; }
+  for _d in "$HOST_HOME/.local/state/mysbx/sandboxes"/*/; do
+    [ -d "${_d}sessions" ] && { MYSBX_STATE="${_d%/}"; break; }
   done
 fi
 
-if [ -n "$DSBX_STATE" ]; then
+if [ -n "$MYSBX_STATE" ]; then
   mkdir -p "$HOME/.claude"
   for subdir in sessions plans projects; do
-    [ -d "$DSBX_STATE/$subdir" ] && ln -sfn "$DSBX_STATE/$subdir" "$HOME/.claude/$subdir"
+    [ -d "$MYSBX_STATE/$subdir" ] && ln -sfn "$MYSBX_STATE/$subdir" "$HOME/.claude/$subdir"
   done
-  [ -f "$DSBX_STATE/history.jsonl" ] && \
-    ln -sf "$DSBX_STATE/history.jsonl" "$HOME/.claude/history.jsonl"
+  [ -f "$MYSBX_STATE/history.jsonl" ] && \
+    ln -sf "$MYSBX_STATE/history.jsonl" "$HOME/.claude/history.jsonl"
 fi

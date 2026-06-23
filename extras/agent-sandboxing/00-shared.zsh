@@ -1,4 +1,4 @@
-# Shared helpers for nono and dsbx
+# Shared helpers for nono and mysbx
 
 # Detect if cwd is a git worktree. Sets _GIT_WORKTREE_SOURCE_REPO if so.
 _detect_git_worktree() {
