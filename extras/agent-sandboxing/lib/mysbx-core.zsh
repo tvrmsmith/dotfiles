@@ -489,3 +489,82 @@ mysbx_dispatch() {
     * ) exec "$REAL_SBX" "$@" ;;
   esac
 }
+
+# --- Interactive all-in-one launch (not used by the executable) -------------
+# _mysbx_launch <preset> [user_args...]
+# Flags in user_args: --recreate (tear down first), --print|-p (exec agent -p
+# <prompt> instead of interactive run; remaining positionals = prompt).
+_mysbx_launch() {
+  local preset="$1"; shift
+  local agent template print_cmd
+  agent="$(_mysbx_preset_agent "$preset")"
+  template="$(_mysbx_preset_template "$preset")"
+  print_cmd="$agent"
+
+  local -a kits=()
+  local k
+  while IFS= read -r k; do [[ -n "$k" ]] && kits+=("$k"); done \
+    < <(_mysbx_preset_kits "$preset")
+
+  local recreate=0 print_mode=0
+  local -a positional=()
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --recreate) recreate=1 ;;
+      --print|-p) print_mode=1 ;;
+      *) positional+=("$arg") ;;
+    esac
+  done
+  local -a extra_ws=() agent_args=()
+  if (( print_mode )); then
+    agent_args=("${positional[@]}")
+  else
+    extra_ws=("${positional[@]}")
+  fi
+  if _detect_git_worktree; then
+    extra_ws+=("$_GIT_WORKTREE_SOURCE_REPO")
+  fi
+
+  local name; name="$(_mysbx_name "mysbx-$preset" "${extra_ws[@]}")"
+  local sandbox_state_dir="$_MYSBX_STATE_DIR/sandboxes/$name"
+  mkdir -p "$sandbox_state_dir"/{sessions,plans,projects}
+  [ -f "$sandbox_state_dir/history.jsonl" ] || touch "$sandbox_state_dir/history.jsonl"
+  local -a helper_mounts=()
+  helper_mounts=(${(f)"$(_mysbx_helper_mounts "$sandbox_state_dir")"})
+
+  if ! (( recreate )) && "$REAL_SBX" ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
+    if _mysbx_helper_mounts_stale "$name" "${helper_mounts[@]}"; then
+      echo "$(date -Iseconds) Helper mounts stale on $name, auto-recreating" >> "$_MYSBX_LOG"
+      recreate=1
+    fi
+  fi
+  if (( recreate )); then
+    echo "$(date -Iseconds) Recreating $name" >> "$_MYSBX_LOG"
+    "$REAL_SBX" rm -f "$name" >> "$_MYSBX_LOG" 2>&1 || true
+    _mysbx_purge_orphans "$name"
+    rm -f "$_MYSBX_STATE_DIR/markers/${name}".{gh,atlassian}-secret
+  fi
+  if ! "$REAL_SBX" ls 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
+    echo "$(date -Iseconds) Creating $name" >> "$_MYSBX_LOG"
+    local -a kit_args=() tmpl_args=()
+    for k in "${kits[@]}"; do kit_args+=(--kit "$k"); done
+    [[ -n "$template" ]] && tmpl_args=(-t "$template")
+    if ! "$REAL_SBX" create "${tmpl_args[@]}" --name "$name" "${kit_args[@]}" \
+        "$agent" . "${extra_ws[@]}" "${helper_mounts[@]}" 2> >(tee -a "$_MYSBX_LOG" >&2) >> "$_MYSBX_LOG"; then
+      echo "$(date -Iseconds) Create failed; purging orphans and retrying $name" >> "$_MYSBX_LOG"
+      _mysbx_purge_orphans "$name"
+      if ! "$REAL_SBX" create "${tmpl_args[@]}" --name "$name" "${kit_args[@]}" \
+          "$agent" . "${extra_ws[@]}" "${helper_mounts[@]}" 2> >(tee -a "$_MYSBX_LOG" >&2) >> "$_MYSBX_LOG"; then
+        echo "[mysbx] sbx create failed for $name (see $_MYSBX_LOG)" >&2
+        return 1
+      fi
+    fi
+  fi
+  _mysbx_sync_secrets "$name" || return 1
+  if (( print_mode )); then
+    "$REAL_SBX" exec -i "$name" -- "$print_cmd" -p "${agent_args[@]}"
+    return $?
+  fi
+  "$REAL_SBX" run "$agent" --name "$name"
+}
