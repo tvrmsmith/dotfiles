@@ -231,7 +231,8 @@ _mysbx_helper_mounts() {
   printf '%s\n' "${mounts[@]}"
 }
 
-# 0 (true) if the live sandbox is missing any expected helper mount.
+# 0 (true) if expected mounts were provided and any is missing from the live
+# sandbox; 1 if no expected mounts or all present.
 _mysbx_helper_mounts_stale() {
   local name="$1"; shift
   local -a expected=("$@")

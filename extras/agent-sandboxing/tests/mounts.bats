@@ -8,7 +8,7 @@ run_core() { zsh -c "source '$MYSBX_CORE'; _mysbx_load_config; $1"; }
   local state="$TMP/state/box"
   mkdir -p "$state"
   run run_core "cd '$TMP' && _mysbx_helper_mounts '$state'"
-  [[ "$output" == *"$state"* ]]
+  grep -qxF -- "$state" <<< "$output"
 }
 
 @test "helper mounts skip a candidate that contains cwd" {
