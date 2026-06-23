@@ -96,6 +96,93 @@ _mysbx_preset_kits() {
   printf '%s\n' "${kits[@]}"
 }
 
+# --- Timing / log -----------------------------------------------------------
+_mysbx_now_ms() { printf '%.0f\n' $(( EPOCHREALTIME * 1000 )); }
+_mysbx_time() {
+  local label="$1"; shift
+  local start end rc
+  start=$(_mysbx_now_ms)
+  "$@"; rc=$?
+  end=$(_mysbx_now_ms)
+  echo "$(date -Iseconds) [timing] ${label}=$(( end - start ))ms rc=${rc}" >> "$_MYSBX_LOG"
+  [ -n "${_MYSBX_PROFILE:-}" ] && echo "[mysbx] ${label}: $(( end - start ))ms" >&2
+  return $rc
+}
+
+# --- Secret sync ------------------------------------------------------------
+# Echo tab-delimited "<op_account>\t<op_path>\t<scope>" for the current cwd.
+_mysbx_github_identity() {
+  local sandbox_name="$1"
+  case "$PWD/" in
+    "$DEV_PERSONAL/"*)
+      printf '%s\t%s\t%s\n' "my.1password.com" "$GIT_TOKEN_PERSONAL" "$sandbox_name" ;;
+    *)
+      printf '%s\t%s\t%s\n' "wellsky.1password.com" "$GIT_TOKEN" "-g" ;;
+  esac
+}
+
+_mysbx_secret_marker() {
+  local sandbox_name="$1" suffix="${2:-gh-secret}"
+  echo "$_MYSBX_STATE_DIR/markers/${sandbox_name}.${suffix}"
+}
+
+_mysbx_secret_fresh() {
+  local marker="$1"
+  [ -f "$marker" ] || return 1
+  local mtime; mtime=$(stat -f %m "$marker" 2>/dev/null) || return 1
+  [ $(( $(date +%s) - mtime )) -lt $_MYSBX_SECRET_TTL ]
+}
+
+_mysbx_sync_github_secret() {
+  local sandbox_name="$1"
+  local marker; marker=$(_mysbx_secret_marker "$sandbox_name")
+  _mysbx_secret_fresh "$marker" && return 0
+  mkdir -p "$_MYSBX_STATE_DIR/markers"
+
+  local op_account op_path scope
+  IFS=$'\t' read -r op_account op_path scope <<< "$(_mysbx_github_identity "$sandbox_name")"
+
+  local token
+  if ! token=$(OP_ACCOUNT="$op_account" op read "$op_path" 2>>"$_MYSBX_LOG"); then
+    echo "[mysbx] failed to read GitHub PAT from 1Password ($op_account: $op_path)" >&2
+    echo "[mysbx] is your op session active? try: eval \$(op signin --account $op_account)" >&2
+    return 1
+  fi
+  if ! printf '%s' "$token" | "$REAL_SBX" secret set "$scope" github -f >>"$_MYSBX_LOG" 2>&1; then
+    echo "[mysbx] failed to write GitHub secret to sbx (scope=$scope)" >&2
+    return 1
+  fi
+  touch "$marker"
+}
+
+_mysbx_sync_atlassian_secret() {
+  local sandbox_name="$1"
+  local marker; marker=$(_mysbx_secret_marker "$sandbox_name" "atlassian-secret")
+  _mysbx_secret_fresh "$marker" && return 0
+  mkdir -p "$_MYSBX_STATE_DIR/markers"
+
+  local token
+  if ! token=$(OP_ACCOUNT="wellsky.1password.com" op read "op://Employee/JIRA CLI Token/credential" 2>>"$_MYSBX_LOG"); then
+    echo "[mysbx] failed to read Atlassian token from 1Password" >&2
+    return 1
+  fi
+  local b64; b64=$(printf '%s:%s' "$JIRA_USERNAME" "$token" | base64)
+  if ! printf '%s' "$b64" | "$REAL_SBX" secret set -g atlassian -f >>"$_MYSBX_LOG" 2>&1; then
+    echo "[mysbx] failed to write Atlassian secret to sbx" >&2
+    return 1
+  fi
+  touch "$marker"
+}
+
+# Sync all required secrets for a sandbox. Hard-fail on any failure.
+_mysbx_sync_secrets() {
+  local name="$1"
+  _mysbx_time "sync-gh-secret($name)" _mysbx_sync_github_secret "$name" || return 1
+  if ! _mysbx_is_personal; then
+    _mysbx_time "sync-atlassian-secret($name)" _mysbx_sync_atlassian_secret "$name" || return 1
+  fi
+}
+
 # --- Naming -----------------------------------------------------------------
 # Build sandbox name from prefix, cwd, extra workspaces, and worktree source.
 # (Ported from _dsbx_name, 20-dsbx.zsh:270-281.)
