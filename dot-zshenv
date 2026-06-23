@@ -9,9 +9,10 @@ export DEV_PERSONAL="$HOME/dev/personal"
 export GIT_TOKEN="op://Employee/GitHub Personal Access Token/token"
 export PATH="$HOME/.local/bin:$HOME/.dotnet/tools:$DEV_PERSONAL/ralph/scripts:$PATH"
 
-export CLAUDE_CODE_USE_VERTEX="1"
-export CLOUD_ML_REGION="global"
-export ANTHROPIC_VERTEX_PROJECT_ID="consolo-dev-vertex-wsky"
+# Vertex config for Claude Code lives in ~/.claude/settings.json (global default)
+# and per-repo .claude/settings.local.json overrides. Not exported here so the
+# global env does not shadow per-repo project selection. pi/omp set their own
+# GOOGLE_CLOUD_PROJECT/LOCATION inline (see _OMP_VERTEX in .zshrc).
 # NOTE: do NOT export GOOGLE_APPLICATION_CREDENTIALS to the default ADC path —
 # google-auth-library finds that path automatically, and setting it makes
 # `gcloud auth application-default login` prompt for confirmation every run.

@@ -108,8 +108,8 @@ if [ -n "$SUPERSET_TERMINAL_ID" ]; then
   export PI_NOTIFICATIONS=off
 fi
 
-# Vertex env prefix shared by pi/omp and nono-omp-*
-_OMP_VERTEX="GOOGLE_CLOUD_PROJECT=$ANTHROPIC_VERTEX_PROJECT_ID GOOGLE_CLOUD_LOCATION=$CLOUD_ML_REGION"
+# Vertex env prefix shared by pi/omp and nono-omp-* (self-contained; not from global env)
+_OMP_VERTEX="GOOGLE_CLOUD_PROJECT=consolo-dev-vertex-wsky GOOGLE_CLOUD_LOCATION=global"
 alias pi="$_OMP_VERTEX command pi --model $OMP_MODEL"
 omp() {
   case "$1" in
