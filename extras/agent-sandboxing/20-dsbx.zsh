@@ -380,7 +380,7 @@ _dsbx_run() {
     sbx exec -i "$name" -- "$print_cmd" -p "${agent_args[@]}"
     return $?
   fi
-  sbx run "$name"
+  sbx run "$agent" --name "$name"
 }
 
 dsbx-cc() {
