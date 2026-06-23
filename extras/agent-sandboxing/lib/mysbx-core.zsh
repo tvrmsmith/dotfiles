@@ -184,17 +184,18 @@ _mysbx_sync_secrets() {
 }
 
 # --- Naming -----------------------------------------------------------------
-# Build sandbox name from prefix, cwd, extra workspaces, and worktree source.
-# (Ported from _dsbx_name, 20-dsbx.zsh:270-281.)
+# Build sandbox name from prefix, cwd, and any extra workspaces passed in.
+# Pure function: callers that participate in a git worktree must pass the
+# worktree source repo as an extra workspace (see _mysbx_augmented_create,
+# _mysbx_launch, _mysbx_update, _mysbx_check). (Ported from _dsbx_name,
+# 20-dsbx.zsh:270-281, with the internal worktree self-detect lifted to the
+# callers so the worktree suffix is applied exactly once.)
 _mysbx_name() {
   local prefix="$1"; shift
   local name="${prefix}-$(basename "$(pwd)")"
   for ws in "$@"; do
     name="${name}--$(basename "${ws%:ro}")"
   done
-  if _detect_git_worktree; then
-    name="${name}--$(basename "$_GIT_WORKTREE_SOURCE_REPO")"
-  fi
   echo "$name"
 }
 
@@ -399,8 +400,12 @@ _mysbx_update() {
   local -a kits=("$_MYSBX_KITS_TOOLING" "$_MYSBX_KITS_CLAUDE_PATCH" "$_MYSBX_KITS_PERSONAL")
   _mysbx_is_personal || kits+=("$_MYSBX_KITS_ATLASSIAN")
   local found=0 prefix name kit
+  # Worktree source participates in the create-time name; reproduce it so
+  # lookups match (see _mysbx_name — it no longer self-detects).
+  local -a wt=()
+  _detect_git_worktree && wt=("$_GIT_WORKTREE_SOURCE_REPO")
   for prefix in "${prefixes[@]}"; do
-    name="$(_mysbx_name "$prefix")"
+    name="$(_mysbx_name "$prefix" "${wt[@]}")"
     "$REAL_SBX" ls 2>/dev/null | awk '{print $1}' | grep -qx "$name" || continue
     found=1
     for kit in "${kits[@]}"; do
@@ -418,9 +423,13 @@ _mysbx_check() {
     'mysbx-omp:omp-sandbox:latest'
   )
   local rc=0 found=0 entry prefix img name container_id current_id
+  # Worktree source participates in the create-time name; reproduce it so
+  # lookups match (see _mysbx_name — it no longer self-detects).
+  local -a wt=()
+  _detect_git_worktree && wt=("$_GIT_WORKTREE_SOURCE_REPO")
   for entry in "${entries[@]}"; do
     prefix="${entry%%:*}"; img="${entry#*:}"
-    name="$(_mysbx_name "$prefix")"
+    name="$(_mysbx_name "$prefix" "${wt[@]}")"
     "$REAL_SBX" ls 2>/dev/null | awk '{print $1}' | grep -qx "$name" || continue
     found=1
     container_id=$(docker -H "unix://$_MYSBX_SBXD_SOCK" inspect "$name" --format '{{.Image}}' 2>/dev/null \

@@ -39,3 +39,15 @@ run_core() { zsh -c "source '$MYSBX_CORE'; _mysbx_load_config; $1"; }
   run run_core "cd '$TMP' && _mysbx_name mysbx-cc"
   [ "$output" = "mysbx-cc-$(basename "$TMP")" ]
 }
+
+@test "name applies worktree source suffix exactly once" {
+  # Regression: _mysbx_name no longer self-detects the worktree, so callers pass
+  # the source repo as an extra workspace and the suffix appears once, not twice.
+  local main="$TMP/mainrepo" wt="$TMP/wt-feature"
+  git init -q "$main"
+  git -C "$main" -c user.email=t@e -c user.name=t commit -q --allow-empty -m init
+  git -C "$main" worktree add -q "$wt" -b feature
+  run run_core "cd '$wt' && _detect_git_worktree && _mysbx_name mysbx-cc \"\$_GIT_WORKTREE_SOURCE_REPO\""
+  [ "$status" -eq 0 ]
+  [ "$output" = "mysbx-cc-$(basename "$wt")--$(basename "$main")" ]
+}
