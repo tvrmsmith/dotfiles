@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+printf 'docker %s\n' "$*" >> "${STUB_DOCKER_LOG:-/dev/null}"
+# `compose ... config --images` must print something iterable.
+if [ "$1" = compose ] && [[ "$*" == *"config --images"* ]]; then
+  echo "claude-sandbox-mise:latest"
+fi
+exit 0
