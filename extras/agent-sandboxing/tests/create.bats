@@ -46,6 +46,28 @@ teardown() { _mysbx_test_teardown; }
   ! grep -q "mysbx-cc-" "$STUB_SBX_LOG"
 }
 
+@test "create with --name before preset still augments" {
+  ( cd "$TMP" && zsh "$MYSBX" create --name foo cc . )
+  local argv; argv="$(sbx_argv)"
+  grep -qx claude <<<"$argv"          # preset cc expanded to real agent
+  grep -qx -- '--kit' <<<"$argv"      # augmentation happened
+  grep -qx foo <<<"$argv"             # explicit name forwarded
+  ! grep -qx cc <<<"$argv"            # preset token not forwarded as agent
+}
+
+@test "create with -t before preset still augments" {
+  ( cd "$TMP" && zsh "$MYSBX" create -t img cc . )
+  local argv; argv="$(sbx_argv)"
+  grep -qx claude <<<"$argv"          # preset cc detected despite leading -t img
+  grep -qx -- '--kit' <<<"$argv"
+}
+
+@test "create with --name=foo (equals form) overrides derived name" {
+  ( cd "$TMP" && zsh "$MYSBX" create cc . --name=foo )
+  grep -q foo "$STUB_SBX_LOG"
+  ! grep -q "mysbx-cc-" "$STUB_SBX_LOG"
+}
+
 @test "create hard-fails when secret sync fails" {
   STUB_OP_RC=1 run zsh -c "cd '$TMP' && '$MYSBX' create cc ."
   [ "$status" -ne 0 ]
