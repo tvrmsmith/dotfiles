@@ -45,23 +45,33 @@ Examples:
 
 ## Review command resolution
 
-The loop always invokes the review command **explicitly by name**, so a command
-marked `user-invocable-only` in `skillOverrides` still works — that override only
-hides a skill from the auto-trigger listing; it remains invokable by exact name
-(confirmed via skill-audit docs and the Skill-tool contract for user-typed
-`/name` invocation).
+**Empirically verified (2026-06-24):** the Skill tool enforces `skillOverrides`
+for *model invocation regardless of source* (plugin or user-level). A command
+marked `user-invocable-only` / `off` / `name-only` cannot be invoked by the
+running skill — it fails with:
 
-Notes:
-- Claude Code currently ignores `skillOverrides` for **plugin** sources
-  (hardcoded `"on"`), so plugin review commands (e.g. `pr-review-toolkit:review-pr`,
-  `code-review`) are always live regardless of override.
-- Only a command set fully `off` or not installed cannot be invoked.
+```
+Skill <name> is disabled for model invocation in skillOverrides settings
+```
 
-**Pre-flight check:** before entering the loop, confirm the named review command
-resolves. If it does not (typo, disabled `off`, not installed), error on turn 1
-echoing the parsed name — do not enter the loop. (Implementation: a live-fire
-test that a user-invocable-only command actually invokes belongs in the test
-phase, since running a real review has side effects.)
+This holds for direct model invocation AND invocation from inside another
+running skill (both tested, both blocked). Only a human typing `/name` invokes
+such commands. So review-loop can directly invoke only review commands that are
+*not* overridden (e.g. default `pr-review-toolkit:review-pr`, `code-review`,
+`review`, `security-review`, `simplify` — none currently overridden).
+
+**On invocation failure** (blocked by override, not installed, or typo),
+review-loop does NOT silently fall back. It presents the failure to the user via
+`AskUserQuestion` with three choices:
+
+1. **Pick another review skill** — re-prompt for a different review command, then
+   retry resolution.
+2. **Read the `.md` inline** — locate the command's markdown file on disk, Read
+   it, and execute its instructions inline (bypasses the Skill-tool gate). Only
+   offered when the file can be located.
+3. **Stop** — abort the loop.
+
+The error message echoes the parsed command name so a typo is obvious.
 
 ## Loop body (per iteration)
 
