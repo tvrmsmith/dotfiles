@@ -28,8 +28,9 @@ model extracts up to three elements; all optional:
 
 **Focus mapping:** for `pr-review-toolkit:review-pr`, focus maps to its native
 `[review-aspects]` argument (`tests`, `errors`, `comments`, `types`, `code`,
-`simplify`). For any other review command, focus is appended as plain review
-guidance.
+`simplify`). A focus with no matching native aspect (e.g. "security") is passed
+as plain guidance alongside the mapped aspects, not dropped. For any other review
+command, focus is appended as plain review guidance.
 
 **Misparse safety net:** before the loop starts, echo the parsed config so a
 misread is caught on turn 1:
@@ -43,7 +44,11 @@ Examples:
 - `/review-loop max 6, focus on security and tests`
 - `/review-loop use /code-review up to 2 loops`
 
-## Review command resolution
+## Review command failure gate
+
+There is no pre-flight resolution probe — the review command is invoked for real
+inside the loop (via the review subagent), and any invocation problem surfaces
+there. This section defines the recovery path when that invocation fails.
 
 **Empirically verified (2026-06-24):** the Skill tool enforces `skillOverrides`
 for *model invocation regardless of source* (plugin or user-level). A command
@@ -82,7 +87,7 @@ The error message echoes the parsed command name so a typo is obvious.
    happen back in the main thread on the returned list.
    - If the review command is overridden (`user-invocable-only`/`off`), the
      subagent hits the same Skill-tool gate as the main thread — the failure
-     gate (see Review command resolution) applies; the subagent reports the
+     gate (see Review command failure gate) applies; the subagent reports the
      failure back and the main thread runs the user choice.
 
 2. **Triage** — classify each finding:
