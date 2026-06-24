@@ -135,7 +135,24 @@
     "security-screener:mcp-analyze": "user-invocable-only",
     "security-screener:sbom-generate": "user-invocable-only",
     "claude-api": "name-only",
-    "update-config": "user-invocable-only"
+    "update-config": "user-invocable-only",
+    "shared:pr-generator": "user-invocable-only",
+    "workflow:create_pr": "user-invocable-only",
+    "commit-commands:commit-push-pr": "user-invocable-only",
+    "commit-commands:commit": "user-invocable-only",
+    "workflow:ticket-template": "user-invocable-only",
+    "workflow:review": "user-invocable-only",
+    "jira-next-item": "user-invocable-only",
+    "hookify:hookify": "user-invocable-only",
+    "workflow:oneshot": "user-invocable-only",
+    "workflow:spec": "user-invocable-only",
+    "workflow:research": "user-invocable-only",
+    "workflow:validate": "user-invocable-only",
+    "workflow:resume": "user-invocable-only",
+    "workflow:handoff": "user-invocable-only",
+    "security-screener:security-scan": "user-invocable-only",
+    "unit-gen:generate-tests": "user-invocable-only",
+    "unit-gen:generate-tests-from-pr": "user-invocable-only"
   },
   "hooks": {
     "Notification": [
@@ -345,7 +362,8 @@
     "terragrunt-skill@jfr992": false,
     "terrashark@terrashark": false,
     "warp@claude-code-warp": true,
-    "playwright@claude-plugins-official": false
+    "playwright@claude-plugins-official": false,
+    "mattpocock-skills@mattpocock-skills": true
   },
   "extraKnownMarketplaces": {
     "caveman": {
@@ -407,6 +425,12 @@
       "source": {
         "source": "github",
         "repo": "warpdotdev/claude-code-warp"
+      }
+    },
+    "mattpocock-skills": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/trevor.smith/dev/personal/skills"
       }
     }
   },

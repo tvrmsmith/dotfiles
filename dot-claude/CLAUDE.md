@@ -14,6 +14,7 @@
   - **Inside `~/dev/personal/`**: auth as personal account (`tvrmsmith`) — use `github-personal` SSH host alias for remotes, `gh auth switch --user tvrmsmith` before `gh` commands (PRs, issues, etc.)
 - `gh` commands against work repos from inside `~/dev/personal/` → `cd` to non-personal directory first (e.g. `cd ~/dev && gh repo view ...`)
 - Push fails "Permission denied" → use `git-ssh-fix` skill
+- Merging a feature branch → prefer squash merge (`git merge --squash`, single commit) unless I say otherwise
 
 ## Working with Repositories
 
