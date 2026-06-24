@@ -43,6 +43,26 @@ Examples:
 - `/review-loop max 6, focus on security and tests`
 - `/review-loop use /code-review up to 2 loops`
 
+## Review command resolution
+
+The loop always invokes the review command **explicitly by name**, so a command
+marked `user-invocable-only` in `skillOverrides` still works — that override only
+hides a skill from the auto-trigger listing; it remains invokable by exact name
+(confirmed via skill-audit docs and the Skill-tool contract for user-typed
+`/name` invocation).
+
+Notes:
+- Claude Code currently ignores `skillOverrides` for **plugin** sources
+  (hardcoded `"on"`), so plugin review commands (e.g. `pr-review-toolkit:review-pr`,
+  `code-review`) are always live regardless of override.
+- Only a command set fully `off` or not installed cannot be invoked.
+
+**Pre-flight check:** before entering the loop, confirm the named review command
+resolves. If it does not (typo, disabled `off`, not installed), error on turn 1
+echoing the parsed name — do not enter the loop. (Implementation: a live-fire
+test that a user-invocable-only command actually invokes belongs in the test
+phase, since running a real review has side effects.)
+
 ## Loop body (per iteration)
 
 1. **Review** — run the review command in the main thread (no coordinator
