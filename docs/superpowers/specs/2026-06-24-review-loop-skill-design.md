@@ -47,8 +47,8 @@ Examples:
 
 **Empirically verified (2026-06-24):** the Skill tool enforces `skillOverrides`
 for *model invocation regardless of source* (plugin or user-level). A command
-marked `user-invocable-only` / `off` / `name-only` cannot be invoked by the
-running skill — it fails with:
+marked `user-invocable-only` cannot be invoked by the running skill — it fails
+with:
 
 ```
 Skill <name> is disabled for model invocation in skillOverrides settings
