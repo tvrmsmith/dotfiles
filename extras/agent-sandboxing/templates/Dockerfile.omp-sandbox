@@ -54,7 +54,7 @@ RUN --mount=type=cache,target=/opt/bun/install/cache \
   bun install -g @oh-my-pi/pi-coding-agent@${OMP_VERSION} && \
   ln -s /opt/bun/bin/omp /usr/local/bin/pi
 
-# Rust toolchain. Used by `dsbx-omp-build` (host-side helper) when it runs this
+# Rust toolchain. Used by `mysbx omp-build` (host-side helper) when it runs this
 # image as a one-shot container to build packages/natives for linux-arm64 from
 # the user's omp fork. Sandboxes themselves never invoke cargo — they consume
 # the prebuilt tree via bind mount.
@@ -76,8 +76,8 @@ RUN cat > /usr/local/bin/claude <<'SH' && chmod +x /usr/local/bin/claude
 # sbx injects ANTHROPIC_API_KEY=proxy-managed; OMP would treat that as a real key
 # and skip the Vertex provider. Strip it before exec.
 unset ANTHROPIC_API_KEY
-# Prefer the host-built fork if dsbx-omp-build has produced one.
-# ~/.omp-fork is a symlink to the bind-mounted host cache (~/.cache/dsbx/omp-fork);
+# Prefer the host-built fork if mysbx omp-build has produced one.
+# ~/.omp-fork is a symlink to the bind-mounted host cache (~/.cache/mysbx/omp-fork);
 # install-helper-links creates it unconditionally, so the existence check is on
 # the cli.ts file (dangling symlink => fall through to published omp).
 FORK_CLI="$HOME/.omp-fork/packages/coding-agent/src/cli.ts"
@@ -112,7 +112,7 @@ ENV GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION}
 ENV OMP_MODEL=${OMP_MODEL}
 
 # Stamp /home/agent ownership before USER agent. The host dotfiles tree is
-# bind-mounted RO at runtime by `_dsbx_install_helper_links` and stowed into
+# bind-mounted RO at runtime by `_mysbx_helper_mounts` and stowed into
 # ~/, so shell rc files (.bashrc, .gitconfig) come from the host — nothing
 # user-facing is baked here. Docker Desktop's containerd snapshotter
 # intermittently remaps unstamped dir ownership to nobody:nogroup across
