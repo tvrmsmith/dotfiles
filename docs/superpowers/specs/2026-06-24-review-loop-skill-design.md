@@ -75,10 +75,15 @@ The error message echoes the parsed command name so a typo is obvious.
 
 ## Loop body (per iteration)
 
-1. **Review** — run the review command in the main thread (no coordinator
-   wrapper). The toolkit's analyzer agents already run as their own subagents,
-   so file-reading is isolated; reports aggregate in the main thread, which is
-   acceptable for the default 4 loops. Collect the aggregated findings list.
+1. **Review** — dispatch a coordinator **subagent** that runs the review command
+   and returns only the condensed findings list (path:line · severity · problem ·
+   suggested fix). This keeps verbose analyzer reports and aggregation out of the
+   main thread across iterations. The decision gate, triage, and fix dispatch all
+   happen back in the main thread on the returned list.
+   - If the review command is overridden (`user-invocable-only`/`off`), the
+     subagent hits the same Skill-tool gate as the main thread — the failure
+     gate (see Review command resolution) applies; the subagent reports the
+     failure back and the main thread runs the user choice.
 
 2. **Triage** — classify each finding:
    - **Clear** — high-value, unambiguous. Auto-approved for fixing.
@@ -126,8 +131,6 @@ On exit, summarize:
 
 ## Out of scope (YAGNI)
 
-- No coordinator-subagent wrapper around the review (marginal benefit at 4
-  loops; main thread needs the findings for the decision gate anyway).
 - No severity-threshold gate or "surface all findings" mode — only
   ambiguous/unnecessary findings are surfaced.
 - No automatic commit/PR creation — the skill reviews and fixes only.
