@@ -107,14 +107,19 @@ git commit -m "feat(review-loop): scaffold skill with arg parsing"
 - Consumes: parsed `review command` from Task 1.
 - Produces: the resolution + failure-handling behavior referenced by the loop's review step in Task 3.
 
-- [ ] **Step 1: Append the resolution section**
+- [ ] **Step 1: Append the Review command failure gate section**
 
 Append to `dot-claude/skills/review-loop/SKILL.md`:
 
 ````markdown
-## 2. Resolve the review command
+## 2. Review command failure gate
 
-The review command runs via a subagent (see step 3). A command marked
+There is no pre-flight probe — the review command is invoked for real inside the
+loop (step 3a, via a subagent), and an invocation problem only surfaces there.
+This section defines what to do when that invocation fails; step 3a refers back
+to it.
+
+A command marked
 `user-invocable-only` in `skillOverrides` **cannot be invoked by the model** (the
 subagent runs as the model) — it fails with:
 
@@ -138,7 +143,7 @@ typo), do NOT silently continue. Present the failure to the user with
 
 - [ ] **Step 2: Verify the section and the verbatim error string are present**
 
-Run: `rg -n '## 2\. Resolve the review command|disabled for model invocation|Pick another review skill' dot-claude/skills/review-loop/SKILL.md`
+Run: `rg -n '## 2\. Review command failure gate|disabled for model invocation|Pick another review skill' dot-claude/skills/review-loop/SKILL.md`
 Expected: three matches.
 
 - [ ] **Step 3: Commit**
