@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Stub 1Password CLI. `op read <path>` echoes a deterministic fake token unless
+# STUB_OP_RC is nonzero (simulating a failed read).
+if [ "${STUB_OP_RC:-0}" -ne 0 ]; then
+  echo "stub op: forced failure" >&2
+  exit "${STUB_OP_RC}"
+fi
+if [ "$1" = read ]; then
+  echo "fake-token-for:$2"
+fi
+exit 0
