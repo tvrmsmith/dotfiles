@@ -78,7 +78,7 @@ RUN cat > /usr/local/bin/claude <<'SH' && chmod +x /usr/local/bin/claude
 unset ANTHROPIC_API_KEY
 # Prefer the host-built fork if mysbx omp-build has produced one.
 # ~/.omp-fork is a symlink to the bind-mounted host cache (~/.cache/mysbx/omp-fork);
-# install-helper-links creates it unconditionally, so the existence check is on
+# setup-dotfiles.sh creates it unconditionally, so the existence check is on
 # the cli.ts file (dangling symlink => fall through to published omp).
 FORK_CLI="$HOME/.omp-fork/packages/coding-agent/src/cli.ts"
 if [ -f "$FORK_CLI" ]; then
@@ -112,9 +112,10 @@ ENV GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION}
 ENV OMP_MODEL=${OMP_MODEL}
 
 # Stamp /home/agent ownership before USER agent. The host dotfiles tree is
-# bind-mounted RO at runtime by `_mysbx_helper_mounts` and stowed into
-# ~/, so shell rc files (.bashrc, .gitconfig) come from the host — nothing
-# user-facing is baked here. Docker Desktop's containerd snapshotter
+# bind-mounted RO at runtime by the mysbx helper-mount machinery
+# (`_mysbx_helper_mounts`) and stowed into ~/ by setup-dotfiles.sh, so shell
+# rc files (.bashrc, .gitconfig) come from the host — nothing user-facing is
+# baked here. Docker Desktop's containerd snapshotter
 # intermittently remaps unstamped dir ownership to nobody:nogroup across
 # layer transitions, leaving the runtime agent user unable to write its own
 # home; re-stamping here pins ownership into the exported image.
