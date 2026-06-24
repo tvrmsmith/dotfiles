@@ -31,7 +31,7 @@ _mysbx_load_config() {
 }
 
 # --- Real sbx resolution ----------------------------------------------------
-# Echo the absolute path to the genuine sbx binary. Honors $REAL_SBX from config;
+# Resolve the genuine sbx binary into $REAL_SBX. Honors $REAL_SBX from config;
 # else `command -v sbx`. Aborts if it resolves back to this wrapper.
 _mysbx_resolve_real_sbx() {
   local cand="${REAL_SBX:-}"
@@ -328,19 +328,22 @@ _MYSBX_TEMPLATES_DIR="$_AGENT_SBX_ROOT/templates"
 
 # Ported from dsbx-build (20-dsbx.zsh:112-125).
 _mysbx_build() {
-  docker compose -f "$_MYSBX_TEMPLATES_DIR/docker-compose.yml" build "$@" && \
+  setopt local_options pipe_fail
+  docker compose -f "$_MYSBX_TEMPLATES_DIR/docker-compose.yml" build "$@" || return 1
   for img in $(docker compose -f "$_MYSBX_TEMPLATES_DIR/docker-compose.yml" config --images); do
-    echo "Loading $img into sbx..." && \
-    docker save "$img" | "$REAL_SBX" template load /dev/stdin
-  done || return
+    echo "Loading $img into sbx..."
+    if ! docker save "$img" | "$REAL_SBX" template load /dev/stdin; then
+      echo "[mysbx build] template load failed for $img" >&2
+      return 1
+    fi
+  done
   if [ -d "$_MYSBX_OMP_FORK_HOST_DIR" ] && { [ $# -eq 0 ] || (( ${@[(I)omp-sandbox]} )); }; then
     echo "[mysbx build] chaining omp-build" >&2
     _mysbx_omp_build
   fi
 }
 
-# Ported from dsbx-omp-build (20-dsbx.zsh:210-257) — body unchanged except the
-# rename map. Copy that function verbatim, renaming identifiers:
+# Ported from dsbx-omp-build (20-dsbx.zsh:210-257).
 _mysbx_omp_build() {
   if [ ! -d "$_MYSBX_OMP_FORK_HOST_DIR" ]; then
     echo "[mysbx omp-build] fork worktree missing: $_MYSBX_OMP_FORK_HOST_DIR" >&2
@@ -399,7 +402,7 @@ _mysbx_update() {
   local -a prefixes=(mysbx-cc mysbx-ruby-cc mysbx-omp)
   local -a kits=("$_MYSBX_KITS_TOOLING" "$_MYSBX_KITS_CLAUDE_PATCH" "$_MYSBX_KITS_PERSONAL")
   _mysbx_is_personal || kits+=("$_MYSBX_KITS_ATLASSIAN")
-  local found=0 prefix name kit
+  local found=0 rc=0 prefix name kit
   # Worktree source participates in the create-time name; reproduce it so
   # lookups match (see _mysbx_name — it no longer self-detects).
   local -a wt=()
@@ -410,10 +413,14 @@ _mysbx_update() {
     found=1
     for kit in "${kits[@]}"; do
       echo "[mysbx] applying $(basename "$kit") to $name" >&2
-      "$REAL_SBX" kit add "$name" "$kit"
+      if ! "$REAL_SBX" kit add "$name" "$kit"; then
+        echo "[mysbx] kit add failed: $(basename "$kit") -> $name" >&2
+        rc=1
+      fi
     done
   done
   (( found )) || { echo "[mysbx] no sandboxes found for this directory" >&2; return 1; }
+  return $rc
 }
 
 # Ported from dsbx-check (20-dsbx.zsh:438-475). Prefixes/recreate hint mysbx-*.
@@ -461,10 +468,13 @@ mysbx_dispatch() {
     create|run)
       shift
       # Agent positional is the first non-flag token. Peek without consuming.
-      local agent_pos=""
-      local a
+      # Skip the value token after separated value-taking flags so it is not
+      # mistaken for the agent (e.g. `create --name foo cc .`).
+      local agent_pos="" a skip=0
       for a in "$@"; do
+        if (( skip )); then skip=0; continue; fi
         case "$a" in
+          -t|--template|--name|--kit) skip=1; continue ;;
           -*) continue ;;        # skip leading flags
           *) agent_pos="$a"; break ;;
         esac

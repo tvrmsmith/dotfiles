@@ -3,7 +3,10 @@
 # functions add the all-in-one create-if-needed convenience for interactive use.
 source "${0:A:h}/lib/mysbx-core.zsh"
 _mysbx_load_config
-_mysbx_resolve_real_sbx || return
+# Resolve eagerly only when sbx is reachable (or REAL_SBX is configured); never
+# abort sourcing on a machine without sbx — the functions resolve lazily at call
+# time and fail loudly there instead of breaking every interactive shell.
+{ [[ -n "${REAL_SBX:-}" ]] || command -v sbx >/dev/null 2>&1; } && _mysbx_resolve_real_sbx
 
 mysbx-cc()      { _mysbx_launch cc "$@"; }
 mysbx-ruby-cc() { _mysbx_launch ruby-cc "$@"; }
