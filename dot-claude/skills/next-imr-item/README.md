@@ -29,8 +29,9 @@ overlay in `docs/agents/triage-labels.md`.
 1. **Select** — `bd ready`, filter to items carrying a `tms/ready-for-agent`
    or `tms/ready-for-human` label (drop `PRD:` containers), order by
    most-unblocking (`dependent_count` desc). See [SELECTION.md](SELECTION.md).
-2. **Classify + brief** — read the item's `tms/` state and comments. Draft an
-   agent brief from the PRD + ADRs if none exists (post it to bd); draft a
+2. **Classify + brief** — the `tms/` label is the gate (agent vs human). On the
+   agent path, if a brief already exists (issue description from `/to-issues`,
+   or a brief comment) skip it; only draft one for thin/raw issues. Draft a
    human brief for `ready-for-human`.
 3. **Setup** — spawn a new workspace (default) or rename in-place when clean +
    unclaimed. See [SETUP.md](SETUP.md).
