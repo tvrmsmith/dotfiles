@@ -9,6 +9,7 @@
 #   - CLAUDE.local.md               (personal, gitignored Claude memory)
 #   - docs/agents/                  (Matt Pocock skills config: issue tracker,
 #                                     triage labels, domain docs)
+#   - .claude/skills/start-next-item (personal, gitignored workflow skill)
 #
 # Usage:
 #   - Run as a Superset post-create setup script, or
@@ -23,6 +24,7 @@ LINK_PATHS=(
   ".claude/settings.local.json"
   "CLAUDE.local.md"
   "docs/agents"
+  ".claude/skills/start-next-item"
 )
 
 # Must be inside a git repo.
