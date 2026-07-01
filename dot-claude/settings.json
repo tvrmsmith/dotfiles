@@ -2,8 +2,6 @@
   "skillListingMaxDescChars": 500,
   "skillListingBudgetFraction": 0.02,
   "env": {
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTS": "effort,thinking,adaptive_thinking,interleaved_thinking,web_search",
     "ANTHROPIC_VERTEX_PROJECT_ID": "consolo-dev-vertex-wsky",
     "CLAUDE_CODE_USE_VERTEX": "1",
     "CLOUD_ML_REGION": "global",
@@ -363,7 +361,9 @@
     "terrashark@terrashark": false,
     "warp@claude-code-warp": true,
     "playwright@claude-plugins-official": false,
-    "mattpocock-skills@mattpocock-skills": true
+    "mattpocock-skills@mattpocock-skills": true,
+    "wshp@wshp.claude-plugins": true,
+    "beads@beads-marketplace": false
   },
   "extraKnownMarketplaces": {
     "caveman": {
@@ -431,6 +431,18 @@
       "source": {
         "source": "directory",
         "path": "/Users/trevor.smith/dev/personal/skills"
+      }
+    },
+    "wshp.claude-plugins": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/trevor.smith/dev/wellsky/wshp.claude-plugins"
+      }
+    },
+    "beads-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "gastownhall/beads"
       }
     }
   },
