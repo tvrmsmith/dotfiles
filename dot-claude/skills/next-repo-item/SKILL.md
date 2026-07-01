@@ -41,8 +41,10 @@ Read the selected item's `tms/` state + comments:
 
 ## Execute or hand off
 
-- **agent, in-place** → invoke the Subagent Driven Development skill with the brief + PRD as input.
-- **agent, spawn** → the `superset ... --prompt` is pointers only: "read the agent brief on bd `<id>`, read the PRD `<epic-id>`, then run the Subagent Driven Development skill." Never inline the brief text. **Run bookkeeping (below) BEFORE creating the workspace** — the spawned agent reads the brief from beads, so the comment + claim must be `dolt push`ed first, or it races an empty/unclaimed issue. After create, foreground it with `superset workspaces open <id>` (the agent otherwise runs in a background terminal).
+Agent items run the **full brainstorming flow**, not Subagent-Driven Development (SDD) directly. A bd brief is not an implementation plan — pointing an agent straight at SDD makes it stall and improvise blueprints. Brainstorming resolves any residual ambiguity, then chains to writing-plans (which produces the plan) and finally SDD to execute. Entry point: `superpowers:brainstorming` with the brief + PRD as input.
+
+- **agent, in-place** → invoke `superpowers:brainstorming` with the brief + PRD as input. Let it flow through writing-plans → subagent-driven-development.
+- **agent, spawn** → the `superset ... --prompt` is pointers only: "read the agent brief on bd `<id>`, read the PRD `<epic-id>`, then run the superpowers:brainstorming skill to turn it into a design — it chains to writing-plans then subagent-driven-development." Never inline the brief text. **Run bookkeeping (below) BEFORE creating the workspace** — the spawned agent reads the brief from beads, so the comment + claim must be `dolt push`ed first, or it races an empty/unclaimed issue. After create, foreground it with `superset workspaces open <id>` (the agent otherwise runs in a background terminal).
 - **ready-for-human** (either mode) → set up the workspace/branch, post the human-brief, `superset workspaces open` for the user. No `--agent`.
 
 ## Bookkeeping
