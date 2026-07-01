@@ -1,6 +1,6 @@
 [submodule "dot-config/nvim"]
   path = dot-config/nvim
-  url = git@github.com:tvrmsmith/kickstart.nvim.git
+  url = git@github-personal:tvrmsmith/kickstart.nvim.git
 
 [submodule "dot-config/nvim-Lazyman"]
   path = dot-config/nvim-Lazyman
@@ -8,7 +8,7 @@
 
 [submodule "dot-config/nvim-LazyVim"]
   path = dot-config/nvim-LazyVim
-  url = git@github.com:tvrmsmith/lazyvim-config.git
+  url = git@github-personal:tvrmsmith/lazyvim-config.git
 
 [submodule "dot-warp/themes"]
   path = dot-warp/themes
