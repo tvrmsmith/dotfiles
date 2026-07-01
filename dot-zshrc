@@ -142,12 +142,12 @@ alias claude-patch='$DEV_PERSONAL/dotfiles/extras/claude-code-patch.sh'
 # clc is an executable at dot-local/bin/clc (~/.local/bin/clc, on PATH) so
 # Superset custom terminal agents can discover it. Named clc (not cc) to avoid
 # clashing with /usr/bin/cc. Resolves via PATH here too.
-alias cca='clc agents'
+alias clca='clc agents'
 
 # Workflow tool stripped from context by default (smaller prompt).
-# ccwf = clc with Dynamic Workflows / ultracode re-enabled for the session.
+# clcwf = clc with Dynamic Workflows / ultracode re-enabled for the session.
 export CLAUDE_CODE_DISABLE_WORKFLOWS=1
-ccwf() { (export CLAUDE_CODE_DISABLE_WORKFLOWS=0; clc "$@"); }
+clcwf() { (export CLAUDE_CODE_DISABLE_WORKFLOWS=0; clc "$@"); }
 
 # Agent sandboxing (nono, sbx); relies on $_OMP_VERTEX defined above
 [ -f "$DEV_PERSONAL/dotfiles/extras/agent-sandboxing/init.zsh" ] && \
