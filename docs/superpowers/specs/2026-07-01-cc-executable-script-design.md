@@ -7,7 +7,8 @@
 > collides with `/usr/bin/cc` (clang) — depending on PATH order and zsh's command
 > hash, `cc` could resolve to the compiler. Renamed to **`clc`**
 > (`dot-local/bin/clc` → `~/.local/bin/clc`). Everywhere below, read `cc` as
-> `clc`. The `cca` alias and `ccwf` function keep their names but now call `clc`.
+> `clc`. The derived helpers were renamed for consistency too: `cca` → `clca`,
+> `ccwf` → `clcwf` (both now call `clc`).
 
 ## Problem
 
