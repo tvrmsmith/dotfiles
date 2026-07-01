@@ -33,11 +33,12 @@ If not Meridian.IMR, STOP and report: "next-imr-item only runs in the Meridian.I
 
 ## Classify + brief
 
-Read the selected item's `tms/` state + comments:
+The **`tms/` label is the gate** — it decides agent vs human, not any content inspection. Read it (resolve via `docs/agents/triage-labels.md`):
 
-- **ready-for-agent, brief present** (an agent-brief comment exists) → proceed to setup.
-- **ready-for-agent, no brief** → draft a brief from the PRD + linked ADRs, following the mattpocock triage AGENT-BRIEF guide. Show it for approval. On approval, if an unresolved decision remains, auto-escalate: grill it into shape, or reclassify to `tms/ready-for-human`. Post the approved brief with `bd comment <id>`.
-- **ready-for-human** → draft a human-brief (same structure; note why it can't be delegated: judgment calls, external access, design decisions, manual testing). No autonomous execution.
+- **`tms/ready-for-agent`** → agent path. A brief is the mattpocock triage artifact for *raw* issues; a slice split from a PRD by `/to-issues` already carries brief-equivalent detail in its description (What to build + acceptance criteria + refs), so don't duplicate it.
+  - **Brief already present** — in the issue description OR a brief comment → skip drafting, proceed to setup.
+  - **No brief** (thin / hand-filed issue) → draft one from the PRD + linked ADRs following the mattpocock AGENT-BRIEF guide. Show for approval. If an unresolved decision remains, auto-escalate: grill it into shape, or reclassify to `tms/ready-for-human`. Post it with `bd comment <id>`.
+- **`tms/ready-for-human`** → draft a human-brief (same structure; note why it can't be delegated: judgment calls, external access, design decisions, manual testing). No autonomous execution.
 
 ## Execute or hand off
 
