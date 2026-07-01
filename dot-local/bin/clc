@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# cc — launch Claude Code with the skillOverrides patch applied, skipping
-# permission prompts. Executable form of the former `cc` zsh alias so PATH
-# scanning tools (e.g. Superset custom terminal agents) can discover it.
+# clc — launch Claude Code with the skillOverrides patch applied, skipping
+# permission prompts. Executable form of the former `cc` zsh alias (renamed to
+# avoid clashing with /usr/bin/cc) so PATH scanning tools (e.g. Superset custom
+# terminal agents) can discover it.
 set -euo pipefail
 
 # Resolve this script's real path through the stow symlink (BSD readlink has no
