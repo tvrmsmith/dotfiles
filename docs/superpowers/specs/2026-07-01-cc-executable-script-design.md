@@ -1,7 +1,13 @@
 # cc executable script (Superset custom-agent launcher)
 
 **Date:** 2026-07-01
-**Status:** Approved design
+**Status:** Implemented
+
+> **Update (2026-07-01):** the executable was named `cc` initially, but `cc`
+> collides with `/usr/bin/cc` (clang) — depending on PATH order and zsh's command
+> hash, `cc` could resolve to the compiler. Renamed to **`clc`**
+> (`dot-local/bin/clc` → `~/.local/bin/clc`). Everywhere below, read `cc` as
+> `clc`. The `cca` alias and `ccwf` function keep their names but now call `clc`.
 
 ## Problem
 
