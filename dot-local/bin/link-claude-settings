@@ -2,8 +2,13 @@
 #
 # link-claude-settings.sh
 #
-# Symlinks .claude/settings.local.json in a git worktree back to the main
-# repo's copy, so Claude Code local settings survive worktree creation.
+# Symlinks personal Claude Code config in a git worktree back to the main
+# repo's copy, so local settings + personal agent config survive worktree
+# creation. Currently mirrors:
+#   - .claude/settings.local.json   (Claude Code local settings)
+#   - CLAUDE.local.md               (personal, gitignored Claude memory)
+#   - docs/agents/                  (Matt Pocock skills config: issue tracker,
+#                                     triage labels, domain docs)
 #
 # Usage:
 #   - Run as a Superset post-create setup script, or
@@ -12,6 +17,13 @@
 # Safe to run repeatedly. No-op when run inside the main worktree.
 
 set -euo pipefail
+
+# Paths (relative to repo root) to mirror from the main worktree.
+LINK_PATHS=(
+  ".claude/settings.local.json"
+  "CLAUDE.local.md"
+  "docs/agents"
+)
 
 # Must be inside a git repo.
 if ! git rev-parse --git-common-dir >/dev/null 2>&1; then
@@ -31,15 +43,29 @@ if [ "$main_root" = "$worktree_root" ]; then
   exit 0
 fi
 
-source_file="$main_root/.claude/settings.local.json"
-target_file="$worktree_root/.claude/settings.local.json"
+link_path() {
+  local rel="$1"
+  local source_file="$main_root/$rel"
+  local target_file="$worktree_root/$rel"
 
-# Ensure the source exists so the symlink isn't dangling.
-mkdir -p "$(dirname "$source_file")"
-[ -e "$source_file" ] || echo '{}' > "$source_file"
+  # Seed an empty settings file so its symlink is never dangling.
+  if [ "$rel" = ".claude/settings.local.json" ] && [ ! -e "$source_file" ]; then
+    mkdir -p "$(dirname "$source_file")"
+    echo '{}' > "$source_file"
+  fi
 
-# Create/refresh the symlink. -f replace, -n don't descend into existing symlink dir.
-mkdir -p "$(dirname "$target_file")"
-ln -sfn "$source_file" "$target_file"
+  # Skip anything that doesn't exist in the main worktree.
+  if [ ! -e "$source_file" ]; then
+    echo "link-claude-settings: $rel not present in main worktree, skipping." >&2
+    return 0
+  fi
 
-echo "link-claude-settings: linked $target_file -> $source_file"
+  # Create/refresh the symlink. -f replace, -n don't descend into existing symlink dir.
+  mkdir -p "$(dirname "$target_file")"
+  ln -sfn "$source_file" "$target_file"
+  echo "link-claude-settings: linked $target_file -> $source_file"
+}
+
+for rel in "${LINK_PATHS[@]}"; do
+  link_path "$rel"
+done
