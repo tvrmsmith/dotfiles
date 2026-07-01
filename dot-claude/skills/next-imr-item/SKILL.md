@@ -42,10 +42,15 @@ The **`tms/` label is the gate** — it decides agent vs human, not any content 
 
 ## Execute or hand off
 
-Agent items run the **full brainstorming flow**, not Subagent-Driven Development (SDD) directly. A bd brief is not an implementation plan — pointing an agent straight at SDD makes it stall and improvise blueprints. Brainstorming resolves any residual ambiguity, then chains to writing-plans (which produces the plan) and finally SDD to execute. Entry point: `superpowers:brainstorming` with the brief + PRD as input.
+The executing agent picks the execution skill by **assessing the slice** — don't hardcode one. Hardcoding mismatches half the slices (SDD alone is too light and makes the agent improvise plans; full brainstorming is too heavy for a trivial fix). The agent holds the most context (description + PRD + ADRs + prior art), so it judges. The **execution rubric** (hand this to the agent verbatim):
 
-- **agent, in-place** → invoke `superpowers:brainstorming` with the brief + PRD as input. Let it flow through writing-plans → subagent-driven-development.
-- **agent, spawn** → the `superset ... --prompt` is pointers only: "read the agent brief on bd `<id>`, read the PRD `<epic-id>`, then run the superpowers:brainstorming skill to turn it into a design — it chains to writing-plans then subagent-driven-development." Never inline the brief text. **Run bookkeeping (below) BEFORE creating the workspace** — the spawned agent reads the brief from beads, so the comment + claim must be `dolt push`ed first, or it races an empty/unclaimed issue. After create, foreground it with `superset workspaces open <id>` (the agent otherwise runs in a background terminal).
+> Assess the slice, then pick:
+> - Small + unambiguous (1–2 components, clear acceptance) → implement directly (`/implement` or straight TDD).
+> - Large / multi-component / any unresolved design question → `superpowers:brainstorming` → writing-plans → subagent-driven-development.
+> - Unsure → take the fuller path.
+
+- **agent, in-place** → hand the agent the execution rubric with the issue (`bd show <id>`) + PRD as input.
+- **agent, spawn** → the `superset ... --prompt` is pointers only: "read the issue on bd `<id>` (and its brief comment if any), read the PRD `<epic-id>` and linked ADRs, then apply the execution rubric: small+clear → implement directly; large/ambiguous → brainstorming → writing-plans → subagent-driven-development; unsure → fuller path." Never inline the brief text. **Run bookkeeping (below) BEFORE creating the workspace** — the spawned agent reads the issue from beads, so the comment + claim must be `dolt push`ed first, or it races an empty/unclaimed issue. After create, foreground it with `superset workspaces open <id>` (the agent otherwise runs in a background terminal).
 - **ready-for-human** (either mode) → set up the workspace/branch, post the human-brief, `superset workspaces open` for the user. No `--agent`.
 
 ## Bookkeeping
