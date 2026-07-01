@@ -3,7 +3,8 @@
 Personal Claude Code workflow skill. Picks the next actionable **beads (bd)**
 issue for the **Meridian.IMR** repo and starts work on it — drafting an agent
 brief where needed, setting up an isolated Superset workspace, and kicking off
-implementation via the Subagent-Driven Development skill.
+implementation via the full brainstorming flow
+(brainstorming → writing-plans → subagent-driven-development).
 
 Invoke explicitly with `/next-imr-item` (model auto-invocation is disabled).
 
@@ -33,8 +34,10 @@ overlay in `docs/agents/triage-labels.md`.
    human brief for `ready-for-human`.
 3. **Setup** — spawn a new workspace (default) or rename in-place when clean +
    unclaimed. See [SETUP.md](SETUP.md).
-4. **Execute or hand off** — agent items run the Subagent-Driven Development
-   skill; human items are handed off (workspace opened, no agent).
+4. **Execute or hand off** — agent items run the full brainstorming flow
+   (brainstorming → writing-plans → subagent-driven-development); a bare brief
+   is not a plan, so SDD alone would stall. Human items are handed off
+   (workspace opened, no agent).
 5. **Bookkeeping** — post brief, `bd update --claim`, `bd dolt commit && push`.
    In spawn mode this runs *before* the workspace is created so the spawned
    agent reads a claimed issue with its brief.
