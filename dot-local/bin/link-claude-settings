@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+#
+# link-claude-settings.sh
+#
+# Symlinks .claude/settings.local.json in a git worktree back to the main
+# repo's copy, so Claude Code local settings survive worktree creation.
+#
+# Usage:
+#   - Run as a Superset post-create setup script, or
+#   - Run manually inside any worktree: ./scripts/link-claude-settings.sh
+#
+# Safe to run repeatedly. No-op when run inside the main worktree.
+
+set -euo pipefail
+
+# Must be inside a git repo.
+if ! git rev-parse --git-common-dir >/dev/null 2>&1; then
+  echo "link-claude-settings: not a git repository, skipping." >&2
+  exit 0
+fi
+
+# Main repo root = parent of the shared (common) git dir.
+common_dir="$(git rev-parse --git-common-dir)"
+# Resolve to an absolute path (common_dir may be relative).
+main_root="$(cd "$(dirname "$common_dir")" && pwd)"
+worktree_root="$(git rev-parse --show-toplevel)"
+
+# In the main worktree there is nothing to link.
+if [ "$main_root" = "$worktree_root" ]; then
+  echo "link-claude-settings: in main worktree, nothing to link." >&2
+  exit 0
+fi
+
+source_file="$main_root/.claude/settings.local.json"
+target_file="$worktree_root/.claude/settings.local.json"
+
+# Ensure the source exists so the symlink isn't dangling.
+mkdir -p "$(dirname "$source_file")"
+[ -e "$source_file" ] || echo '{}' > "$source_file"
+
+# Create/refresh the symlink. -f replace, -n don't descend into existing symlink dir.
+mkdir -p "$(dirname "$target_file")"
+ln -sfn "$source_file" "$target_file"
+
+echo "link-claude-settings: linked $target_file -> $source_file"
