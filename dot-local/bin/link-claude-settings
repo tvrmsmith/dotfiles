@@ -9,12 +9,19 @@
 #   - CLAUDE.local.md               (personal, gitignored Claude memory)
 #   - docs/agents/                  (Matt Pocock skills config: issue tracker,
 #                                     triage labels, domain docs)
+#   - .claude/skills/imr/           (personal repo-scoped imr command skill)
+#
+# It also overwrites the tracked CLAUDE.md with a personal compressed copy
+# (docs/agents/CLAUDE.compressed.md, git-excluded) when that copy exists, and
+# marks CLAUDE.md skip-worktree so the overwrite never shows up in git status
+# or gets committed.
 #
 # Usage:
 #   - Run as a Superset post-create setup script, or
 #   - Run manually inside any worktree: ./scripts/link-claude-settings.sh
 #
-# Safe to run repeatedly. No-op when run inside the main worktree.
+# Safe to run repeatedly. In the main worktree it only applies the compressed
+# CLAUDE.md (no symlinks to create there).
 
 set -euo pipefail
 
@@ -23,6 +30,7 @@ LINK_PATHS=(
   ".claude/settings.local.json"
   "CLAUDE.local.md"
   "docs/agents"
+  ".claude/skills/imr"
 )
 
 # Must be inside a git repo.
@@ -37,9 +45,35 @@ common_dir="$(git rev-parse --git-common-dir)"
 main_root="$(cd "$(dirname "$common_dir")" && pwd)"
 worktree_root="$(git rev-parse --show-toplevel)"
 
-# In the main worktree there is nothing to link.
+# Overwrite the tracked CLAUDE.md with the personal compressed copy, if present.
+# Uses a real copy (not a symlink) + skip-worktree so the tree stays clean and
+# the change is never staged/committed. Runs in BOTH the main worktree and
+# linked worktrees (the compressed copy should apply everywhere).
+overwrite_claude_md() {
+  local rel="CLAUDE.md"
+  local source_file="$main_root/docs/agents/CLAUDE.compressed.md"
+  local target_file="$worktree_root/$rel"
+
+  if [ ! -e "$source_file" ]; then
+    echo "link-claude-settings: no compressed CLAUDE.md ($source_file), skipping overwrite." >&2
+    return 0
+  fi
+
+  cp -f "$source_file" "$target_file"
+
+  # Tell git to ignore local modifications to the tracked CLAUDE.md.
+  if git -C "$worktree_root" ls-files --error-unmatch "$rel" >/dev/null 2>&1; then
+    git -C "$worktree_root" update-index --skip-worktree "$rel" 2>/dev/null || true
+  fi
+
+  echo "link-claude-settings: overwrote $target_file with compressed copy (skip-worktree)"
+}
+
+overwrite_claude_md
+
+# Symlinks are worktree-only; in the main worktree there is nothing to link.
 if [ "$main_root" = "$worktree_root" ]; then
-  echo "link-claude-settings: in main worktree, nothing to link." >&2
+  echo "link-claude-settings: in main worktree, CLAUDE.md applied; nothing to link." >&2
   exit 0
 fi
 
