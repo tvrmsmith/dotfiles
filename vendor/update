@@ -15,6 +15,14 @@ SUBTREES=(
   "1password-skill|petejm-1password|main|https://github.com/petejm/1password-skill.git"
 )
 
+# Single-file skills vendored from a subdir of a large upstream repo where a
+# full subtree would be wasteful. Format:
+#   <prefix-under-vendor>|<branch>|<repo-slug>|<path-in-repo>
+# Fetched via GitHub raw. prefix is also the target name for `vendor/update <prefix>`.
+SKILL_FILES=(
+  "orca-cli|main|stablyai/orca|skills/orca-cli/SKILL.md"
+)
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
@@ -45,11 +53,32 @@ update_one() {
     -m "vendor: update $prefix from $remote/$branch"
 }
 
+update_skill_file() {
+  local entry=$1
+  IFS='|' read -r prefix branch slug path <<<"$entry"
+  local dest="vendor/$prefix/$path"
+  local url="https://raw.githubusercontent.com/$slug/$branch/$path"
+  echo "→ updating vendor/$prefix/$path from $slug@$branch"
+  mkdir -p "$(dirname "$dest")"
+  curl -fsSL "$url" -o "$dest"
+  git add "$dest"
+  if git diff --cached --quiet -- "$dest"; then
+    echo "  (no change)"
+  else
+    git commit --quiet -m "vendor: update $prefix from $slug@$branch"
+    echo "  updated"
+  fi
+}
+
 list() {
   printf "%-24s %-22s %-8s %s\n" PREFIX REMOTE BRANCH URL
   for e in "${SUBTREES[@]}"; do
     IFS='|' read -r prefix remote branch url <<<"$e"
     printf "%-24s %-22s %-8s %s\n" "$prefix" "$remote" "$branch" "$url"
+  done
+  for e in "${SKILL_FILES[@]}"; do
+    IFS='|' read -r prefix branch slug path <<<"$e"
+    printf "%-24s %-22s %-8s %s\n" "$prefix" "raw:$slug" "$branch" "$path"
   done
 }
 
@@ -60,6 +89,7 @@ fi
 if [[ $# -eq 0 ]]; then
   require_clean_tree
   for e in "${SUBTREES[@]}"; do update_one "$e"; done
+  for e in "${SKILL_FILES[@]}"; do update_skill_file "$e"; done
   exit 0
 fi
 
@@ -69,6 +99,13 @@ for e in "${SUBTREES[@]}"; do
   if [[ "$prefix" == "$target" ]]; then
     require_clean_tree
     update_one "$e"; exit 0
+  fi
+done
+for e in "${SKILL_FILES[@]}"; do
+  IFS='|' read -r prefix _ _ _ <<<"$e"
+  if [[ "$prefix" == "$target" ]]; then
+    require_clean_tree
+    update_skill_file "$e"; exit 0
   fi
 done
 
