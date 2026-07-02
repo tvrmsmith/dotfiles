@@ -74,6 +74,13 @@
   },
   "model": "claude-opus-4-8",
   "skillOverrides": {
+    "computer-use": "user-invocable-only",
+    "linear-tickets": "user-invocable-only",
+    "orca-emulator": "user-invocable-only",
+    "orca-emulator-android": "user-invocable-only",
+    "orca-linear": "user-invocable-only",
+    "orca-per-workspace-env": "user-invocable-only",
+    "orchestration": "user-invocable-only",
     "claude-code-setup:claude-automation-recommender": "user-invocable-only",
     "shared:pr-comments-analyzer": "user-invocable-only",
     "claude-md-management:claude-md-improver": "user-invocable-only",
