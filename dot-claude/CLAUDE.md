@@ -34,6 +34,7 @@ Match found → use existing copy, no clone. No match → clone to temp. Persona
 
 - Never use plan mode (`EnterPlanMode`). Any creative/feature/design work → invoke `superpowers:brainstorming` skill instead, before implementation.
 - Trigger words ("build/add/implement/design/create X", "fix Y") → brainstorming skill, not plan mode.
+- Always confirm decisions with me before acting on them. Do not assume my agreement or proceed on my behalf — surface the choice, recommend, and wait for my explicit answer.
 
 ## Tool Preferences
 
