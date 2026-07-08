@@ -259,7 +259,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y lavish-axi 2>/dev/null || true",
+            "command": "mkdir -p \"$HOME/.claude/logs\"; lavish-axi >>\"$HOME/.claude/logs/lavish-hook.log\" 2>&1 || true",
             "timeout": 20
           }
         ]

@@ -15,6 +15,15 @@ SUBTREES=(
   "1password-skill|petejm-1password|main|https://github.com/petejm/1password-skill.git"
 )
 
+# NPM-packaged single-file skills: the whole repo is not worth a subtree, the
+# skill is one file shipped inside an npm package. prefix|package|version|subpath
+# After fetch, every `npx -y <package>` in the file is rewritten to the bare
+# binary so the vendored skill uses the pinned global install (see install.sh)
+# instead of auto-fetching latest on every call. Bump the version here to update.
+NPM_SKILLS=(
+  "lavish-axi|lavish-axi|0.1.38|skills/lavish/SKILL.md"
+)
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
@@ -45,11 +54,39 @@ update_one() {
     -m "vendor: update $prefix from $remote/$branch"
 }
 
+fetch_npm_skill() {
+  local entry=$1
+  IFS='|' read -r prefix pkg version subpath <<<"$entry"
+  local dest="vendor/$prefix/$subpath"
+  echo "→ vendoring vendor/$prefix from npm $pkg@$version ($subpath)"
+  local tmp
+  tmp="$(mktemp -d)"
+  if ! ( cd "$tmp" && npm pack "$pkg@$version" >/dev/null 2>&1 \
+         && tar xzf "$pkg"-*.tgz ); then
+    echo "error: npm pack $pkg@$version failed" >&2
+    rm -rf "$tmp"; exit 1
+  fi
+  if [ ! -f "$tmp/package/$subpath" ]; then
+    echo "error: $subpath not found in $pkg@$version" >&2
+    rm -rf "$tmp"; exit 1
+  fi
+  mkdir -p "$(dirname "$dest")"
+  cp "$tmp/package/$subpath" "$dest"
+  rm -rf "$tmp"
+  # Pin invocations to the local binary; never auto-fetch latest via npx -y.
+  sed -i.bak "s/npx -y $pkg/$pkg/g" "$dest" && rm -f "$dest.bak"
+}
+
 list() {
   printf "%-24s %-22s %-8s %s\n" PREFIX REMOTE BRANCH URL
   for e in "${SUBTREES[@]}"; do
     IFS='|' read -r prefix remote branch url <<<"$e"
     printf "%-24s %-22s %-8s %s\n" "$prefix" "$remote" "$branch" "$url"
+  done
+  printf "\n%-24s %-22s %-8s %s\n" PREFIX PACKAGE VERSION SUBPATH
+  for e in "${NPM_SKILLS[@]}"; do
+    IFS='|' read -r prefix pkg version subpath <<<"$e"
+    printf "%-24s %-22s %-8s %s\n" "$prefix" "$pkg" "$version" "$subpath"
   done
 }
 
@@ -60,6 +97,7 @@ fi
 if [[ $# -eq 0 ]]; then
   require_clean_tree
   for e in "${SUBTREES[@]}"; do update_one "$e"; done
+  for e in "${NPM_SKILLS[@]}"; do fetch_npm_skill "$e"; done
   exit 0
 fi
 
@@ -69,6 +107,13 @@ for e in "${SUBTREES[@]}"; do
   if [[ "$prefix" == "$target" ]]; then
     require_clean_tree
     update_one "$e"; exit 0
+  fi
+done
+for e in "${NPM_SKILLS[@]}"; do
+  IFS='|' read -r prefix _ _ _ <<<"$e"
+  if [[ "$prefix" == "$target" ]]; then
+    require_clean_tree
+    fetch_npm_skill "$e"; exit 0
   fi
 done
 
