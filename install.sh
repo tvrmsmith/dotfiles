@@ -57,6 +57,23 @@ update_vendored_skills() {
 	fi
 }
 
+install_pinned_npm_tools() {
+	# Pinned global npm tools invoked by Claude Code hooks. Pinned (not `npx -y`)
+	# so a later malicious publish is not auto-adopted, and the hook calls the
+	# local binary offline instead of hitting the registry on every session.
+	if ! command -v npm >/dev/null 2>&1; then
+		echo "npm not found; skipping pinned npm tools (lavish-axi)."
+		return
+	fi
+	local want="0.1.38"
+	if lavish-axi --version 2>/dev/null | grep -q "$want"; then
+		echo "lavish-axi@$want already installed."
+	else
+		echo "Installing lavish-axi@$want..."
+		npm install -g "lavish-axi@$want"
+	fi
+}
+
 setup_dotfiles() {
 	# ~/.warp must exist as a real directory before stow runs: Warp writes
 	# runtime data into it (worktrees/, typescript-language-server/, generated
@@ -72,5 +89,6 @@ setup_dotfiles() {
 install_gnu_stow
 init_submodules
 update_vendored_skills
+install_pinned_npm_tools
 setup_dotfiles
 echo "Dot files installed."
