@@ -1,15 +1,22 @@
 # Setup
 
-Decide where work happens, then create/prepare the workspace.
+Decide where work happens, then create/prepare the workspace. The concrete
+create/open commands per orchestrator live in
+[ORCHESTRATORS.md](ORCHESTRATORS.md); this file covers the spawn-vs-in-place
+decision, naming, and base branch that apply across all of them.
 
 ## Spawn vs in-place
 
 Default is **spawn**. Use **in-place** only when BOTH hold:
 
-1. Invoked from inside an existing Superset workspace worktree (not the repo
-   main directory).
+1. Invoked from inside an existing workspace worktree (not the repo main
+   directory).
 2. That worktree is clean (`git status --porcelain` empty) AND unclaimed (not
    bound to an `in_progress` bd item).
+
+sbx has no persistent host worktree of its own: spawn ⇒ `--clone` (isolated
+container), in-place ⇒ no `--clone` (bind-mounts the current worktree). The
+clean+unclaimed rule below still gates in-place.
 
 | Where / state | Action |
 | --- | --- |
@@ -29,24 +36,28 @@ Derive from the issue title (`bd show <id>`):
 
 ## Base branch
 
-Fork from `main` unless the caller states otherwise.
+Fork from `main` unless the caller states otherwise. (For sbx `--clone` there
+is no host base-branch flag — the agent branches inside the container.)
 
 ## In-place
 
 - `git branch -m <old> hospice/m1-<slug>`
-- `superset workspaces update --name "<title>" --task-id <id>` on the current
-  workspace.
+- Update the orchestrator's metadata for the current worktree and start the
+  agent — see [ORCHESTRATORS.md](ORCHESTRATORS.md) (superset `workspaces
+  update`, orca `worktree set` + `terminal create`, sbx `run` without `--clone`).
 
 ## Spawn
 
-    superset workspaces create --local --project <id> \
-      --name "<title>" --branch hospice/m1-<slug> --base-branch main \
-      --agent claude --prompt "<pointer prompt>"
+Create a fresh isolated workspace on `hospice/m1-<slug>` from `main` with agent
+`claude` and the pointer prompt, then foreground it. Concrete command per
+orchestrator (and the ready-for-human variant with no agent) is in
+[ORCHESTRATORS.md](ORCHESTRATORS.md).
 
-`create` returns the new workspace `id`. A spawned `--agent` runs in a
-background terminal, so always foreground it after create:
+For orca, also resolve worktree **lineage** (parent vs sibling vs top-level)
+before the create — see the Lineage rule in
+[ORCHESTRATORS.md](ORCHESTRATORS.md). Default: `--no-parent` from the main
+worktree; otherwise ask (sibling default only when an epic-id was passed).
 
-    superset workspaces open <id>
-
-For ready-for-human, omit `--agent` and `--prompt` from `create`, then run the
-same `superset workspaces open <id>` on the new workspace.
+Run bookkeeping (SKILL.md → Bookkeeping) **before** the create so a spawned
+agent — and especially an sbx `--clone` snapshot — reads a claimed, briefed
+issue.
