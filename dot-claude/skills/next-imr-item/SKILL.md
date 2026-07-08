@@ -1,6 +1,6 @@
 ---
 name: next-imr-item
-description: Pick the next ready beads item by dependency order and start work on it — sets up a Superset workspace and kicks off implementation. Handles ready-for-agent (with or without brief) and ready-for-human states. Meridian.IMR only.
+description: Pick the next ready beads item by dependency order and start work on it — sets up an isolated workspace via a chosen orchestrator (superset, orca, or sbx) and kicks off implementation. Handles ready-for-agent (with or without brief) and ready-for-human states. Meridian.IMR only.
 disable-model-invocation: true
 ---
 
@@ -22,14 +22,25 @@ If not Meridian.IMR, STOP and report: "next-imr-item only runs in the Meridian.I
 - `/next-imr-item <epic-id>` — restrict to that epic's subtree.
 - `/next-imr-item --spawn` — force a new workspace.
 - `/next-imr-item --in-place` — reuse current worktree (requires clean + unclaimed).
+- `/next-imr-item --orchestrator <superset|orca|sbx>` (aliases `--superset`,
+  `--orca`, `--sbx`) — pick the orchestrator. **No default** — if omitted, STOP
+  and ask which one before doing anything. See [ORCHESTRATORS.md](ORCHESTRATORS.md).
+
+## Orchestrator gate
+
+The orchestrator has no default. Resolve it from the flag/alias before
+selection. If none was given, ask the user and wait — do not select, brief, set
+up, or run bookkeeping until it is known. See [ORCHESTRATORS.md](ORCHESTRATORS.md).
 
 ## Flow
 
-1. Select the next item — see [SELECTION.md](SELECTION.md).
-2. Classify + brief (below).
-3. Decide spawn vs in-place + set up the workspace — see [SETUP.md](SETUP.md).
-4. Execute or hand off (below).
-5. Record bookkeeping (below).
+1. Resolve the orchestrator (above) — ask if not supplied.
+2. Select the next item — see [SELECTION.md](SELECTION.md).
+3. Classify + brief (below).
+4. Decide spawn vs in-place + set up the workspace — see [SETUP.md](SETUP.md)
+   and [ORCHESTRATORS.md](ORCHESTRATORS.md) for the concrete commands.
+5. Execute or hand off (below).
+6. Record bookkeeping (below).
 
 ## Classify + brief
 
@@ -50,8 +61,8 @@ The executing agent picks the execution skill by **assessing the slice** — don
 > - Unsure → take the fuller path.
 
 - **agent, in-place** → hand the agent the execution rubric with the issue (`bd show <id>`) + PRD as input.
-- **agent, spawn** → the `superset ... --prompt` is pointers only: "read the issue on bd `<id>` (and its brief comment if any), read the PRD `<epic-id>` and linked ADRs, then apply the execution rubric: small+clear → implement directly; large/ambiguous → brainstorming → writing-plans → subagent-driven-development; unsure → fuller path." Never inline the brief text. **Run bookkeeping (below) BEFORE creating the workspace** — the spawned agent reads the issue from beads, so the comment + claim must be `dolt push`ed first, or it races an empty/unclaimed issue. After create, foreground it with `superset workspaces open <id>` (the agent otherwise runs in a background terminal).
-- **ready-for-human** (either mode) → set up the workspace/branch, post the human-brief, `superset workspaces open` for the user. No `--agent`.
+- **agent, spawn** → the orchestrator's `--prompt` (or sbx `-- "…"`) is pointers only: "read the issue on bd `<id>` (and its brief comment if any), read the PRD `<epic-id>` and linked ADRs, then apply the execution rubric: small+clear → implement directly; large/ambiguous → brainstorming → writing-plans → subagent-driven-development; unsure → fuller path." Never inline the brief text. **Run bookkeeping (below) BEFORE creating the workspace** — the spawned agent reads the issue from beads, so the comment + claim must be `dolt push`ed first, or it races an empty/unclaimed issue (doubly so for sbx `--clone`, which snapshots the repo). After create, foreground it per the orchestrator (superset/orca need an explicit open/activate; sbx `run` already attaches). See [ORCHESTRATORS.md](ORCHESTRATORS.md).
+- **ready-for-human** (either mode) → set up the workspace/branch, post the human-brief, and open it for the user with no autonomous agent (superset/orca: create without `--agent`; sbx: `sbx run claude` without the prompt seed — an interactive session the human drives). See [ORCHESTRATORS.md](ORCHESTRATORS.md).
 
 ## Bookkeeping
 
@@ -61,11 +72,12 @@ after setup.
 
 1. If a brief was drafted, post it: `bd comment <id> "<brief>"`.
 2. Claim: `bd update <id> --claim` (atomically sets assignee = you and status = `in_progress`).
-3. Sync: `bd dolt commit` then `bd dolt push` (so a spawned workspace sees the brief and the item leaves future `bd ready` scans).
+3. Sync: `bd dolt commit` then `bd dolt push` (so a spawned workspace — including an sbx `--clone` snapshot — sees the brief and the item leaves future `bd ready` scans).
 
 ## Error handling
 
 - No ready items → report, stop.
 - `--in-place` requested but worktree dirty/claimed → stop, tell the user.
-- Any `bd` or `superset` command fails → surface the exact error and stop. Never leave a claim unsynced.
+- No orchestrator flag/alias given → ask the user; do not assume a default.
+- Any `bd` or orchestrator (`superset`/`orca`/`sbx`) command fails → surface the exact error and stop. Never leave a claim unsynced.
 - Reclassify to human mid-run → stop the autonomous path, hand off.
