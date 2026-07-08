@@ -36,6 +36,13 @@ Match found → use existing copy, no clone. No match → clone to temp. Persona
 - Trigger words ("build/add/implement/design/create X", "fix Y") → brainstorming skill, not plan mode.
 - Always confirm decisions with me before acting on them. Do not assume my agreement or proceed on my behalf — surface the choice, recommend, and wait for my explicit answer.
 
+## Engineering Standards
+
+- **Technical decisions**: give little weight to development cost. Prefer quality, simplicity, robustness, scalability, long-term maintainability.
+- **Bug fixes**: always start by reproducing the bug in an E2E setting as close as possible to how an end user experiences it. Ensures you find the real problem so the fix actually solves it.
+- **E2E testing UI**: be picky, obsess over pixel perfection. Something clearly looks off — even if unrelated to current work — get it fixed along the way.
+- **Engineering excellence**: same high bar for lint, test failures, test flakiness. See one — even if not caused by current work — fix it.
+
 ## Tool Preferences
 
 - Prefer ripgrep (`rg`) over `grep` — use Grep tool or `rg` via Bash
@@ -43,3 +50,5 @@ Match found → use existing copy, no clone. No match → clone to temp. Persona
 - JIRA → use `acli jira` (see `acli` skill). Single commands (view, search) run direct in main thread. Multi-step ops (create + link, bulk edits) use subagent. Do NOT use `shared:jira-connector` agent — sandbox-only, where acli unavailable.
 - Never use MCP servers — use built-in tools, skills, agents instead
 - `gcloud auth login` → run direct via Bash when creds expire (`Reauthentication failed`). Browser opens on user machine, flow completes. No need to ask user run via `!`.
+
+@RTK.md
