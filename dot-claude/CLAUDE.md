@@ -42,6 +42,7 @@ Match found → use existing copy, no clone. No match → clone to temp. Persona
 - **Bug fixes**: always start by reproducing the bug in an E2E setting as close as possible to how an end user experiences it. Ensures you find the real problem so the fix actually solves it.
 - **E2E testing UI**: be picky, obsess over pixel perfection. Something clearly looks off — even if unrelated to current work — get it fixed along the way.
 - **Engineering excellence**: same high bar for lint, test failures, test flakiness. See one — even if not caused by current work — fix it.
+- **Coding standards**: ALWAYS load the `coding-standards` skill before writing, modifying, or reviewing code, and follow it.
 
 ## Tool Preferences
 
