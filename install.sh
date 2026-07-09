@@ -74,6 +74,23 @@ install_pinned_npm_tools() {
 	fi
 }
 
+install_no_mistakes() {
+	# no-mistakes: Go CLI backing the vendored /no-mistakes skill (see
+	# vendor/no-mistakes). Installs to ~/.no-mistakes/bin and symlinks into
+	# ~/.local/bin. Upstream install.sh has no version-pin env var, so this is
+	# install-if-missing (idempotent); re-run manually to upgrade.
+	if command -v no-mistakes >/dev/null 2>&1; then
+		echo "no-mistakes already installed ($(no-mistakes --version 2>/dev/null))."
+		return
+	fi
+	if ! command -v curl >/dev/null 2>&1; then
+		echo "curl not found; skipping no-mistakes install."
+		return
+	fi
+	echo "Installing no-mistakes..."
+	curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh
+}
+
 setup_dotfiles() {
 	# ~/.warp must exist as a real directory before stow runs: Warp writes
 	# runtime data into it (worktrees/, typescript-language-server/, generated
@@ -90,5 +107,6 @@ install_gnu_stow
 init_submodules
 update_vendored_skills
 install_pinned_npm_tools
+install_no_mistakes
 setup_dotfiles
 echo "Dot files installed."

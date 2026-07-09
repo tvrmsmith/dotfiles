@@ -74,6 +74,7 @@
   },
   "model": "claude-opus-4-8",
   "skillOverrides": {
+    "no-mistakes": "user-invocable-only",
     "computer-use": "user-invocable-only",
     "linear-tickets": "user-invocable-only",
     "orca-emulator": "user-invocable-only",
