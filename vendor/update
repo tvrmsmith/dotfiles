@@ -24,6 +24,14 @@ NPM_SKILLS=(
   "lavish-axi|lavish-axi|0.1.38|skills/lavish/SKILL.md"
 )
 
+# Git-hosted single-file skills: the skill is one file inside a large upstream
+# git repo not worth a subtree (e.g. a Go CLI project). Fetch shallow and extract
+# just the one blob via `git show` — no working-tree checkout, no repo bloat.
+# prefix|remote|branch|subpath|url  (subpath is relative to the upstream repo root)
+GIT_SKILLS=(
+  "no-mistakes|kunchenguid-no-mistakes|main|skills/no-mistakes/SKILL.md|https://github.com/kunchenguid/no-mistakes.git"
+)
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
@@ -77,6 +85,21 @@ fetch_npm_skill() {
   sed -i.bak "s/npx -y $pkg/$pkg/g" "$dest" && rm -f "$dest.bak"
 }
 
+fetch_git_skill() {
+  local entry=$1
+  IFS='|' read -r prefix remote branch subpath url <<<"$entry"
+  ensure_remote "$remote" "$url"
+  local dest="vendor/$prefix/$subpath"
+  echo "→ vendoring vendor/$prefix from $remote/$branch ($subpath)"
+  git fetch --quiet --depth 1 "$remote" "$branch"
+  if ! git cat-file -e "$remote/$branch:$subpath" 2>/dev/null; then
+    echo "error: $subpath not found in $remote/$branch" >&2
+    exit 1
+  fi
+  mkdir -p "$(dirname "$dest")"
+  git show "$remote/$branch:$subpath" > "$dest"
+}
+
 list() {
   printf "%-24s %-22s %-8s %s\n" PREFIX REMOTE BRANCH URL
   for e in "${SUBTREES[@]}"; do
@@ -88,6 +111,11 @@ list() {
     IFS='|' read -r prefix pkg version subpath <<<"$e"
     printf "%-24s %-22s %-8s %s\n" "$prefix" "$pkg" "$version" "$subpath"
   done
+  printf "\n%-24s %-22s %-8s %s\n" PREFIX REMOTE BRANCH SUBPATH
+  for e in "${GIT_SKILLS[@]}"; do
+    IFS='|' read -r prefix remote branch subpath url <<<"$e"
+    printf "%-24s %-22s %-8s %s\n" "$prefix" "$remote" "$branch" "$subpath"
+  done
 }
 
 if [[ ${1:-} == "--list" || ${1:-} == "-l" ]]; then
@@ -98,6 +126,7 @@ if [[ $# -eq 0 ]]; then
   require_clean_tree
   for e in "${SUBTREES[@]}"; do update_one "$e"; done
   for e in "${NPM_SKILLS[@]}"; do fetch_npm_skill "$e"; done
+  for e in "${GIT_SKILLS[@]}"; do fetch_git_skill "$e"; done
   exit 0
 fi
 
@@ -114,6 +143,13 @@ for e in "${NPM_SKILLS[@]}"; do
   if [[ "$prefix" == "$target" ]]; then
     require_clean_tree
     fetch_npm_skill "$e"; exit 0
+  fi
+done
+for e in "${GIT_SKILLS[@]}"; do
+  IFS='|' read -r prefix _ _ _ _ <<<"$e"
+  if [[ "$prefix" == "$target" ]]; then
+    require_clean_tree
+    fetch_git_skill "$e"; exit 0
   fi
 done
 
