@@ -44,10 +44,18 @@ if ! git rev-parse --git-common-dir >/dev/null 2>&1; then
   exit 0
 fi
 
-# Main repo root = parent of the shared (common) git dir.
-common_dir="$(git rev-parse --git-common-dir)"
-# Resolve to an absolute path (common_dir may be relative).
-main_root="$(cd "$(dirname "$common_dir")" && pwd)"
+# Main repo root. Normally the parent of the shared (common) git dir, so a
+# linked worktree resolves back to the repo it was created from. Callers whose
+# worktree does NOT share a git dir with the personal-config source (e.g. the
+# no-mistakes gate, which clones the repo into its own managed bare repo) can
+# point MAIN_ROOT at the real dev checkout instead.
+if [ -n "${MAIN_ROOT:-}" ]; then
+  main_root="$(cd "$MAIN_ROOT" && pwd)"
+else
+  common_dir="$(git rev-parse --git-common-dir)"
+  # Resolve to an absolute path (common_dir may be relative).
+  main_root="$(cd "$(dirname "$common_dir")" && pwd)"
+fi
 worktree_root="$(git rev-parse --show-toplevel)"
 
 # Overwrite the tracked CLAUDE.md with the personal compressed copy, if present.
@@ -58,6 +66,14 @@ overwrite_claude_md() {
   local rel="CLAUDE.md"
   local source_file="$main_root/docs/agents/CLAUDE.compressed.md"
   local target_file="$worktree_root/$rel"
+
+  # Callers that run inside a diff-sensitive worktree (e.g. the no-mistakes
+  # gate, which reviews/documents the tree) can suppress the CLAUDE.md overwrite
+  # so the copied-in personal file never perturbs their diffing.
+  if [ -n "${NM_SKIP_CLAUDE_MD:-}" ]; then
+    echo "link-claude-settings: NM_SKIP_CLAUDE_MD set, skipping CLAUDE.md overwrite." >&2
+    return 0
+  fi
 
   if [ ! -e "$source_file" ]; then
     echo "link-claude-settings: no compressed CLAUDE.md ($source_file), skipping overwrite." >&2
@@ -82,6 +98,21 @@ if [ "$main_root" = "$worktree_root" ]; then
   exit 0
 fi
 
+# Ensure a path is git-excluded in this worktree, so a linked-in personal file
+# never gets staged by a `git add -A` (e.g. the no-mistakes gate commits/pushes
+# with add -A, which would otherwise capture these symlinks into the PR). Real
+# dev worktrees already list these in .git/info/exclude; this makes that
+# guarantee hold in any clone. Idempotent.
+ensure_excluded() {
+  local rel="$1"
+  local exclude_file
+  exclude_file="$(git -C "$worktree_root" rev-parse --git-path info/exclude 2>/dev/null)" || return 0
+  [ -n "$exclude_file" ] || return 0
+  mkdir -p "$(dirname "$exclude_file")"
+  touch "$exclude_file"
+  grep -qxF "/$rel" "$exclude_file" 2>/dev/null || printf '/%s\n' "$rel" >> "$exclude_file"
+}
+
 link_path() {
   local rel="$1"
   local source_file="$main_root/$rel"
@@ -102,6 +133,7 @@ link_path() {
   # Create/refresh the symlink. -f replace, -n don't descend into existing symlink dir.
   mkdir -p "$(dirname "$target_file")"
   ln -sfn "$source_file" "$target_file"
+  ensure_excluded "$rel"
   echo "link-claude-settings: linked $target_file -> $source_file"
 }
 
