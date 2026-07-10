@@ -32,8 +32,10 @@ actionable now. Order the survivors to do the most-unblocking work first:
 
 ## Scope
 
-- `/start-next-item` — global: consider all filtered candidates.
-- `/start-next-item <epic-id>` — restrict candidates to that epic's subtree
+Invocation flags are defined in SKILL.md. Their effect on candidate selection:
+
+- No epic-id → global: consider all filtered candidates.
+- With `<epic-id>` → restrict candidates to that epic's subtree
   (`bd dep tree <epic-id>`), then apply the same filter and order.
 
 ## Output
