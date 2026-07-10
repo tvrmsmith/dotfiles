@@ -44,7 +44,7 @@ Match found → use existing copy, no clone. No match → clone to temp. Persona
 - **E2E testing UI**: be picky, obsess over pixel perfection. Something clearly looks off — even if unrelated to current work — get it fixed along the way.
 - **Engineering excellence**: same high bar for lint, test failures, test flakiness. See one — even if not caused by current work — fix it.
 - **Coding standards**: ALWAYS load the `coding-standards` skill before writing, modifying, or reviewing code, and follow it.
-- **Cross-boundary contract approval**: any contract crossing a service or independent-deploy boundary — service↔service (HTTP/gRPC), frontend↔BFF, Kafka/event schemas, or APIs consumed outside the owning service — needs my approval before implementation. Surface it during spec review if a spec exists; else define + approve it before building past it. Show it readably (default markdown tables; lavish if I ask). On approval, write the canonical artifact: **OpenAPI** for APIs, **JSON Schema** for JSON messaging. Internal seams you change within one PR don't need approval.
+- **Cross-boundary contract approval**: any contract crossing a service or independent-deploy boundary (service↔service, frontend↔BFF, Kafka/event schemas, APIs consumed outside the owning service) needs my approval before implementation — load the `contract-approval` skill and follow it. Internal seams you change within one PR don't need approval.
 
 ## Tool Preferences
 
