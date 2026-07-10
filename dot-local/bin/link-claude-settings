@@ -10,6 +10,10 @@
 #   - docs/agents/                  (Matt Pocock skills config: issue tracker,
 #                                     triage labels, domain docs)
 #   - .claude/skills/imr/           (personal repo-scoped imr command skill)
+#   - CONTEXT-MAP.md                (personal domain-model map at repo root,
+#                                     gitignored; skipped until present)
+#   - **/CONTEXT.md                 (personal per-context glossaries under src/,
+#                                     gitignored; multi-context repo layout)
 #
 # It also overwrites the tracked CLAUDE.md with a personal compressed copy
 # (docs/agents/CLAUDE.compressed.md, git-excluded) when that copy exists, and
@@ -31,6 +35,7 @@ LINK_PATHS=(
   "CLAUDE.local.md"
   "docs/agents"
   ".claude/skills/imr"
+  "CONTEXT-MAP.md"
 )
 
 # Must be inside a git repo.
@@ -103,3 +108,14 @@ link_path() {
 for rel in "${LINK_PATHS[@]}"; do
   link_path "$rel"
 done
+
+# Per-context glossaries: a multi-context repo keeps one CONTEXT.md per context
+# (e.g. src/products/hospice/CONTEXT.md), all gitignored. Their paths are not
+# fixed, so discover and link each one found in the main worktree rather than
+# listing them statically.
+while IFS= read -r source_file; do
+  [ -n "$source_file" ] || continue
+  link_path "${source_file#"$main_root"/}"
+done < <(find "$main_root" \
+  \( -name node_modules -o -name .git -o -name bin -o -name obj \) -prune -o \
+  -name CONTEXT.md -type f -print 2>/dev/null)
