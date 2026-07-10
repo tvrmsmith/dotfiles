@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# nm-evidence — locate & open no-mistakes test-step evidence for drag-drop onto a PR.
+#
+# no-mistakes (route B / default config) writes test evidence to a temp dir per run:
+#   $TMPDIR/no-mistakes-evidence/<runID>/
+# Nothing is committed. This helper finds the dir, lists the image/video artifacts,
+# and opens it in Finder so you can drag them straight into a PR body/comment
+# (GitHub uploads them as attachments — never touching the repo).
+#
+# Usage:
+#   nm-evidence                 open newest run's evidence dir
+#   nm-evidence <runID>         open a specific run
+#   nm-evidence -b <branch>     newest run for a branch (substring match)
+#   nm-evidence -l | --list     list all evidence dirs (newest first), don't open
+#   nm-evidence -n | --no-open  print details but don't open Finder
+#   nm-evidence -h | --help     this help
+
+set -euo pipefail
+
+ROOT="${TMPDIR:-/tmp}"
+ROOT="${ROOT%/}/no-mistakes-evidence"
+STATE="$HOME/.no-mistakes/state.sqlite"
+MEDIA_RE='\.(png|jpe?g|gif|webp|svg|apng|avif|bmp|tiff?|mp4|mov|webm|mkv|m4v)$'
+
+die() { printf 'nm-evidence: %s\n' "$*" >&2; exit 1; }
+
+usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; }
+
+# Query run metadata (branch | status | pr_url) for a runID, best-effort.
+run_meta() {
+  local id="$1"
+  [ -r "$STATE" ] || return 0
+  sqlite3 -separator ' | ' "$STATE" \
+    "SELECT branch, status, COALESCE(NULLIF(pr_url,''),'-') FROM runs WHERE id='${id//\'/}' LIMIT 1;" 2>/dev/null || true
+}
+
+# Newest runID whose branch matches a substring, from the DB (falls back to dir mtime scan).
+run_for_branch() {
+  local q="$1"
+  [ -r "$STATE" ] || return 1
+  sqlite3 "$STATE" \
+    "SELECT id FROM runs WHERE branch LIKE '%${q//\'/}%' ORDER BY created_at DESC LIMIT 1;" 2>/dev/null
+}
+
+list_dirs() { ls -dt "$ROOT"/*/ 2>/dev/null | sed 's:/*$::'; }
+
+media_in() { find "$1" -type f 2>/dev/null | grep -iE "$MEDIA_RE" || true; }
+
+show() {
+  local dir="$1" id meta
+  id="$(basename "$dir")"
+  meta="$(run_meta "$id")"
+  printf '\n\033[1m%s\033[0m\n' "$id"
+  [ -n "$meta" ] && printf '  %s\n' "$meta"
+  printf '  %s\n' "$dir"
+  local media; media="$(media_in "$dir")"
+  if [ -z "$media" ]; then
+    printf '  (no image/video artifacts; text evidence — if any — already renders inline on the PR)\n'
+  else
+    printf '  media:\n'
+    while IFS= read -r f; do printf '    %s\n' "$f"; done <<< "$media"
+  fi
+}
+
+main() {
+  local action=open target="" branch=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -h|--help) usage; exit 0 ;;
+      -l|--list) action=list ;;
+      -n|--no-open) action=show ;;
+      -b|--branch) shift; branch="${1:-}"; [ -n "$branch" ] || die "-b needs a branch" ;;
+      -*) die "unknown flag: $1" ;;
+      *) target="$1" ;;
+    esac
+    shift
+  done
+
+  [ -d "$ROOT" ] || die "no evidence root yet ($ROOT) — run no-mistakes first"
+
+  if [ "$action" = list ]; then
+    local any=0
+    while IFS= read -r d; do [ -n "$d" ] || continue; any=1; show "$d"; done < <(list_dirs)
+    [ "$any" = 1 ] || die "no evidence dirs under $ROOT"
+    exit 0
+  fi
+
+  local dir=""
+  if [ -n "$branch" ]; then
+    local id; id="$(run_for_branch "$branch" || true)"
+    [ -n "$id" ] && [ -d "$ROOT/$id" ] && dir="$ROOT/$id"
+    [ -n "$dir" ] || die "no evidence dir for a run matching branch '$branch'"
+  elif [ -n "$target" ]; then
+    [ -d "$ROOT/$target" ] && dir="$ROOT/$target" || die "no evidence dir for run '$target'"
+  else
+    dir="$(list_dirs | head -1)"
+    [ -n "$dir" ] || die "no evidence dirs under $ROOT"
+  fi
+
+  show "$dir"
+  if [ "$action" = open ]; then
+    if command -v open >/dev/null 2>&1; then open "$dir"; printf '\n  (opened in Finder — drag media onto your PR)\n'
+    else printf '\n  (open manually: %s)\n' "$dir"; fi
+  fi
+}
+
+main "$@"
