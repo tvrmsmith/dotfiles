@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+#
+# nm-claude
+#
+# Claude shim for the no-mistakes gate. no-mistakes clones each gated repo into
+# its own managed bare repo and runs the pipeline in ephemeral worktrees, which
+# therefore lack the personal, gitignored Claude config (CLAUDE.local.md,
+# docs/agents/, CONTEXT.md, ...). This shim links that config into the current
+# worktree before handing off to the real claude binary, so the gate agent sees
+# the same personal setup as an interactive session.
+#
+# Wire it up in ~/.no-mistakes/config.yaml (global-only):
+#   agent_path_override:
+#     claude: /Users/trevor.smith/.local/bin/nm-claude
+#
+# The override is GLOBAL, so this runs for EVERY repo no-mistakes gates. It only
+# links for repos that need it (matched by remote); everything else is a
+# transparent pass-through to real claude.
+
+set -uo pipefail
+
+REAL_CLAUDE="/Users/trevor.smith/.local/bin/claude"
+LINK_SETTINGS="/Users/trevor.smith/.local/bin/link-claude-settings"
+
+# Map a git remote URL to the real dev checkout whose personal config should be
+# linked into the gate worktree. Add cases here as more repos need it.
+main_root_for_remote() {
+  case "$1" in
+    *Meridian.IMR*) printf '%s' "/Users/trevor.smith/dev/wellsky/Meridian.IMR" ;;
+    *) return 1 ;;
+  esac
+}
+
+# no-mistakes runs us with cwd = the ephemeral worktree.
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  remote="$(git remote get-url origin 2>/dev/null || true)"
+  if main_root="$(main_root_for_remote "$remote")" && [ -d "$main_root" ]; then
+    # NM_SKIP_CLAUDE_MD: don't perturb the gate's diffing with the CLAUDE.md
+    # overwrite. Best-effort — never let linking failure block the run.
+    MAIN_ROOT="$main_root" NM_SKIP_CLAUDE_MD=1 "$LINK_SETTINGS" || true
+  fi
+fi
+
+exec "$REAL_CLAUDE" "$@"
