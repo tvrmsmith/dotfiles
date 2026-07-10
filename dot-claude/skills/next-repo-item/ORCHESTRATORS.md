@@ -24,8 +24,9 @@ The orchestrator choice is independent of the other flags (`--spawn`,
   the slug, since it restricts to `[A-Za-z0-9.+-]`).
 - Base branch: `main` unless the caller states otherwise.
 - `<pointer prompt>` = the pointers-only prompt from SKILL.md "Execute or hand
-  off" (read the issue on bd, read the PRD + ADRs, apply the execution rubric).
-  Never inline the brief text.
+  off" (read the issue on bd; consult the PRD/ADRs on-demand; then per the
+  execution-mode gate — skills: apply the execution rubric, raw: implement
+  directly). Never inline the brief/PRD text.
 
 ## superset (git-worktree workspaces)
 
