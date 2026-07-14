@@ -4,6 +4,12 @@
 // Why: warn-once so a recurring parse error on a malformed endpoint
 // file does not spam stderr inside the pi TUI on every event.
 let warnedBadEndpoint = false
+// Why: Pi awaits extension handlers. Status delivery stays off that
+// critical path, and the latest-only pending slot prevents a stalled
+// Orca receiver from building an unbounded queue of obsolete snapshots.
+const HOOK_POST_TIMEOUT_MS = 1000
+let activePost = false
+let pendingPost: { hookEventName: string; extra: Record<string, unknown> } | null = null
 
 // Why: re-reading the endpoint file on every event is cheap (small file,
 // rare changes) but stat+mtime caching avoids re-parsing on every event
@@ -83,7 +89,28 @@ function resolveHookPath(): string {
   return configuredPath
 }
 
-async function post(hookEventName: string, extra: Record<string, unknown> = {}): Promise<void> {
+function post(hookEventName: string, extra: Record<string, unknown> = {}): void {
+  pendingPost = { hookEventName, extra }
+  drainPosts()
+}
+
+function drainPosts(): void {
+  if (activePost || !pendingPost) return
+  const next = pendingPost
+  pendingPost = null
+  activePost = true
+  void postOnce(next.hookEventName, next.extra)
+    .catch(() => {})
+    .finally(() => {
+      activePost = false
+      drainPosts()
+    })
+}
+
+async function postOnce(
+  hookEventName: string,
+  extra: Record<string, unknown>
+): Promise<void> {
   const coords = resolveHookCoords()
   const paneKey = process.env.ORCA_PANE_KEY
   if (!coords.port || !coords.token || !paneKey) return
@@ -97,20 +124,35 @@ async function post(hookEventName: string, extra: Record<string, unknown> = {}):
     version: coords.version,
     payload: { hook_event_name: hookEventName, ...extra },
   })
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      controller?.abort()
+      reject(new Error('Orca hook delivery timed out'))
+    }, HOOK_POST_TIMEOUT_MS)
+    if (typeof timeout.unref === 'function') timeout.unref()
+  })
   try {
-    await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Orca-Agent-Hook-Token': coords.token,
-      },
-      body,
-    })
+    await Promise.race([
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Orca-Agent-Hook-Token': coords.token,
+        },
+        body,
+        ...(controller ? { signal: controller.signal } : {}),
+      }),
+      timeoutPromise,
+    ])
   } catch {
     // Why: status reporting must never fail the pi run just because Orca
     // is unavailable or the loopback request failed (e.g. Orca restart).
     if (!isWslRuntime()) return
     postViaWindowsCurl(url, coords, body)
+  } finally {
+    if (timeout) clearTimeout(timeout)
   }
 }
 
@@ -222,30 +264,30 @@ function extractAssistantText(message: unknown): string {
 // names Claude uses (tool_name / tool_input) and let the server pick the
 // preview. Keeps tool-name knowledge centralized on the receiver side.
 export default function (pi): void {
-  pi.on('before_agent_start', async (event) => {
-    await post('before_agent_start', { prompt: event.prompt ?? '' })
+  pi.on('before_agent_start', (event) => {
+    post('before_agent_start', { prompt: event.prompt ?? '' })
   })
 
-  pi.on('agent_start', async () => {
-    await post('agent_start')
+  pi.on('agent_start', () => {
+    post('agent_start')
   })
 
-  pi.on('tool_execution_start', async (event) => {
-    await post('tool_execution_start', {
+  pi.on('tool_execution_start', (event) => {
+    post('tool_execution_start', {
       tool_name: event.toolName,
       tool_input: event.args,
     })
   })
 
-  pi.on('tool_call', async (event) => {
-    await post('tool_call', {
+  pi.on('tool_call', (event) => {
+    post('tool_call', {
       tool_name: event.toolName,
       tool_input: event.input,
     })
   })
 
-  pi.on('tool_execution_end', async (event) => {
-    await post('tool_execution_end', {
+  pi.on('tool_execution_end', (event) => {
+    post('tool_execution_end', {
       tool_name: event.toolName,
     })
   })
@@ -254,18 +296,14 @@ export default function (pi): void {
   // so the dashboard preview reflects the most recent reply even before
   // agent_end fires. message_end is the right hook because pi guarantees
   // it fires after the message is finalized (post-streaming).
-  pi.on('message_end', async (event) => {
+  pi.on('message_end', (event) => {
     if (event.message?.role !== 'assistant') return
     const text = extractAssistantText(event.message)
     if (!text) return
-    await post('message_end', { role: 'assistant', text })
+    post('message_end', { role: 'assistant', text })
   })
 
-  pi.on('agent_end', async () => {
-    await post('agent_end')
-  })
-
-  pi.on('session_shutdown', async () => {
-    await post('session_shutdown')
+  pi.on('agent_end', () => {
+    post('agent_end')
   })
 }
