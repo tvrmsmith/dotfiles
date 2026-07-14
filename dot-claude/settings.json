@@ -2,6 +2,7 @@
   "skillListingMaxDescChars": 500,
   "skillListingBudgetFraction": 0.02,
   "env": {
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-5",
     "ANTHROPIC_VERTEX_PROJECT_ID": "consolo-dev-vertex-wsky",
     "CLAUDE_CODE_USE_VERTEX": "1",
     "CLOUD_ML_REGION": "global",
@@ -264,6 +265,26 @@
             "timeout": 20
           }
         ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v bd >/dev/null 2>&1 && bd prime --mcp || true"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v bd >/dev/null 2>&1 && bd prime --mcp || true"
+          }
+        ]
       }
     ],
     "Stop": [
@@ -333,11 +354,11 @@
     "atlassian@claude-plugins-official": false,
     "caveman@caveman": true,
     "chrome-devtools-mcp@chrome-devtools-plugins": false,
-    "claude-code-setup@claude-plugins-official": true,
-    "claude-md-management@claude-plugins-official": true,
+    "claude-code-setup@claude-plugins-official": false,
+    "claude-md-management@claude-plugins-official": false,
     "code-review@claude-plugins-official": false,
-    "code-simplifier@claude-plugins-official": true,
-    "commit-commands@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": false,
+    "commit-commands@claude-plugins-official": false,
     "csharp-lsp@claude-plugins-official": false,
     "hookify@claude-plugins-official": true,
     "pr-review-toolkit@claude-plugins-official": true,
@@ -345,9 +366,9 @@
     "security-guidance@claude-plugins-official": true,
     "security-screener@wellsky-plugins": true,
     "shared@wellsky-plugins": true,
-    "skill-creator@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": false,
     "sourcegraph@claude-plugins-official": false,
-    "superpowers@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": false,
     "typescript-lsp@claude-plugins-official": false,
     "unit-gen@wellsky-plugins": true,
     "workflow@wellsky-plugins": true,
