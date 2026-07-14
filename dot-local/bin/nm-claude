@@ -38,6 +38,27 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     # NM_SKIP_CLAUDE_MD: don't perturb the gate's diffing with the CLAUDE.md
     # overwrite. Best-effort — never let linking failure block the run.
     MAIN_ROOT="$main_root" NM_SKIP_CLAUDE_MD=1 "$LINK_SETTINGS" || true
+
+    # Append gate-only review guidance into the gate worktree's CLAUDE.local.md.
+    # link-claude-settings symlinks CLAUDE.local.md back to the real dev checkout;
+    # here we replace that symlink with a real file = personal CLAUDE.local.md +
+    # docs/agents/gate-guidance.md, so gate step agents (review/test/document/lint)
+    # load the guidance without it touching the tracked CLAUDE.md/AGENTS.md or the
+    # personal CLAUDE.local.md. CLAUDE.local.md is already in info/exclude, so the
+    # materialized file never lands in the diff or PR. Best-effort; never blocks.
+    guidance="$main_root/docs/agents/no-mistakes-gate-guidance.md"
+    if [ -s "$guidance" ]; then
+      worktree_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+      if [ -n "$worktree_root" ]; then
+        target="$worktree_root/CLAUDE.local.md"
+        src_local="$main_root/CLAUDE.local.md"
+        tmp="$target.nm-tmp.$$"
+        {
+          [ -e "$src_local" ] && cat "$src_local" && printf '\n'
+          cat "$guidance"
+        } > "$tmp" 2>/dev/null && { rm -f "$target"; mv -f "$tmp" "$target"; } || rm -f "$tmp"
+      fi
+    fi
   fi
 fi
 
