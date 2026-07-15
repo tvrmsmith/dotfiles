@@ -23,6 +23,10 @@ Caller named specific aspects (e.g. "review error handling and tests") → run o
 | Type design | `references/type-design.md` | new/changed types |
 | Simplification | `references/simplification.md` | phase 2 — runs in step 3b |
 
+## 2b. Delegate spec conformance & Fowler standards
+
+For **spec conformance** (does the diff implement the originating issue/PRD? missing requirements, scope creep, wrong implementation) and a **Fowler smell baseline** standards pass, invoke the `mattpocock-skills:code-review` skill — it owns those axes and tracks upstream, so don't duplicate them here. Present its `## Standards` / `## Spec` output as its own section, kept separate from the severity buckets below (its two axes are deliberately un-merged).
+
 ## 3. Run reviewers
 
 Spawn one general-purpose agent per selected aspect (parallel default; sequential if caller prefers). Simplification is excluded here — it runs in step 3b. Each agent gets:
