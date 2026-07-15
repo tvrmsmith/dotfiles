@@ -13,10 +13,10 @@ Arguments free-form natural language. Extract up to three optional elements; fal
 | Element | Default | Examples |
 |---------|---------|----------|
 | Max iterations | `4` | "max 6", "up to 3 loops", "3x" |
-| Review command | `pr-review-toolkit:review-pr` | "use /code-review", "/security-review" |
+| Review command | `comprehensive-code-review` | "use /code-review", "/security-review" |
 | Focus / aspects | none | "focus on security and error handling", "tests only" |
 
-**Focus mapping:** if review command is `pr-review-toolkit:review-pr`, map focus to its native `[review-aspects]` argument (`tests`, `errors`, `comments`, `types`, `code`, `simplify`). If requested focus has no matching native aspect (e.g. "security"), pass as plain guidance alongside mapped aspects rather than drop it. For any other review command, append focus as plain review guidance.
+**Focus mapping:** if review command is `comprehensive-code-review`, pass focus as the aspects it names in natural language (code quality & bugs, tests, error handling, comments, type design, spec conformance, simplification). Focus with no matching aspect (e.g. "security") rides along as plain guidance rather than being dropped. For any other review command, append focus as plain review guidance.
 
 After parsing, echo resolved config in one line before anything else, so misparse caught immediately:
 
