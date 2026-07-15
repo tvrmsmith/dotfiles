@@ -22,34 +22,32 @@ Caller named specific aspects (e.g. "review error handling and tests") → run o
 | Comments | `references/comments.md` | comments/docs added or modified |
 | Type design | `references/type-design.md` | new/changed types |
 | Spec conformance & standards | `mattpocock-skills:code-review` | always (see step 3) |
-| Simplification | `references/simplification.md` | runs last, in step 4 (must see settled code) |
+| Simplification | `references/simplification.md` | → step 4 |
 
 ## 3. Run reviews
 
 Two tracks, launched together (parallel default; sequential if caller prefers).
 
-**In-house aspects** — spawn one general-purpose agent per selected aspect (simplification excluded — it runs in step 4). Each agent gets:
+**In-house aspects** — spawn one general-purpose agent per selected aspect (simplification runs in step 4). Give each agent this exact prompt, substituting only `{ASPECT}`, `{SCOPE}`, and `{ASPECT_FILE}` — copy the rest verbatim so every reviewer runs on the same brief. `{ASPECT_FILE}` is the aspect's reference doc from the step-2 table, resolved to an **absolute** path (spawned agents run in the target repo, where a relative `references/…` won't resolve):
 
-- an **adversarial** brief — hunt its aspect for real defects, treat the diff as guilty until shown correct,
-- the review scope,
-- instruction to load the `coding-standards` skill and this repo's `CLAUDE.md` (they override generic guidance),
-- instruction to **read its reference doc and follow it exactly**,
-- the shared severity labels and finding format below.
+```
+Adversarially review this change for {ASPECT} — treat the diff as guilty until shown correct.
 
-Agents report findings only — no code edits.
+Scope: {SCOPE}
+1. Load the `coding-standards` skill — it overrides generic guidance.
+2. Read {ASPECT_FILE} and follow it exactly.
+Report findings only — no code edits. Report only what survives scrutiny — no speculation padding.
+Label every finding by severity and use this exact format:
+  `severity — description [file:line] → concrete fix`
+Severity: Critical (must fix before merge — bugs, silent failures, standards violations) · Important (real issue, not a blocker) · Suggestion (optional polish).
+```
 
 **Delegated (Matt Pocock)** — invoke the `mattpocock-skills:code-review` skill from the main thread (it spawns its own Standards + Spec sub-agents; don't wrap it in another agent). It tracks upstream, so its axes stay current without edits here. Consume:
 
 - its **Spec** axis — does the diff implement the originating issue/PRD? missing requirements, scope creep, wrong implementation. This is the axis the in-house aspects don't cover.
 - its **Standards** axis (repo standards + Fowler smell baseline) — a deliberate cross-check on the in-house standards pass (`coding-standards` skill + `code-quality.md`), not the sole owner. Fold matching findings together.
 
-**Severity** — every finding carries one:
-
-- **Critical** — must fix before merge: bugs, silent failures, standards violations.
-- **Important** — real issue to fix, not a blocker.
-- **Suggestion** — optional polish.
-
-**Finding format:** `severity — description [file:line] → concrete fix`.
+Step 3 is done when every spawned aspect agent has returned findings and `mattpocock-skills:code-review` has returned both its Spec and Standards axes.
 
 ## 4. Simplify
 
