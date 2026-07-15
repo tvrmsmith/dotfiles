@@ -4,7 +4,7 @@ description: Use for a comprehensive, multi-aspect review of a diff, PR, or pre-
 ---
 # Comprehensive Code Review
 
-Review changed code across every applicable aspect below, then aggregate.
+Adversarial review of changed code across every applicable aspect below, then aggregate. Treat the diff as guilty until shown correct — dig for real defects, report only what survives scrutiny (no praise-seeking, no speculation padding).
 
 ## 1. Scope
 
@@ -30,6 +30,7 @@ Two tracks, launched together (parallel default; sequential if caller prefers).
 
 **In-house aspects** — spawn one general-purpose agent per selected aspect (simplification excluded — it runs in step 4). Each agent gets:
 
+- an **adversarial** brief — hunt its aspect for real defects, treat the diff as guilty until shown correct,
 - the review scope,
 - instruction to load the `coding-standards` skill and this repo's `CLAUDE.md` (they override generic guidance),
 - instruction to **read its reference doc and follow it exactly**,
