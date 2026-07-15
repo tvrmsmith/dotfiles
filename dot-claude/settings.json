@@ -266,8 +266,7 @@
     "warp@claude-code-warp": true,
     "playwright@claude-plugins-official": false,
     "mattpocock-skills@mattpocock-skills": true,
-    "wshp@wshp.claude-plugins": true,
-    "beads@beads-marketplace": false
+    "wshp@wshp.claude-plugins": true
   },
   "extraKnownMarketplaces": {
     "caveman": {
@@ -341,12 +340,6 @@
       "source": {
         "source": "directory",
         "path": "/Users/trevor.smith/dev/wellsky/wshp.claude-plugins"
-      }
-    },
-    "beads-marketplace": {
-      "source": {
-        "source": "github",
-        "repo": "gastownhall/beads"
       }
     }
   },
