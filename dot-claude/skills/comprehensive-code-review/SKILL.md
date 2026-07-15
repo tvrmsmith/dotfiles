@@ -28,7 +28,7 @@ Caller named specific aspects (e.g. "review error handling and tests") → run o
 Spawn one general-purpose agent per selected aspect (parallel default; sequential if caller prefers). Simplification is excluded here — it runs in step 3b. Each agent gets:
 
 - the review scope,
-- this repo's `CLAUDE.md`/coding standards (they override generic guidance),
+- instruction to load the `coding-standards` skill and this repo's `CLAUDE.md` (they override generic guidance),
 - instruction to **read its reference doc and follow it exactly**,
 - the shared severity labels and finding format below.
 
