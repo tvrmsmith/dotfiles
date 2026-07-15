@@ -17,4 +17,4 @@ Review changed code for correctness, standards, bugs. Focus diff (`git diff`), n
 
 ## What to report
 
-Report only high-confidence findings — no speculation padding. Severity: **Critical** = bugs, security holes, clear standards violations that block merge; **Important** = real issues to fix but not blockers. Nothing high-confidence → say code looks clean.
+Report only high-confidence findings — no speculation padding. Label each by the shared severity; here Critical is a bug, security hole, or clear standards violation that blocks merge. Nothing high-confidence → say code looks clean.
