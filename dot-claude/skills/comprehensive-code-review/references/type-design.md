@@ -19,4 +19,4 @@ Evaluate new/changed types. Core principle: **make illegal states unrepresentabl
 
 ## Output
 
-Per type: four ratings, then findings. Each finding: `what's weak [file:line] → redesign (e.g. "replace bool pair with sum type", "make field private + validate in ctor", "wrap string in value object")`. Note well-designed types too.
+Per type: the four ratings above, then findings labeled by shared severity. Redesign examples: "replace bool pair with sum type", "make field private + validate in ctor", "wrap string in value object". Note well-designed types too.
