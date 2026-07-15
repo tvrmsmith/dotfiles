@@ -1,6 +1,6 @@
 ---
 name: comprehensive-code-review
-description: Reviews changed code across quality, tests, error handling, comments, type design, and simplification. Use when asked to review a PR, a diff, or changes before commit.
+description: Reviews a diff, PR, or pre-commit changes for code quality, bugs, tests, error handling, comments, type design, and simplification.
 ---
 # Comprehensive Code Review
 
