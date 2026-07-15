@@ -17,20 +17,14 @@ When judging test quality, load the `wshp:test-best-practices` skill.
 - **Failure modes** — error handling, timeouts, invalid input, downstream failures.
 - **Test quality** — tests assert real behavior, not implementation detail; meaningful failure messages; no tautological or always-passing tests; correct scoping (unit vs integration).
 
-## Criticality rating
+## Severity
 
-Rate each gap 1–10 by risk if untested code breaks:
+Rate each gap by risk if untested code breaks:
 
-- **Critical (8–10)** — untested core logic or failure path; add tests before merge.
-- **Important (5–7)** — meaningful gap, should cover.
-- **Quality (1–4)** — weak assertions, naming, minor missing cases.
+- **Critical** — untested core logic or failure path; add tests before merge.
+- **Important** — meaningful coverage gap, should cover.
+- **Suggestion** — weak assertions, naming, minor missing cases.
 
 ## Output
 
-- **Summary** — overall coverage judgment.
-- **Critical gaps (8–10)** — what untested, why matters, what test to add.
-- **Important gaps (5–7)**.
-- **Quality issues** — brittle/weak tests.
-- **Strengths** — what well covered.
-
-Each item: `description [file:line] → suggested test`.
+Open with a one-line coverage judgment, then the findings. Each names the untested behavior and the test to add.

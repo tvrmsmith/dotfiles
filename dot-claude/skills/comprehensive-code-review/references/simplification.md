@@ -24,5 +24,3 @@ Simplify recently modified code for clarity and maintainability **while preservi
 Two modes:
 - **Advisory (default)** — list suggested simplifications: `current shape [file:line] → simpler shape`, with one-line why. No edit.
 - **Apply (only when caller asks)** — make edits, keep behavior identical, report what changed.
-
-Never sacrifice correctness or readability for line count.
