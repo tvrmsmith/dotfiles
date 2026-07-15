@@ -2,7 +2,7 @@
 
 Assess whether tests cover changed code. Judge **behavioral** coverage, not line counts — high line-coverage can still miss critical behavior.
 
-For test style, structure, naming, isolation, and anti-patterns, load the `wshp:test-best-practices` skill and apply it when evaluating test quality.
+When judging test quality, load the `wshp:test-best-practices` skill.
 
 ## Method
 
