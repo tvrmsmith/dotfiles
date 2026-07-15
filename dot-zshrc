@@ -139,15 +139,25 @@ omp() {
 }
 
 alias claude-patch='$DEV_PERSONAL/dotfiles/extras/claude-code-patch.sh'
-# clc is an executable at dot-local/bin/clc (~/.local/bin/clc, on PATH) so
-# Superset custom terminal agents can discover it. Named clc (not cc) to avoid
-# clashing with /usr/bin/cc. Resolves via PATH here too.
+# claude-launcher is an executable at dot-local/bin/claude-launcher
+# (~/.local/bin/claude-launcher, on PATH) so PATH-scanning tools (e.g. Superset
+# custom terminal agents) can discover it. It applies the skillOverrides patch
+# and HONORS permission prompts. It is the CLAUDE_CODE_PROCESS_WRAPPER target
+# (below), so Claude's own self-spawns (agent view, background service,
+# sub-sessions) route through it and keep prompting.
+#
+# clc = interactive convenience: claude-launcher with permission prompts skipped.
+alias clc='claude-launcher --dangerously-skip-permissions'
 alias clca='clc agents'
+
+# Route every Claude Code self-spawn through the launcher. Absolute path required
+# — the launcher is resolved by stat/X_OK, not via PATH.
+export CLAUDE_CODE_PROCESS_WRAPPER="$HOME/.local/bin/claude-launcher"
 
 # Workflow tool stripped from context by default (smaller prompt).
 # clcwf = clc with Dynamic Workflows / ultracode re-enabled for the session.
 export CLAUDE_CODE_DISABLE_WORKFLOWS=1
-clcwf() { (export CLAUDE_CODE_DISABLE_WORKFLOWS=0; clc "$@"); }
+clcwf() { (export CLAUDE_CODE_DISABLE_WORKFLOWS=0; claude-launcher --dangerously-skip-permissions "$@"); }
 
 # Agent sandboxing (nono, sbx); relies on $_OMP_VERTEX defined above
 [ -f "$DEV_PERSONAL/dotfiles/extras/agent-sandboxing/init.zsh" ] && \
