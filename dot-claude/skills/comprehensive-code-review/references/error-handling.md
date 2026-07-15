@@ -15,14 +15,12 @@ Scan diff for every error path: catch blocks, fallbacks, optional chaining over 
 - **Unchecked results** — ignored return codes/Result values, unawaited promises/tasks.
 - **Overly broad catches** — `catch (Exception)` around wide block, hides errors not meant to handle.
 
-Fold in repo's own logging/error conventions (from `CLAUDE.md`) — use project logger and error-id patterns, not generic ones.
+Use the project's own logger and error-id patterns, not generic ones.
 
 ## Severity
 
-- **CRITICAL** — error fully swallowed; failure invisible in production.
-- **HIGH** — failure logged too quietly or masked by fallback; hard to detect.
-- **MEDIUM** — weak error message, lost context, broad catch.
+- **Critical** — error fully swallowed; failure invisible in production.
+- **Important** — failure logged too quietly or masked by fallback; hard to detect.
+- **Suggestion** — weak error message, lost context, broad catch.
 
-## Output
-
-Per finding: `severity — what's swallowed/masked [file:line] → how to surface it (throw, propagate Result, log at right level, enrich message)`. Errors loud, contextual, propagated — not hidden.
+Fix each by surfacing the error: throw, propagate a Result, log at the right level, or enrich the message. Errors loud, contextual, propagated — not hidden.
