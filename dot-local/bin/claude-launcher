@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# claude-launcher — launch Claude Code with the skillOverrides patch applied.
+# Honors permission prompts (does NOT pass --dangerously-skip-permissions), so it
+# is safe as the CLAUDE_CODE_PROCESS_WRAPPER target: Claude self-spawns (agent
+# view, background service, sub-sessions) route through it and keep prompting.
+# For an interactive, permission-skipping session use the `clc` alias, which is
+# `claude-launcher --dangerously-skip-permissions`.
+#
+# Named as an executable (not a zsh alias) so PATH-scanning tools (e.g. Superset
+# custom terminal agents) can discover it.
+set -euo pipefail
+
+# Resolve this script's real path through the stow symlink (BSD readlink has no
+# -f), then derive repo root: dot-local/bin/claude-launcher -> repo root.
+src="${BASH_SOURCE[0]}"
+while [ -h "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  [[ $src != /* ]] && src="$dir/$src"
+done
+repo_root="$(cd -P "$(dirname "$src")/../.." && pwd)"
+patch="$repo_root/extras/claude-code-patch.sh"
+
+# Patch is best-effort — mirror the alias's `;` (run claude even if patch fails).
+[ -x "$patch" ] && "$patch" || true
+
+# Workflow tool stripped from context by default; clcwf overrides to 0.
+export CLAUDE_CODE_DISABLE_WORKFLOWS="${CLAUDE_CODE_DISABLE_WORKFLOWS:-1}"
+
+# Launcher contract for CLAUDE_CODE_PROCESS_WRAPPER: exec the real binary (do not
+# daemonize) and keep the wrapper env var set so re-spawns stay wrapped. `exec`
+# inherits the current environment, so the var passes through unchanged.
+exec claude "$@"
