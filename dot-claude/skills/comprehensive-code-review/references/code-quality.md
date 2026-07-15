@@ -4,9 +4,8 @@ Review changed code for correctness, standards, bugs. Focus diff (`git diff`), n
 
 ## Method
 
-1. Load project `CLAUDE.md` and any coding-standards docs. These override generic rules.
-2. Read diff plus enough context to judge correctness.
-3. Check each concern below.
+1. Read diff plus enough context to judge correctness.
+2. Check each concern below.
 
 ## What to check
 
@@ -16,13 +15,6 @@ Review changed code for correctness, standards, bugs. Focus diff (`git diff`), n
 - **Duplication / dead code** — repeated logic to extract, unreachable branches.
 - **Performance** — obvious inefficiencies (N+1, needless allocation in hot paths), not micro-optimization.
 
-## Confidence scoring
+## What to report
 
-Score each finding 0–100. **Only report findings ≥ 80.** No speculation padding.
-
-- **Critical (90–100)** — bugs, security holes, clear standards violations that block merge.
-- **Important (80–89)** — real issues to fix but not blockers.
-
-## Output
-
-Per finding: `severity — description [file:line] → concrete fix`. Note strengths briefly. Nothing scores ≥ 80 → say code looks clean.
+Report only high-confidence findings — no speculation padding. Severity: **Critical** = bugs, security holes, clear standards violations that block merge; **Important** = real issues to fix but not blockers. Nothing high-confidence → say code looks clean.
