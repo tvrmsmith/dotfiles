@@ -13,13 +13,14 @@ Arguments free-form natural language. Extract up to three optional elements; fal
 | Max iterations | `4` | "max 6", "up to 3 loops", "3x" |
 | Review command | `comprehensive-code-review` | "use /code-review", "/security-review" |
 | Focus / aspects | none | "focus on security and error handling", "tests only" |
+| Model preset | none (recommend + confirm each iteration) | "model=sonnet", "use opus", "haiku for fixes" |
 
 **Focus mapping:** if review command is `comprehensive-code-review`, pass focus as the aspects it names in natural language (code quality & bugs, tests, error handling, comments, type design, spec conformance, simplification). Focus with no matching aspect (e.g. "security") rides along as plain guidance rather than being dropped. For any other review command, append focus as plain review guidance.
 
 After parsing, echo resolved config in one line before anything else, so misparse caught immediately:
 
 ```
-Review: <command> · Max: <n> · Focus: <focus or "none"> · Target: git diff
+Review: <command> · Max: <n> · Focus: <focus or "none"> · Model: <preset or "per-iteration"> · Target: git diff
 ```
 
 ## 2. Review command failure gate
@@ -43,7 +44,7 @@ If invoking the review command fails (override-blocked, not installed, or typo),
 
 ## 3. The loop
 
-Repeat each iteration until stop condition (section 4) holds. Track iteration number against max.
+Repeat each iteration until stop condition (section 4) holds.
 
 ### 3a. Review (in a subagent)
 
@@ -64,15 +65,23 @@ Carry deferred findings forward untouched (see section 4 state); classify only t
 
 If any ambiguous/unnecessary findings this iteration, present with `AskUserQuestion` (group related findings, split into multiple sequential questions if they exceed one question's capacity; each option is fix or skip). Approved set = clear findings + ambiguous findings the user chose to fix. Findings the user chose not to fix are recorded as deferred. If every finding this iteration is clear, skip the question, go straight to fix dispatch (3d).
 
-### 3d. Fix dispatch
+### 3d. Model selection
 
-Apply approved findings via subagent(s):
+Pick the model that will apply this iteration's approved fixes. Routing policy:
+
+- Default **Sonnet** (`sonnet`). Escalate to **Opus** (`opus`) for subtle logic, cross-file refactors, or correctness/security judgment. **Haiku** (`haiku`) only for purely mechanical fixes (renames, typos, formatting) — sparingly. Never **Fable**.
+
+If a model preset was parsed (step 1), use it and skip the prompt. Otherwise present the recommendation with `AskUserQuestion`: recommended model first, labelled `(Recommended)`, then the other allowed models so the choice can be overridden. **Ask every iteration** — each iteration's fixes differ and may warrant a different model. When a large batch is split across parallel subagents (3e) whose complexity differs materially, recommend per-batch rather than one model for the whole iteration.
+
+### 3e. Fix dispatch
+
+Apply approved findings via subagent(s), dispatched with the selected model via the Agent tool's `model` parameter:
 - **Small set** → single fix subagent receives whole batch, applies edits, reports what changed.
 - **Large set** → split findings into per-file / per-area batches and dispatch one subagent per batch, in parallel only where edits cannot conflict (never two subagents editing same file at once).
 
-Leave changes in the working tree for the next iteration's review to verify — no automatic commit.
+Leave changes in the working tree for the next iteration's review to verify.
 
-### 3e. Iteration summary
+### 3f. Iteration summary
 
 After fixes, print one line:
 
@@ -86,7 +95,7 @@ Then evaluate stop conditions (section 4). If none hold, start next iteration at
 
 Stop loop when ANY holds:
 - Iteration count reaches max iterations.
-- No actionable findings remain — evaluated AFTER subtracting the deferred set from this iteration's findings. Stop when the review comes back clean (zero findings), OR the only findings left are ones the user already deferred (no progress possible).
+- No actionable findings remain (see State below) — the review converges (comes back clean, zero findings), OR the only findings left are ones the user already deferred (no progress possible).
 
 **State across iterations:** maintain a running set of deferred findings. The 3a subagent re-runs the full review with no knowledge of what was deferred, so it re-reports deferred findings every iteration — subtract them before triage and before the stop check. Once the user defers a finding, never surface it again this run; only genuinely new findings reach the decision gate.
 
