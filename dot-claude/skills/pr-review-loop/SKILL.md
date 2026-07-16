@@ -6,7 +6,7 @@ description: Converge a PR against its own automatic Claude bot review instead o
 
 Converge a PR against its own automated Claude reviewer. Instead of running a review command yourself, read the findings the `@claude` GitHub Actions workflow already posted on the PR, triage, fix in a subagent, commit + push, reply to and resolve the addressed threads, then post `@claude` to re-trigger the bot. Poll for the fresh review and repeat until it comes back clean, iterations cap out, or the wait times out.
 
-This is the GitHub-specific, side-effecting sibling of `review-loop`. It commits, pushes, and comments on a live PR — `review-loop` does none of that. Use `review-loop` for a local `git diff`; use this when a PR already has a Claude bot review to converge against.
+This is the GitHub-specific, side-effecting sibling of `review-loop`: it commits, pushes, and comments on a live PR. Use `review-loop` for a local `git diff`; use this when a PR already has a Claude bot review to converge against.
 
 ## 1. Parse arguments
 
@@ -19,18 +19,21 @@ Arguments are free-form natural language. Extract optional elements; fall back t
 | Poll timeout (per re-review) | `15m` | "wait up to 30m" |
 | Poll interval | `30s` | "poll every 60s" |
 | Focus | none | "focus on error handling" |
+| Model preset | none (recommend + confirm each iteration) | "model=sonnet", "use opus", "haiku for fixes" |
+
+**Model preset:** when set, skip 3e's confirm prompt and apply that model to every iteration's fixes.
 
 Focus, when set, is appended as guidance to the `@claude` re-request (step 3g) and biases triage (step 3c).
 
 After parsing, echo the resolved config in one line before anything else, so a misparse is caught immediately:
 
 ```
-PR: <#/url> · Max: <n> · Poll: <interval>/<timeout> · Focus: <focus or "none">
+PR: <#/url> · Max: <n> · Poll: <interval>/<timeout> · Focus: <focus or "none"> · Model: <preset or "per-iteration">
 ```
 
 ## 2. Auth and directory awareness
 
-Follow the global git/`gh` rules in `~/.claude/CLAUDE.md` (directory-aware personal vs work identity — `gh auth switch` before `gh`, `cd` out for work repos). If a push fails with `Permission denied`, invoke the `git-ssh-fix` skill and retry.
+Follow the global git/`gh` rules in `~/.claude/CLAUDE.md`. If a push fails with `Permission denied`, invoke the `git-ssh-fix` skill and retry.
 
 Resolve `<owner>/<repo>` and the PR number once up front (`gh pr view --json number,headRefName,url,headRepositoryOwner,headRepository`). Reuse them for every `gh` / `gh api` call in the loop.
 
@@ -51,7 +54,7 @@ Pull the newest Claude-bot review on the PR from **both** sources:
 
 **Iteration 1** uses the review already on the PR — the automatic one; no trigger is needed. Later iterations use the review that landed in step 3i.
 
-**Selecting "the review".** Take the newest bot-authored review/comment that carries actual review content (inline findings and/or a verdict), not a bare acknowledgment or in-progress placeholder (see the heuristic in 3i).
+**Selecting "the review".** Take the newest bot-authored review/comment that carries actual review content — see the landed-vs-acknowledgment heuristic in 3i.
 
 ### 3b. Parse to condensed findings
 
@@ -70,7 +73,7 @@ Classify each finding:
 - **Clear** — high-value, unambiguous. Auto-approved for fixing; not surfaced.
 - **Ambiguous / unnecessary** — risky, low-value, or a judgment call. Must surface to the user.
 
-Do not re-classify or re-surface findings the user already deferred in a previous iteration (see section 4 state).
+Skip findings the user already deferred (see section 4 state).
 
 ### 3d. Decision gate
 
@@ -78,17 +81,23 @@ If there are any ambiguous/unnecessary findings this iteration, present them wit
 
 ### 3e. Fix dispatch
 
-Apply the approved findings via subagent(s):
+**Model selection (each iteration, before dispatch).** Pick the model that will apply this iteration's approved fixes. Routing policy:
+
+- Default **Sonnet** (`sonnet`). Escalate to **Opus** (`opus`) for subtle logic, cross-file refactors, or correctness/security judgment. **Haiku** (`haiku`) only for purely mechanical fixes (renames, typos, formatting) — sparingly. Never **Fable**.
+
+If a model preset was parsed (step 1), use it and skip the prompt. Otherwise present the recommendation with `AskUserQuestion`: recommended model first, labelled `(Recommended)`, then the other allowed models so the choice can be overridden. **Ask every iteration** — each iteration's fixes differ and may warrant a different model. When a large batch is split across parallel subagents whose complexity differs materially, recommend per-batch rather than one model for the whole iteration.
+
+Apply the approved findings via subagent(s), dispatched with the selected model via the Agent tool's `model` parameter:
 
 - **Small set** → a single fix subagent takes the whole batch, applies edits, reports what changed.
 - **Large set** → split findings into per-file / per-area batches and dispatch one subagent per batch, in parallel only where edits cannot conflict (never two subagents editing the same file at once).
 
-Each fix subagent loads the `coding-standards` skill before editing (per global instructions). Deferred findings are NOT fixed.
+Deferred findings are NOT fixed.
 
 ### 3f. Commit and push
 
-- **One commit per iteration:** stage this round's fixes and commit as a single commit, message via the `caveman:caveman-commit` style (no `Co-Authored-By` lines).
-- Push to the PR branch. On `Permission denied` → `git-ssh-fix` skill, then retry the push.
+- **One commit per iteration:** stage this round's fixes and commit as a single commit, message via the `caveman:caveman-commit` style.
+- Push to the PR branch (auth and retry per §2).
 
 Capture the pushed short SHA for the iteration summary and the thread replies.
 
