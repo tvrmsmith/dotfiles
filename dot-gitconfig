@@ -1,7 +1,7 @@
 [gpg]
 	format = ssh
 [gpg "ssh"]
-	program = /Applications/1Password.app/Contents/MacOS/op-ssh-sign
+	program = ~/.local/bin/op-ssh-sign
 	allowedSignersFile = ~/.ssh/allowed_signers
 [commit]
 	gpgsign = true
@@ -46,4 +46,12 @@
 [includeIf "gitdir:~/dev/personal/"]
 	path = ~/.gitconfig-personal
 [includeIf "gitdir:~/dev/personal/"]
+	path = ~/.gitconfig.sandbox-personal
+
+# Personal repos cloned outside ~/dev/personal/ (e.g. this dotfiles repo lives
+# at ~/dev/dotfiles) — matched by remote instead of path so identity follows
+# the repo regardless of where it's checked out.
+[includeIf "hasconfig:remote.*.url:git@github.com:tvrmsmith/**"]
+	path = ~/.gitconfig-personal
+[includeIf "hasconfig:remote.*.url:git@github.com:tvrmsmith/**"]
 	path = ~/.gitconfig.sandbox-personal
