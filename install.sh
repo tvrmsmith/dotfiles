@@ -91,6 +91,31 @@ install_no_mistakes() {
 	curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh
 }
 
+claude_machine_profile() {
+	# dot-claude/settings.json carries work-only config (Google Vertex creds,
+	# WellSky OTEL endpoint) that breaks Claude Code on personal machines
+	# (invalid Vertex credentials). Claude Code has no include mechanism for
+	# settings.json, so a straight symlink can't vary by machine. Cache the
+	# answer in a plain (non-stowed) marker file so re-running install.sh
+	# doesn't re-prompt.
+	local marker="$HOME/.claude-profile"
+	if [ -f "$marker" ]; then
+		cat "$marker"
+		return
+	fi
+	if [ ! -t 0 ]; then
+		echo "work"
+		return
+	fi
+	local answer
+	read -r -p "Is this a work or personal machine? [work/personal]: " answer </dev/tty
+	case "$answer" in
+	personal) echo "personal" ;;
+	*) echo "work" ;;
+	esac >"$marker"
+	cat "$marker"
+}
+
 setup_dotfiles() {
 	# ~/.warp must exist as a real directory before stow runs: Warp writes
 	# runtime data into it (worktrees/, typescript-language-server/, generated
@@ -100,7 +125,26 @@ setup_dotfiles() {
 	# so stow folds it (it's a read-only submodule).
 	mkdir -p "$HOME/.warp/tab_configs" "$HOME/.warp/default_tab_configs"
 
-	stow --dotfiles -d "$SCRIPT_DIR" -t "$HOME" .
+	local profile
+	profile="$(claude_machine_profile)"
+
+	if [ "$profile" = "personal" ]; then
+		# Stow everything except dot-claude/settings.json — that one gets a
+		# real, machine-local file below instead of a symlink, so Vertex vars
+		# stripped here don't get written back to the tracked repo file.
+		stow --dotfiles -d "$SCRIPT_DIR" -t "$HOME" --ignore='settings\.json' .
+		rm -f "$HOME/.claude/settings.json"
+		if command -v jq >/dev/null 2>&1; then
+			jq 'del(.env.CLAUDE_CODE_USE_VERTEX, .env.ANTHROPIC_VERTEX_PROJECT_ID, .env.CLOUD_ML_REGION)' \
+				"$SCRIPT_DIR/dot-claude/settings.json" >"$HOME/.claude/settings.json"
+			echo "Personal machine: wrote ~/.claude/settings.json with Vertex vars stripped (real file, not symlinked)."
+		else
+			cp "$SCRIPT_DIR/dot-claude/settings.json" "$HOME/.claude/settings.json"
+			echo "jq not found; copied settings.json as-is. Remove CLAUDE_CODE_USE_VERTEX, ANTHROPIC_VERTEX_PROJECT_ID, CLOUD_ML_REGION from ~/.claude/settings.json manually."
+		fi
+	else
+		stow --dotfiles -d "$SCRIPT_DIR" -t "$HOME" .
+	fi
 }
 
 install_gnu_stow

@@ -55,3 +55,9 @@
 	path = ~/.gitconfig-personal
 [includeIf "hasconfig:remote.*.url:git@github.com:tvrmsmith/**"]
 	path = ~/.gitconfig.sandbox-personal
+
+# Machine-local identity override — e.g. on a personal-only machine, set
+# [user] here to make the personal identity the default everywhere instead
+# of relying on the includeIf rules above. No-op if file doesn't exist.
+[include]
+	path = ~/.gitconfig.local
