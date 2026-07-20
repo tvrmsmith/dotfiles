@@ -33,6 +33,7 @@ Per PR in set, in order, start `iteration=1`:
    - `RESULT=CHECK_FAILED` (exit 20) → a **required** check failed (optional failures never trigger this — they surface under `UNSTABLE`) → STOP, report to user.
    - `RESULT=CONFLICT` (exit 30) → merge conflict → STOP, report to user.
    - `RESULT=TIMEOUT` (exit 40) → 15 min elapsed, no terminal state → re-check PR state manually and decide (usually re-run monitor, or ask user if something look stuck).
+   - `RESULT=REQUIRED_UNKNOWN` (exit 50) → monitor could not read the base branch's required-check set, so it cannot label required-vs-optional → STOP, report to user, do NOT merge. Fix the cause (token scope to read rulesets/branch protection, or confirm base branch) then re-run.
 3. **Merge on CLEAN:** `gh pr merge <pr> --squash --delete-branch`, then verify: `gh pr view <pr> --repo <repo> --json state` show `MERGED`. Only then next PR.
 
 Repeat for every PR in set. Each merge advance main, so expect next PR back `BEHIND` on first monitor pass — normal, just re-sync.

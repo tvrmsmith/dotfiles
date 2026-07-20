@@ -8,24 +8,42 @@
 #   CHECK_FAILED  - a REQUIRED check failed (exit 20)
 #   CONFLICT      - merge conflict (exit 30)
 #   TIMEOUT       - 15 min elapsed, no terminal state (exit 40)
+#   REQUIRED_UNKNOWN - required-check set unreadable; can't gate safely (exit 50)
 # Required-vs-optional is read from the branch's rulesets (GitHub's mergeStateStatus
 # alone won't tell the caller WHICH pending check matters), so an optional check can
 # never block the merge on its own or falsely abort it. Args: <pr> <repo>
 set -uo pipefail
 PR="$1"; REPO="$2"
 
+# Gate against the PR's ACTUAL base branch (not a hardcoded main - a PR may target a
+# release branch with a different required set).
+BASE_REF="$(gh pr view "$PR" --repo "$REPO" --json baseRefName --jq '.baseRefName' 2>/dev/null)"
+[ -z "$BASE_REF" ] && BASE_REF="main"
+echo "base-branch=$BASE_REF"
+
 # Required status-check contexts: rulesets first, classic branch-protection fallback.
-REQUIRED="$(gh api "repos/$REPO/rules/branches/main" \
+REQUIRED="$(gh api "repos/$REPO/rules/branches/$BASE_REF" \
   --jq '.[] | select(.type=="required_status_checks") | .parameters.required_status_checks[].context' 2>/dev/null)"
-[ -z "$REQUIRED" ] && REQUIRED="$(gh api "repos/$REPO/branches/main/protection/required_status_checks/contexts" --jq '.[]' 2>/dev/null)"
+[ -z "$REQUIRED" ] && REQUIRED="$(gh api "repos/$REPO/branches/$BASE_REF/protection/required_status_checks/contexts" --jq '.[]' 2>/dev/null)"
+
+# Fail safe: if the required set can't be read, we cannot label required-vs-optional
+# or gate safely (everything would look optional and a required failure would never
+# trip CHECK_FAILED). Refuse to run so the caller stops and verifies rather than
+# silently merging past a required check.
+if [ -z "$REQUIRED" ]; then
+  echo "WARNING: could not read required status-check contexts for '$BASE_REF'"
+  echo "  (rulesets + classic branch protection both empty/unreadable - check token scope or base branch)."
+  echo "  Cannot gate required-vs-optional safely; refusing to run."
+  echo "RESULT=REQUIRED_UNKNOWN"; exit 50
+fi
 echo "required-contexts: $(printf '%s' "$REQUIRED" | paste -sd, - 2>/dev/null)"
 is_required() { printf '%s\n' "$REQUIRED" | grep -Fxq "$1"; }
 
-BASE_MAIN="$(gh api "repos/$REPO/commits/main" --jq '.sha' 2>/dev/null)"
-echo "baseline main=$BASE_MAIN"
+BASE_MAIN="$(gh api "repos/$REPO/commits/$BASE_REF" --jq '.sha' 2>/dev/null)"
+echo "baseline $BASE_REF=$BASE_MAIN"
 DEADLINE=$(( $(date +%s) + 900 ))
 while :; do
-  NOW_MAIN="$(gh api "repos/$REPO/commits/main" --jq '.sha' 2>/dev/null)"
+  NOW_MAIN="$(gh api "repos/$REPO/commits/$BASE_REF" --jq '.sha' 2>/dev/null)"
   read -r STATE MERGE < <(gh pr view "$PR" --repo "$REPO" --json mergeStateStatus,mergeable --jq '"\(.mergeStateStatus) \(.mergeable)"' 2>/dev/null)
   CHECKS="$(gh pr checks "$PR" --repo "$REPO" 2>/dev/null)"
 
