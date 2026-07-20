@@ -34,14 +34,18 @@ Match found → use existing copy, no clone. No match → clone to temp. Persona
 ## Planning
 
 - Never use plan mode (`EnterPlanMode`). Any creative/feature/design work → reach for Matt Pocock's skills (e.g. `/wayfinder`, `/grill-with-docs`) instead, before implementation.
-- Always confirm decisions with me before acting on them. Do not assume my agreement or proceed on my behalf — surface the choice, recommend, and wait for my explicit answer.
+- Confirm decisions with me before acting: surface the choice, recommend, wait for my explicit answer.
+
+## Delegating to agents
+
+- When kicking off a subagent or other agent (Agent tool, orca, etc.), don't inline context it already inherits or can discover: memory/instruction files (`CLAUDE.md`, `CLAUDE.local.md`, skills) or ticket content (bd/JIRA description, design/spec field). Point to it — "implement bead `<id>`, spec in its `design` field" — and let the agent read it.
+- Pass only the non-discoverable: the task, decisions/constraints not in the ticket, and pointers. Duplication just clutters the agent's window.
 
 ## Engineering Standards
 
-- **Technical decisions**: give little weight to development cost. Prefer quality, simplicity, robustness, scalability, long-term maintainability.
+- **Technical decisions**: estimate effort at agent speed, not human-team scale — then let quality, simplicity, robustness, maintainability decide, not cost.
 - **Bug fixes**: always start by reproducing the bug in an E2E setting as close as possible to how an end user experiences it. Ensures you find the real problem so the fix actually solves it.
-- **E2E testing UI**: be picky, obsess over pixel perfection. Something clearly looks off — even if unrelated to current work — get it fixed along the way.
-- **Engineering excellence**: same high bar for lint, test failures, test flakiness. See one — even if not caused by current work — fix it.
+- **Boy-scout rule**: see something off — pixel glitch, lint warning, test flake — even outside current scope, fix it along the way. Obsess over pixel perfection in UI.
 - **Coding standards**: ALWAYS load the `coding-standards` skill before writing, modifying, or reviewing code, and follow it.
 - **Cross-boundary contract approval**: any contract crossing a service or independent-deploy boundary (service↔service, frontend↔BFF, Kafka/event schemas, APIs consumed outside the owning service) needs my approval before implementation — load the `contract-approval` skill and follow it. Internal seams you change within one PR don't need approval.
 
@@ -52,5 +56,3 @@ Match found → use existing copy, no clone. No match → clone to temp. Persona
 - JIRA → use `acli jira` (see `acli` skill). Single commands (view, search) run direct in main thread. Multi-step ops (create + link, bulk edits) use subagent. Do NOT use `shared:jira-connector` agent — sandbox-only, where acli unavailable.
 - Never use MCP servers — use built-in tools, skills, agents instead
 - `gcloud auth login` → run direct via Bash when creds expire (`Reauthentication failed`). Browser opens on user machine, flow completes. No need to ask user run via `!`.
-
-@RTK.md
