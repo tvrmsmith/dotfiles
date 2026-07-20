@@ -10,6 +10,31 @@ let warnedBadEndpoint = false
 const HOOK_POST_TIMEOUT_MS = 1000
 let activePost = false
 let pendingPost: { hookEventName: string; extra: Record<string, unknown> } | null = null
+let sessionMetadata: Record<string, unknown> = {}
+
+function updateSessionMetadata(ctx: unknown): void {
+  const sessionManager = (ctx as { sessionManager?: { getSessionId?: () => unknown; getSessionFile?: () => unknown } } | null)?.sessionManager
+  const sessionId = sessionManager?.getSessionId?.()
+  const sessionFile = sessionManager?.getSessionFile?.()
+  sessionMetadata = typeof sessionId === 'string' && sessionId ? {
+    session_id: sessionId,
+    ...(typeof sessionFile === 'string' && sessionFile ? { session_file: sessionFile } : {}),
+  } : {}
+}
+
+function getPersistedSessionMetadata(): Record<string, unknown> {
+  const sessionFile = sessionMetadata.session_file
+  if (typeof sessionFile !== 'string' || !sessionFile) return {}
+  try {
+    const fs = require('fs')
+    // Why: Pi publishes its planned path before creating the transcript;
+    // recheck on every post so the first completed turn becomes resumable.
+    return fs.existsSync(sessionFile) ? sessionMetadata : {}
+  } catch {
+    return {}
+  }
+}
+
 
 // Why: re-reading the endpoint file on every event is cheap (small file,
 // rare changes) but stat+mtime caching avoids re-parsing on every event
@@ -122,7 +147,7 @@ async function postOnce(
     worktreeId: process.env.ORCA_WORKTREE_ID || '',
     env: coords.env,
     version: coords.version,
-    payload: { hook_event_name: hookEventName, ...extra },
+    payload: { hook_event_name: hookEventName, ...getPersistedSessionMetadata(), ...extra },
   })
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
   let timeout: ReturnType<typeof setTimeout> | undefined
@@ -263,12 +288,28 @@ function extractAssistantText(message: unknown): string {
 // etc.), so we forward the raw object verbatim under the same field
 // names Claude uses (tool_name / tool_input) and let the server pick the
 // preview. Keeps tool-name knowledge centralized on the receiver side.
+// Why: child agents inherit the lead's pane env; only its process may
+// register status hooks. PID identity keeps in-process reloads reporting.
 export default function (pi): void {
+  const ownerPid = process.env.ORCA_PI_STATUS_OWNED
+  const selfPid = String(process.pid)
+  if (ownerPid && ownerPid !== selfPid) return
+  process.env.ORCA_PI_STATUS_OWNED = selfPid
+  pi.on('session_start', (event, ctx) => {
+    updateSessionMetadata(ctx)
+    // Why: /reload re-registers the active session, but it is not a
+    // turn boundary and must not clear the visible status or unread state.
+    if (event.reason === 'reload') return
+    post('session_start')
+  })
+
   pi.on('before_agent_start', (event) => {
     post('before_agent_start', { prompt: event.prompt ?? '' })
   })
 
   pi.on('agent_start', () => {
+    clearPendingAgentEndCheck()
+    agentEndReported = false
     post('agent_start')
   })
 
@@ -303,7 +344,68 @@ export default function (pi): void {
     post('message_end', { role: 'assistant', text })
   })
 
-  pi.on('agent_end', () => {
+  // Why: modern Pi stays non-idle across retry/compaction/follow-up work,
+  // while legacy Pi/OMP becomes idle after its final agent_end handlers.
+  const AGENT_END_IDLE_RECHECK_MS = 25
+  const AGENT_END_IDLE_RECHECK_MAX_MS = 250
+  let agentSettledSupported = false
+  let agentEndReported = false
+  let agentEndIdleRecheckMs = AGENT_END_IDLE_RECHECK_MS
+  let pendingAgentEndCheck: ReturnType<typeof setTimeout> | null = null
+  let pendingAgentEndContext: { isIdle: () => boolean } | null = null
+
+  function clearPendingAgentEndCheck(): void {
+    if (pendingAgentEndCheck !== null) clearTimeout(pendingAgentEndCheck)
+    pendingAgentEndCheck = null
+    pendingAgentEndContext = null
+  }
+
+  // Why: isIdle flips before agent_settled handlers run, so both paths
+  // share a per-run guard instead of racing duplicate completion posts.
+  function postAgentEndOnce(): void {
+    if (agentEndReported) return
+    agentEndReported = true
     post('agent_end')
+  }
+
+  function checkPendingAgentEnd(): void {
+    pendingAgentEndCheck = null
+    const ctx = pendingAgentEndContext
+    if (!ctx || agentSettledSupported || agentEndReported) {
+      pendingAgentEndContext = null
+      return
+    }
+    try {
+      if (ctx.isIdle()) {
+        pendingAgentEndContext = null
+        postAgentEndOnce()
+        return
+      }
+    } catch {
+      pendingAgentEndContext = null
+      return
+    }
+    pendingAgentEndCheck = setTimeout(checkPendingAgentEnd, agentEndIdleRecheckMs)
+    if (typeof pendingAgentEndCheck.unref === 'function') pendingAgentEndCheck.unref()
+    agentEndIdleRecheckMs = Math.min(agentEndIdleRecheckMs * 2, AGENT_END_IDLE_RECHECK_MAX_MS)
+  }
+
+  pi.on('agent_settled', () => {
+    agentSettledSupported = true
+    clearPendingAgentEndCheck()
+    postAgentEndOnce()
+  })
+
+  pi.on('agent_end', (_event, ctx) => {
+    if (agentSettledSupported) return
+    if (!ctx || typeof ctx.isIdle !== 'function') {
+      postAgentEndOnce()
+      return
+    }
+    clearPendingAgentEndCheck()
+    agentEndIdleRecheckMs = AGENT_END_IDLE_RECHECK_MS
+    pendingAgentEndContext = ctx
+    pendingAgentEndCheck = setTimeout(checkPendingAgentEnd, 0)
+    if (typeof pendingAgentEndCheck.unref === 'function') pendingAgentEndCheck.unref()
   })
 }
