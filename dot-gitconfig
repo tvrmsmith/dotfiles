@@ -1,7 +1,7 @@
 [gpg]
 	format = ssh
 [gpg "ssh"]
-	program = ~/.local/bin/op-ssh-sign
+	program = /Users/trevor.smith/.local/bin/op-ssh-sign
 	allowedSignersFile = ~/.ssh/allowed_signers
 [commit]
 	gpgsign = true
