@@ -46,7 +46,7 @@ If not Meridian.IMR, STOP and report: "next-imr-item only runs in the Meridian.I
 
 ## Execute or hand off
 
-**Execution-mode gate (ask first).** Before handoff, ask user: use Matt Pocock skills (`/grill-with-docs`, `/implement`), or pass beads context and go raw? Wait for answer.
+**Execution-mode gate (ask first).** Before handoff, ask user: use Matt Pocock skills (`/wayfinder`, `/implement`), or pass beads context and go raw? Wait for answer.
 
 **What to pass — exactly this, nothing more:**
 
@@ -60,8 +60,8 @@ If not Meridian.IMR, STOP and report: "next-imr-item only runs in the Meridian.I
 
 > Assess slice, then pick:
 > - Small + unambiguous, startable now (1–2 components, clear acceptance) → `/implement`.
-> - Large / multi-component / unresolved design question / ambiguous → `/grill-with-docs` (grilling + `/domain-modeling`, produces ADRs + glossary), then `/implement`.
-> - Unsure → `/grill-with-docs`.
+> - Large / multi-component / unresolved design question / ambiguous → `/wayfinder` (charts the work as a shared map of investigation tickets, resolving design decisions one at a time until the route is clear), then `/implement`.
+> - Unsure → `/wayfinder`.
 
 **Handoff mechanics:**
 
