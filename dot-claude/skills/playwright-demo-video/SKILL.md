@@ -1,6 +1,7 @@
 ---
 name: playwright-demo-video
-description: Record a clean, human-watchable walkthrough video of a web app with Playwright — sharp full-frame framing, paced actions, action highlights, and custom bottom-center captions, converted to a Slack/Safari-safe mp4. Use when asked to make a demo/walkthrough/screen-recording video of a feature or flow. Triggers on "demo video", "walkthrough video", "record a demo", "playwright video".
+description: Record a clean, human-watchable walkthrough video of a web app with Playwright. Use when asked to make a demo/walkthrough/screen-recording video of a feature or flow. Triggers on "demo video", "playwright video".
+disable-model-invocation: true
 ---
 
 # Playwright Demo Video
@@ -15,11 +16,12 @@ Record ONE continuous, narrated-by-captions walkthrough clip of a real running a
 
 ## 1. Separate demo config
 
-Keep demo recording OUT of the CI config. New file `playwright.demo.config.ts` beside the app's `playwright.config.ts`, and add `testIgnore: /.*\.demo\.spec\.ts/` to the CI config so demo specs never run in CI.
+Keep demo recording OUT of the CI config. New file `playwright.demo.config.ts` beside the app's `playwright.config.ts`, and add `testIgnore: /.*\.demo\.spec\.ts/` to the CI config so demo specs never run in CI. Use 1080p — it gives the app enough real estate to lay out naturally; 720p is fine for smaller UIs.
 
 ```ts
 import { defineConfig, devices } from '@playwright/test';
 
+// Fallback port is a footgun on dynamic-port stacks — a stale/wrong port silently breaks OIDC auth. Set BASE_URL to the real running port.
 const baseURL = process.env['BASE_URL'] ?? 'http://localhost:4500';
 
 export default defineConfig({
@@ -34,8 +36,8 @@ export default defineConfig({
     baseURL,
     ignoreHTTPSErrors: true,
 
-    // Framing: viewport === video.size for 1:1 pixel mapping (sharp, no zoom/letterbox).
-    // deviceScaleFactor stays 1 — with a fixed video size, 2x renders a zoomed, soft frame.
+    // Framing: viewport === video.size (see gotchas).
+    // deviceScaleFactor stays 1 (see gotchas).
     viewport: { width: 1920, height: 1080 },
     colorScheme: 'light',
     reducedMotion: 'reduce',
@@ -59,9 +61,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      // Spread devices FIRST, then re-assert framing: devices['Desktop Chrome'] carries its own
-      // viewport (1280x720) that would otherwise override use.viewport and leave the page filling
-      // only the top-left of the 1920x1080 canvas (gray elsewhere).
+      // Spread devices FIRST, then re-assert framing (see gotchas — spread re-injects a 1280x720 viewport).
       use: { ...devices['Desktop Chrome'], viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 },
     },
   ],
@@ -73,15 +73,14 @@ export default defineConfig({
 - **Letterbox / gray bars:** default video scales the viewport into 800x800. Fix — set `video.size === viewport`.
 - **Zoomed + fuzzy:** `deviceScaleFactor: 2` with a fixed video size renders at 2x then downscales soft. Fix — keep `deviceScaleFactor: 1`.
 - **Content in top-left, rest gray:** `...devices['Desktop Chrome']` re-injects its own 1280x720 viewport AFTER your `use.viewport`. Fix — re-assert `viewport` + `deviceScaleFactor` in the project `use` AFTER the spread (see config above).
-- **1080p** gives the app enough real estate to lay out naturally; 720p is fine for smaller UIs.
 
 ### Captions: native vs custom
 
-`video.show.test` (level `file|title|step`) burns the step title on-screen, BUT only at fixed corners/edges (`top`/`bottom`/`top-left`...). No custom offset. For bottom-center ~¼ up (the placement that reads best), DROP `show.test` and draw a custom overlay from the spec (§2). Keep `show.actions` for click outlines either way.
+`video.show.test` (level `file|title|step`) burns the step title on-screen, BUT only at fixed corners/edges (`top`/`bottom`/`top-left`...). No custom offset. For a bottom-center caption (the placement that reads best), DROP `show.test` and draw a custom overlay from the spec (§2). Keep `show.actions` for click outlines either way.
 
 ## 2. The demo spec
 
-One `*.demo.spec.ts` = one continuous flow. Every `test.step()` title is written for the VIEWER and set as the on-screen caption via `setCaption` (first line of each step).
+One `*.demo.spec.ts` = one continuous flow. Every `test.step()` title is written for the VIEWER and set as the on-screen caption via `setCaption` (see spec rules below).
 
 Standard helpers (adapt selectors to the app):
 
@@ -89,7 +88,7 @@ Standard helpers (adapt selectors to the app):
 import { test, expect, type Page } from '@playwright/test';
 
 // Smooth-scroll the SPA and hide the jumpy scrollbar so motion reads well on video.
-// Client-side routing keeps this document, so it persists across in-app navigation.
+// Persists across in-app nav (see spec rules below).
 async function applyDemoStyles(page: Page) {
   await page.addStyleTag({
     content: `
@@ -100,9 +99,9 @@ async function applyDemoStyles(page: Page) {
   });
 }
 
-// Custom step caption: bottom-center pill ~1/4 up from the bottom (a spot native
-// video.show.test can't reach). Drawn on document.body (outside the app root, so route
-// changes don't remove it); self-heals if a full page nav resets it.
+// Custom step caption: bottom-center pill (placement rationale in §1). Drawn on
+// document.body (outside the app root); see spec rules below for persistence/self-heal
+// behavior.
 async function setCaption(page: Page, text: string) {
   await page.evaluate((label) => {
     const id = 'demo-caption';
@@ -146,7 +145,7 @@ test('<viewer-facing title of the whole flow>', async ({ page }) => {
   });
 
   await test.step('<next caption>', async () => {
-    await setCaption(page, '<next caption>');   // first line of every step
+    await setCaption(page, '<next caption>');
     // ...one meaningful interaction...
     await expect(/* something the viewer should notice landed */).toBeVisible();
     await page.waitForTimeout(800);
@@ -159,7 +158,7 @@ test('<viewer-facing title of the whole flow>', async ({ page }) => {
 
 - **`setCaption(page, '<title>')` as the FIRST line of each step**, text = the step title. Reads as narration.
 - **Captions persist across client-side nav** (same document). After a full page reload the overlay is gone; `setCaption` re-creates it — so just call it again in the next step.
-- **Pace with `slowMo` (config) + dwell `waitForTimeout` only at semantic boundaries** (after a page settles, after a value lands, to hold the final state). Don't sprinkle waits mid-step.
+- **Pace with `slowMo` (config) + dwell `waitForTimeout` only at semantic boundaries** (after a page settles, after a value lands, to hold the final state).
 - **Assert what the viewer should see** (`expect(...).toBeVisible()`) — doubles as a settle point and proves the flow really worked.
 - **Scroll tours:** `heading.scrollIntoViewIfNeeded()` + `waitForTimeout(~650)` per section pans the record at a readable pace.
 - **Strict-mode duplicates:** a control rendered twice (e.g. header + sticky footer) needs `.first()`.
@@ -167,11 +166,14 @@ test('<viewer-facing title of the whole flow>', async ({ page }) => {
 
 ## 3. Record
 
+`rm -rf test-results` first for a clean run:
+
 ```bash
+rm -rf test-results
 BASE_URL=http://localhost:<port> pnpm exec playwright test --config=playwright.demo.config.ts
 ```
 
-Clip lands at `test-results/<...>/video.webm`. `rm -rf test-results` first for a clean run.
+Clip lands at `test-results/<...>/video.webm`.
 
 ## 4. Convert to portable mp4
 
