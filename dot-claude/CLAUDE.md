@@ -33,6 +33,7 @@ Match found → use existing copy, no clone. No match → clone to temp. Persona
 
 ## Planning
 
+- **Vertical slice**: an item of work cutting a narrow but COMPLETE path through every layer (UI → API → domain → data, plus tests) that independently works end-to-end. Not a horizontal layer ("all the endpoints") nor a partial stub.
 - Never use plan mode (`EnterPlanMode`). Any creative/feature/design work → reach for Matt Pocock's skills (e.g. `/wayfinder`, `/grill-with-docs`) instead, before implementation.
 - Confirm decisions with me before acting: surface the choice, recommend, wait for my explicit answer.
 
