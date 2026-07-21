@@ -41,6 +41,11 @@ Match found → use existing copy, no clone. No match → clone to temp. Persona
 
 - When kicking off a subagent or other agent (Agent tool, orca, etc.), don't inline context it already inherits or can discover: memory/instruction files (`CLAUDE.md`, `CLAUDE.local.md`, skills) or ticket content (bd/JIRA description, design/spec field). Point to it — "implement bead `<id>`, spec in its `design` field" — and let the agent read it.
 - Pass only the non-discoverable: the task, decisions/constraints not in the ticket, and pointers. Duplication just clutters the agent's window.
+- **Explore subagent model rubric** — pick the Explore subagent's model explicitly via the Agent tool `model` override:
+  - **haiku** — default for cheap locate work: "where is X", "what calls Y", "list uses of Z", map a small/familiar dir. Pure grep/glob/read, no judgment.
+  - **sonnet** — when the search needs judgment: which of many files matter, tracing data flow across modules, unfamiliar/large codebase, or the answer depends on conventions the built-in can't see.
+  - **opus** — rare; only when the exploration itself requires hard reasoning, not just finding.
+  - Under-exploration is the silent failure (incomplete answer that looks complete) — when unsure between two tiers, pick the higher.
 
 ## Engineering Standards
 
