@@ -15,10 +15,11 @@
 #   - **/CONTEXT.md                 (personal per-context glossaries under src/,
 #                                     gitignored; multi-context repo layout)
 #
-# It also overwrites the tracked CLAUDE.md with a personal compressed copy
+# It also symlinks the tracked CLAUDE.md to the personal compressed copy
 # (docs/agents/CLAUDE.compressed.md, git-excluded) when that copy exists, and
-# marks CLAUDE.md skip-worktree so the overwrite never shows up in git status
-# or gets committed.
+# marks CLAUDE.md skip-worktree so the symlink never shows up in git status
+# or gets committed. The symlink keeps root CLAUDE.md live-synced to the source
+# of truth (edit the compressed copy, root follows) in every worktree.
 #
 # Usage:
 #   - Run as a Superset post-create setup script, or
@@ -58,36 +59,39 @@ else
 fi
 worktree_root="$(git rev-parse --show-toplevel)"
 
-# Overwrite the tracked CLAUDE.md with the personal compressed copy, if present.
-# Uses a real copy (not a symlink) + skip-worktree so the tree stays clean and
-# the change is never staged/committed. Runs in BOTH the main worktree and
-# linked worktrees (the compressed copy should apply everywhere).
+# Symlink the tracked CLAUDE.md to the personal compressed copy, if present.
+# A relative symlink (+ skip-worktree) keeps root live-synced to the source of
+# truth while the tree stays clean and the change is never staged/committed.
+# The relative target resolves through the docs/agents symlink in linked
+# worktrees too. Runs in BOTH the main worktree and linked worktrees.
 overwrite_claude_md() {
   local rel="CLAUDE.md"
-  local source_file="$main_root/docs/agents/CLAUDE.compressed.md"
+  local link_target="docs/agents/CLAUDE.compressed.md"
+  local source_file="$main_root/$link_target"
   local target_file="$worktree_root/$rel"
 
   # Callers that run inside a diff-sensitive worktree (e.g. the no-mistakes
-  # gate, which reviews/documents the tree) can suppress the CLAUDE.md overwrite
-  # so the copied-in personal file never perturbs their diffing.
+  # gate, which reviews/documents the tree) can suppress the CLAUDE.md link
+  # so the personal file never perturbs their diffing.
   if [ -n "${NM_SKIP_CLAUDE_MD:-}" ]; then
-    echo "link-claude-settings: NM_SKIP_CLAUDE_MD set, skipping CLAUDE.md overwrite." >&2
+    echo "link-claude-settings: NM_SKIP_CLAUDE_MD set, skipping CLAUDE.md symlink." >&2
     return 0
   fi
 
   if [ ! -e "$source_file" ]; then
-    echo "link-claude-settings: no compressed CLAUDE.md ($source_file), skipping overwrite." >&2
+    echo "link-claude-settings: no compressed CLAUDE.md ($source_file), skipping link." >&2
     return 0
   fi
 
-  cp -f "$source_file" "$target_file"
+  # Relative symlink so it resolves in every worktree (main dir + linked symlink).
+  ln -sfn "$link_target" "$target_file"
 
-  # Tell git to ignore local modifications to the tracked CLAUDE.md.
+  # Tell git to ignore the symlinked-over tracked CLAUDE.md.
   if git -C "$worktree_root" ls-files --error-unmatch "$rel" >/dev/null 2>&1; then
     git -C "$worktree_root" update-index --skip-worktree "$rel" 2>/dev/null || true
   fi
 
-  echo "link-claude-settings: overwrote $target_file with compressed copy (skip-worktree)"
+  echo "link-claude-settings: symlinked $target_file -> $link_target (skip-worktree)"
 }
 
 overwrite_claude_md
