@@ -8,6 +8,8 @@ disable-model-invocation: true
 
 Record ONE continuous, narrated-by-captions walkthrough clip of a real running app — a clip a human watches, not failure forensics. Uses Playwright's native recording (>= 1.59 for in-video annotations), a custom caption overlay, and ffmpeg for a portable mp4.
 
+**Prefer the dual-mode spec** (§2): ONE `*.spec.ts` that runs as a fast CI e2e gate by default AND, under a `DEMO=1` env flag flipped by the demo config, becomes the paced/captioned/recorded walkthrough. Same steps, same assertions — the demo can't drift from the tested behavior, and you maintain one file instead of two. A demo-only `*.demo.spec.ts` is the fallback when the flow isn't worth gating in CI (throwaway marketing clip, a flow the suite already covers elsewhere).
+
 ## 0. Prereqs
 
 - **Playwright >= 1.59** for `video.show` (action highlights). Check: `pnpm exec playwright --version` (or `npx`). Below 1.59 → upgrade (`pnpm add -D @playwright/test@latest` in the right workspace package; `npm i -D` for npm repos — pnpm workspaces reject `npm` with `EUNSUPPORTEDPROTOCOL`). Install matching browser: `pnpm exec playwright install chromium`.
@@ -16,17 +18,23 @@ Record ONE continuous, narrated-by-captions walkthrough clip of a real running a
 
 ## 1. Separate demo config
 
-Keep demo recording OUT of the CI config. New file `playwright.demo.config.ts` beside the app's `playwright.config.ts`, and add `testIgnore: /.*\.demo\.spec\.ts/` to the CI config so demo specs never run in CI. Use 1080p — it gives the app enough real estate to lay out naturally; 720p is fine for smaller UIs.
+Recording lives in its OWN config, `playwright.demo.config.ts`, beside the app's `playwright.config.ts` — so the CI config stays lean and the recording knobs (slowMo, 1080p video, action highlights) never touch the gate. Use 1080p — it gives the app enough real estate to lay out naturally; 720p is fine for smaller UIs.
+
+**Dual-mode wiring.** The demo config sets `process.env['DEMO'] = '1'` at module top (before `defineConfig`, so worker forks inherit it) and `testMatch`es the shared spec. The CI config needs NO change — the shared `*.spec.ts` already lives in its `testDir`, and with `DEMO` unset the spec's caption/dwell/style helpers no-op (§2), so it runs as a normal fast gate. (Fallback demo-only path: name the file `*.demo.spec.ts`, `testMatch` it here, and add `testIgnore: /.*\.demo\.spec\.ts/` to the CI config so it never runs there.)
 
 ```ts
 import { defineConfig, devices } from '@playwright/test';
+
+// Flip the shared spec into demo mode: captions + paced dwells on. Set BEFORE defineConfig so the
+// runner's worker forks inherit it. The CI config leaves DEMO unset → same spec runs at full speed.
+process.env['DEMO'] = '1';
 
 // Fallback port is a footgun on dynamic-port stacks — a stale/wrong port silently breaks OIDC auth. Set BASE_URL to the real running port.
 const baseURL = process.env['BASE_URL'] ?? 'http://localhost:4500';
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: /.*\.demo\.spec\.ts/,
+  testMatch: /my-flow\.spec\.ts/,   // the shared dual-mode spec (or /.*\.demo\.spec\.ts/ for the demo-only fallback)
   fullyParallel: false,
   workers: 1,
   retries: 0,
@@ -78,18 +86,30 @@ export default defineConfig({
 
 `video.show.test` (level `file|title|step`) burns the step title on-screen, BUT only at fixed corners/edges (`top`/`bottom`/`top-left`...). No custom offset. For a bottom-center caption (the placement that reads best), DROP `show.test` and draw a custom overlay from the spec (§2). Keep `show.actions` for click outlines either way.
 
-## 2. The demo spec
+## 2. The spec (dual-mode)
 
-One `*.demo.spec.ts` = one continuous flow. Every `test.step()` title is written for the VIEWER and set as the on-screen caption via `setCaption` (see spec rules below).
+One spec = one continuous flow. Every `test.step()` title is written for the VIEWER and set as the on-screen caption via `caption` (see spec rules below).
+
+**The whole demo layer is gated on a `DEMO` flag** so the same file is a real CI e2e test when `DEMO` is unset. Read it once at module top; every demo-only helper (`caption`, `dwell`, `applyDemoStyles`) returns early without it. The result: identical steps and assertions in both modes — CI runs them fast and headless, the demo config paces + captions + records them.
 
 Standard helpers (adapt selectors to the app):
 
 ```ts
 import { test, expect, type Page } from '@playwright/test';
 
-// Smooth-scroll the SPA and hide the jumpy scrollbar so motion reads well on video.
-// Persists across in-app nav (see spec rules below).
+// Set to '1' by playwright.demo.config.ts. Unset in CI → every helper below no-ops, so the same
+// spec runs as a normal fast e2e gate with the same assertions.
+const DEMO = !!process.env['DEMO'];
+
+// Demo-only pause at a semantic boundary (page settled, value landed, hold the final frame).
+async function dwell(page: Page, ms: number) {
+  if (DEMO) await page.waitForTimeout(ms);
+}
+
+// Demo-only: smooth-scroll the SPA and hide the jumpy scrollbar so motion reads well on video.
+// Persists across in-app nav (see spec rules below). No-op in CI — no reason to slow its scrolling.
 async function applyDemoStyles(page: Page) {
+  if (!DEMO) return;
   await page.addStyleTag({
     content: `
       html { scroll-behavior: smooth; }
@@ -99,10 +119,11 @@ async function applyDemoStyles(page: Page) {
   });
 }
 
-// Custom step caption: bottom-center pill (placement rationale in §1). Drawn on
+// Demo-only step caption: bottom-center pill (placement rationale in §1). Drawn on
 // document.body (outside the app root); see spec rules below for persistence/self-heal
-// behavior.
-async function setCaption(page: Page, text: string) {
+// behavior. No-op in CI.
+async function caption(page: Page, text: string) {
+  if (!DEMO) return;
   await page.evaluate((label) => {
     const id = 'demo-caption';
     let el = document.getElementById(id);
@@ -135,32 +156,52 @@ async function setCaption(page: Page, text: string) {
 Structure each spec:
 
 ```ts
-test('<viewer-facing title of the whole flow>', async ({ page }) => {
+test('<flow title> [Spec: <ticket-id>]', async ({ page }) => {
+  const originalValue: string | null = null;   // for the restore-in-finally (see rules)
+
   await test.step('<first caption>', async () => {
     await page.goto('/');
     // ...login / setup...
-    await applyDemoStyles(page);          // once, after first real page loads
-    await setCaption(page, '<first caption>');
-    await page.waitForTimeout(1200);      // dwell at a semantic boundary
+    await applyDemoStyles(page);          // once, after first real page loads (no-op in CI)
+    await caption(page, '<first caption>');
+    await dwell(page, 1200);              // dwell at a semantic boundary (no-op in CI)
   });
 
-  await test.step('<next caption>', async () => {
-    await setCaption(page, '<next caption>');
-    // ...one meaningful interaction...
+  await test.step('<read-only step>', async () => {
+    await caption(page, '<read-only step>');
+    // ...navigate / tour...
     await expect(/* something the viewer should notice landed */).toBeVisible();
-    await page.waitForTimeout(800);
+    await dwell(page, 800);
   });
-  // ...more steps... end by holding the final state (waitForTimeout(~1800)).
+
+  // Steps that MUTATE data: wrap in try/finally so CI restores the original value and stays
+  // idempotent across repeated runs. Skip the restore under DEMO — the edit-back would tail the
+  // recording unnarrated, and one synthetic value overwritten next run is harmless.
+  try {
+    await test.step('<mutating step>', async () => {
+      await caption(page, '<mutating step>');
+      // originalValue = await field.inputValue();  // capture before editing
+      // ...edit + save...
+      await expect(/* the change is visible / a success toast */).toBeVisible();
+      await dwell(page, 1800);            // hold the final frame
+    });
+  } finally {
+    if (!DEMO && originalValue !== null) {
+      // ...restore originalValue...
+    }
+  }
 });
 ```
 
 ### Spec rules
 
-- **`setCaption(page, '<title>')` as the FIRST line of each step**, text = the step title. Reads as narration.
-- **Captions persist across client-side nav** (same document). After a full page reload the overlay is gone; `setCaption` re-creates it — so just call it again in the next step.
-- **Pace with `slowMo` (config) + dwell `waitForTimeout` only at semantic boundaries** (after a page settles, after a value lands, to hold the final state).
-- **Assert what the viewer should see** (`expect(...).toBeVisible()`) — doubles as a settle point and proves the flow really worked.
-- **Scroll tours:** `heading.scrollIntoViewIfNeeded()` + `waitForTimeout(~650)` per section pans the record at a readable pace.
+- **`caption(page, '<title>')` as the FIRST line of each step**, text = the step title. Reads as narration; no-op in CI.
+- **Captions persist across client-side nav** (same document). After a full page reload the overlay is gone; `caption` re-creates it — so just call it again in the next step.
+- **Pace with `slowMo` (config) + `dwell` only at semantic boundaries** (after a page settles, after a value lands, to hold the final state). `dwell` is the ONLY pacing primitive — never raw `page.waitForTimeout` in a step, or CI slows down too.
+- **Assert what the viewer should see** (`expect(...).toBeVisible()`) — doubles as a settle point AND is the real e2e assertion when `DEMO` is unset. Assert in every step, not just the demo-worthy ones.
+- **Mutations restore in `finally`, gated `if (!DEMO)`** — keeps the CI gate idempotent (seed data un-drifted) without tailing the recording with an un-narrated edit-back.
+- **Keep synthetic values under any field length cap** (`maxLength`) — an over-long value is silently truncated on save, so the read-back assertion fails against the un-truncated string. Short + unique (e.g. `` `E2E${Date.now() % 1_000_000}` ``).
+- **Scroll tours:** `heading.scrollIntoViewIfNeeded()` + `dwell(page, ~650)` per section pans the record at a readable pace.
 - **Strict-mode duplicates:** a control rendered twice (e.g. header + sticky footer) needs `.first()`.
 - Waits on dynamic-port stacks: wait on visible UI (datatable rows, headings), never hardcoded ports/URLs.
 
@@ -190,4 +231,4 @@ Use `/usr/bin/find` (not a shell `find` that a proxy may mangle). Lower `-crf` =
 
 ## 5. Iterate on quality
 
-After the first record, WATCH it (or have the user watch). Common fixes, in order of how often they bite: framing (§1 gotchas) → caption placement (`bottom` % in `setCaption`) → pacing (`slowMo` + dwell values) → too fast/slow scroll tours. Re-record after each change; framing bugs are config-only, pacing/captions are spec-only.
+After the first record, WATCH it (or have the user watch). Common fixes, in order of how often they bite: framing (§1 gotchas) → caption placement (`bottom` % in `caption`) → pacing (`slowMo` + dwell values) → too fast/slow scroll tours. Re-record after each change; framing bugs are config-only, pacing/captions are spec-only.
