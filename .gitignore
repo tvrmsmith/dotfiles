@@ -2,6 +2,9 @@
 settings.local.json
 setup-vertex-credentials.sh
 
+# lavish skill generates throwaway reviewable HTML artifacts here — not dotfiles.
+.lavish/
+
 
 
 # Warp worktrees live under ~/.warp/worktrees/<repo>/<branch>/ and contain
