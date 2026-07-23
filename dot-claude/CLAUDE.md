@@ -28,7 +28,6 @@ Match found → use existing copy, no clone. No match → clone to temp. Persona
 
 ## Communication Style
 
-- Always use `caveman` skill in **lite** mode — no filler, no hedging, tight but professional
 - Spec and plan reviews → present via `lavish` skill (rich reviewable HTML artifact) by default
   - Delegate the full lavish flow to a background subagent to keep bulky HTML out of main context; it relays only feedback summaries + decisions. Keep in main thread only when feedback drives immediate main-thread edits.
 
