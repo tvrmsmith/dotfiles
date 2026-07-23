@@ -1,6 +1,6 @@
 ---
 name: contract-approval
-description: Gates and tracks approval of API/message contracts that cross a service or independent-deploy boundary. Use before implementing or modifying such a contract, and when a code review needs to know whether a contract was already approved. Triggers on "contract approval", "approve this contract", cross-service API/schema work.
+description: Gates and tracks approval of API/message contracts that cross a service or independent-deploy boundary. Use before implementing or modifying such a contract, and when a code review needs to know whether a contract was already approved.
 ---
 # Contract Approval
 
@@ -15,13 +15,13 @@ Gate these:
 - **Kafka / event schemas** consumed by other services
 - **published/versioned APIs** consumed outside owning service
 
-Do **not** gate internal seams changed within one service/PR — module interfaces, private seams, internal DTOs with no external consumer.
+Gate only contracts with an external consumer; internal seams changed within one service/PR — module interfaces, private seams, internal DTOs — stay ungated.
 
 ## When to run the gate
 
 - Before **implementing or modifying** cross-boundary contract.
 - Prefer fold contract approval into **spec review** when spec exists — surface contracts as part of spec, not separate step. Spec not cover contract → define + approve before building past it.
-- During **code review**, check whether contract already approved (case that fails without durable tracking).
+- During **code review**, check whether contract already approved.
 
 ## Contract identity
 
@@ -40,7 +40,7 @@ Stored contract = **native artifact**, as YAML:
 - **APIs** → OpenAPI (YAML)
 - **JSON messaging** → JSON Schema (YAML — JSON Schema tooling accepts YAML since YAML superset of JSON)
 
-YAML everywhere, no per-type branching. Stored artifact *is* the contract — readable, usable, diffable — not fingerprint of it. For code-generated specs code is source; render/derive its YAML for record rather than hand-editing generated output.
+Stored artifact *is* the contract — usable — not fingerprint of it. For code-generated specs code is source; render/derive its YAML for record rather than hand-editing generated output.
 
 ## Storage — bd primary, `.contracts` fallback
 
@@ -50,11 +50,7 @@ Record shape identical in both — one JSON object:
 {"identity":"orders-api POST /orders","format":"openapi","contract":"<yaml text>","approvedAt":"2026-07-10","issue":"<id>"}
 ```
 
-`format` is `openapi` or `json-schema`. `contract` is YAML artifact as JSON string (newlines escaped). Concrete filled record:
-
-```json
-{"identity":"orders-api POST /orders","format":"openapi","contract":"openapi: 3.1.0\npaths:\n  /orders:\n    post:\n      requestBody:\n        content:\n          application/json:\n            schema:\n              type: object\n              required: [patientId, items]\n              properties:\n                patientId: {type: string, format: uuid}\n                items: {type: array, minItems: 1}\n","approvedAt":"2026-07-10","issue":"emr-1234"}
-```
+`format` is `openapi` or `json-schema`. `contract` is YAML artifact as JSON string (newlines escaped). Recording your first contract → see `EXAMPLE.md` for a fully filled record.
 
 **Primary: `bd`** (where repo has beads) — syncs via git refs so teammates and other machines see it, worktree-safe. Store JSON record as decision body:
 
@@ -75,7 +71,7 @@ jq -r 'select(.identity=="orders-api POST /orders").contract' "$LEDGER"
 printf '%s\n' '<json record>' >> "$LEDGER"
 ```
 
-Same JSON record, same `jq` parsing in both — only container differs. Fallback ledger local-only (not committed/pushed).
+Fallback ledger local-only (not committed/pushed).
 
 ## Gate flow
 
@@ -83,7 +79,7 @@ Same JSON record, same `jq` parsing in both — only container differs. Fallback
 2. Look it up (bd, else JSONL fallback).
    - **Found** → **drift check**: derive current contract's YAML and diff against stored `contract`. Equal → proceed. Different → built contract drifted from what approved; show diff and re-surface for approval.
    - **Not found** → gate: present contract, get approval, record it, then proceed.
-3. **Modifying** already-approved contract → re-approve (you know you changing it because you editing the contract).
+3. **Modifying** already-approved contract → re-approve.
 
 ## Presenting the contract for approval
 
