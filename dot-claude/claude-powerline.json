@@ -27,7 +27,7 @@
             "enabled": true,
             "showPercentageOnly": false,
             "displayStyle": "text",
-            "autocompactBuffer": 70000
+            "autocompactBuffer": 40000
           },
           "metrics": {
             "enabled": false,
