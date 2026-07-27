@@ -43,7 +43,6 @@
       "CronList",
       "EnterWorktree",
       "ExitWorktree",
-      "SendMessage",
       "Bash(sudo *)",
       "Bash(rm -rf /)",
       "Bash(rm -rf ~)",
@@ -459,6 +458,9 @@
     }
   },
   "otelHeadersHelper": "python3 /Users/trevor.smith/.claude/plugins/cache/wellsky-plugins/otel-telemetry/1.3.0/scripts/otel-token-helper.py",
+  "disableArtifact": true,
+  "disableRemoteControl": true,
+  "disableClaudeAiConnectors": true,
   "syntaxHighlightingDisabled": false,
   "alwaysThinkingEnabled": true,
   "effortLevel": "medium",
