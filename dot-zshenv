@@ -7,12 +7,18 @@ export EZA_CONFIG_DIR="$XDG_DATA_HOME/eza"
 export DEV_PERSONAL="$HOME/dev/personal"
 
 export GIT_TOKEN="op://Employee/GitHub Personal Access Token/token"
-export PATH="$HOME/.local/bin:$HOME/.dotnet/tools:$DEV_PERSONAL/ralph/scripts:$PATH"
+# bin-claude-shim precedes .local/bin so its `claude` shim shadows the managed
+# symlink and routes terminal-started sessions through claude-launcher.
+export PATH="$HOME/.local/bin-claude-shim:$HOME/.local/bin:$HOME/.dotnet/tools:$DEV_PERSONAL/ralph/scripts:$PATH"
 
-# Vertex config for Claude Code lives in ~/.claude/settings.json (global default)
-# and per-repo .claude/settings.local.json overrides. Not exported here so the
-# global env does not shadow per-repo project selection. pi/omp set their own
-# GOOGLE_CLOUD_PROJECT/LOCATION inline (see _OMP_VERTEX in .zshrc).
+# Vertex config for Claude Code is machine-local: ~/.zshenv.local (sourced at
+# the bottom of this file, untracked) sets CLAUDE_CODE_USE_VERTEX and friends on
+# work machines. It can't live in ~/.claude/settings.json any more — that file
+# is now a symlink into this repo, shared with the personal machine, which must
+# not use Vertex. Per-repo .claude/settings.local.json still overrides the
+# project: a settings `env` block outranks a shell export.
+# pi/omp set their own GOOGLE_CLOUD_PROJECT/LOCATION inline (see _OMP_VERTEX in
+# .zshrc).
 # NOTE: do NOT export GOOGLE_APPLICATION_CREDENTIALS to the default ADC path —
 # google-auth-library finds that path automatically, and setting it makes
 # `gcloud auth application-default login` prompt for confirmation every run.

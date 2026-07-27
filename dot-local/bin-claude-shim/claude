@@ -1,0 +1,15 @@
+#!/bin/sh
+# PATH shim so a bare `claude` typed in a terminal starts through the launcher.
+#
+# CLAUDE_CODE_PROCESS_WRAPPER only covers processes Claude Code starts from its
+# own binary; a session you launch yourself "runs however you invoked it". The
+# documented fix is a script named `claude` earlier on PATH that calls the
+# launcher with the real binary — never a replacement for the installer-managed
+# ~/.local/bin/claude symlink, which would put the install into an externally
+# managed state (breaks auto-update and old-version cleanup, and /doctor
+# reports it).
+#
+# This dir must precede ~/.local/bin on PATH; see dot-zshenv. Self-spawns
+# resolve the binary by absolute path and never consult PATH, so the shim and
+# the process wrapper cannot stack.
+exec "$HOME/.local/bin/claude-launcher" "$HOME/.local/bin/claude" "$@"
