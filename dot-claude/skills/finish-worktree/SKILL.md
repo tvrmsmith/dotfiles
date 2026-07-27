@@ -60,7 +60,7 @@ Judgment rules the `help[]` output won't teach you:
   rebases — leave both to it.
 
 **Handoff:** the target outcome is `checks-passed` (validated, CI green, not yet
-merged — merging is stages 3–4's job). Proceed to stage 2 reusing the PR (URL is
+merged — merging happens after stage 3). Proceed to stage 2 reusing the PR (URL is
 in the `help` line). A `failed`/`cancelled` outcome or an `error:` is a stage
 failure. If you hit a gate or error the `help[]` lines don't resolve, read
 `~/.claude/skills/no-mistakes/SKILL.md` for the full contract before proceeding.
@@ -75,17 +75,12 @@ before advancing past open review findings.
 
 Once stage 2 completes, remind the user that this is where they normally review
 the code, present the PR URL, and **wait for them to prompt you to continue.**
-Merge only once they do.
+Merge only once they do, however the repo merges (merge queue, `gh pr merge`,
+or the user merging it themselves).
 
-## 4. Sequential CI-gated merge
+## 4. Close the beads issue
 
-Merge the PR via the `sequential-ci-gated-pr-merge` skill as a single-PR train
-(pass the one PR from stage 1). Honor its own stop conditions (conflict, failed
-check, re-sync cap). Confirm the PR is `MERGED` before stage 5.
-
-## 5. Close the beads issue
-
-Once the merge is confirmed, close the backing issue:
+Once the PR is `MERGED` (`gh pr view <#> --json state`), close the backing issue:
 
 ```bash
 bd close <id> --reason "Merged PR <#/url>"
