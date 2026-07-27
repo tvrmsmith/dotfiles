@@ -144,7 +144,15 @@
     "workflow:handoff": "user-invocable-only",
     "security-screener:security-scan": "user-invocable-only",
     "unit-gen:generate-tests": "user-invocable-only",
-    "unit-gen:generate-tests-from-pr": "user-invocable-only"
+    "unit-gen:generate-tests-from-pr": "user-invocable-only",
+    "run": "user-invocable-only",
+    "review": "user-invocable-only",
+    "code-review": "user-invocable-only",
+    "security-review": "user-invocable-only",
+    "simplify": "user-invocable-only",
+    "dataviz": "user-invocable-only",
+    "loop": "user-invocable-only",
+    "fewer-permission-prompts": "user-invocable-only"
   },
   "hooks": {
     "PermissionRequest": [
