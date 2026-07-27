@@ -142,17 +142,22 @@ alias claude-patch='$DEV_PERSONAL/dotfiles/extras/claude-code-patch.sh'
 # claude-launcher is an executable at dot-local/bin/claude-launcher
 # (~/.local/bin/claude-launcher, on PATH) so PATH-scanning tools (e.g. Superset
 # custom terminal agents) can discover it. It applies the skillOverrides patch
-# and HONORS permission prompts. It is the CLAUDE_CODE_PROCESS_WRAPPER target
-# (below), so Claude's own self-spawns (agent view, background service,
-# sub-sessions) route through it and keep prompting.
+# and HONORS permission prompts. Everything reaches Claude Code through it:
+#   - Claude's own self-spawns (background service, agent view sessions, agent
+#     teams panes, update relaunches), via the CLAUDE_CODE_PROCESS_WRAPPER
+#     setting in ~/.claude/settings.json
+#   - a bare `claude` typed here, via the dot-local/bin-claude-shim/claude PATH
+#     shim (the wrapper setting can't cover terminal-started sessions)
+#   - clc / clcwf below
 #
 # clc = interactive convenience: claude-launcher with permission prompts skipped.
 alias clc='claude-launcher --dangerously-skip-permissions'
 alias clca='clc agents'
 
-# Route every Claude Code self-spawn through the launcher. Absolute path required
-# — the launcher is resolved by stat/X_OK, not via PATH.
-export CLAUDE_CODE_PROCESS_WRAPPER="$HOME/.local/bin/claude-launcher"
+# CLAUDE_CODE_PROCESS_WRAPPER lives in ~/.claude/settings.json's `env` block, not
+# here: the background service starts on demand, outlives this shell, and never
+# re-reads shell profiles, so a plain export leaves it unwrapped. A GUI-launched
+# session (ClaudeCode.app, IDE extension) never sources this file either.
 
 # Workflow tool stripped from context by default (smaller prompt).
 # clcwf = clc with Dynamic Workflows / ultracode re-enabled for the session.

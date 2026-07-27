@@ -1,33 +1,66 @@
 #!/usr/bin/env bash
 # claude-launcher — launch Claude Code with the skillOverrides patch applied.
 # Honors permission prompts (does NOT pass --dangerously-skip-permissions), so it
-# is safe as the CLAUDE_CODE_PROCESS_WRAPPER target: Claude self-spawns (agent
-# view, background service, sub-sessions) route through it and keep prompting.
+# is safe as the CLAUDE_CODE_PROCESS_WRAPPER target: Claude self-spawns (the
+# background service, agent view sessions, agent teams panes, update relaunches)
+# route through it and keep prompting.
 # For an interactive, permission-skipping session use the `clc` alias, which is
 # `claude-launcher --dangerously-skip-permissions`.
 #
 # Named as an executable (not a zsh alias) so PATH-scanning tools (e.g. Superset
 # custom terminal agents) can discover it.
+#
+# Three callers, two argv shapes:
+#   1. Claude self-spawn: `claude-launcher /abs/path/to/versions/X.Y.Z <argv...>`
+#   2. PATH shim (bin-claude-shim/claude): same shape, binary named explicitly
+#   3. Interactive `clc`: `claude-launcher --dangerously-skip-permissions ...`
+#      — no binary in argv, so this script supplies it.
+#
+# The launcher contract governs case 1 only: `exec "$@"` verbatim (no reordering,
+# absorbing, or prepending), no terminal output before the exec, and the exec
+# reached within ~3s (a cold background dispatch runs the launcher twice in
+# series). Cases 2 and 3 are user-initiated, so the slow, chatty patch is fine
+# there. CLAUDECODE — set in every Claude session's environment, absent in a
+# login shell — is what tells the cases apart; argv shape can't, since the shim
+# deliberately mimics a self-spawn.
 set -euo pipefail
 
-# Resolve this script's real path through the stow symlink (BSD readlink has no
-# -f), then derive repo root: dot-local/bin/claude-launcher -> repo root.
-src="${BASH_SOURCE[0]}"
-while [ -h "$src" ]; do
-  dir="$(cd -P "$(dirname "$src")" && pwd)"
-  src="$(readlink "$src")"
-  [[ $src != /* ]] && src="$dir/$src"
-done
-repo_root="$(cd -P "$(dirname "$src")/../.." && pwd)"
-patch="$repo_root/extras/claude-code-patch.sh"
+# The installer-managed symlink. Named by absolute path, never via PATH: the
+# shim that fronts this launcher is also called `claude` and sits earlier on
+# PATH, so resolving by name would recurse.
+managed_claude="$HOME/.local/bin/claude"
 
-# Patch is best-effort — mirror the alias's `;` (run claude even if patch fails).
-[ -x "$patch" ] && "$patch" || true
-
-# Workflow tool stripped from context by default; clcwf overrides to 0.
+# Workflow tool stripped from context by default; clcwf overrides to 0. Set on
+# every path — the contract allows adding environment variables, only dropping
+# inherited ones is forbidden.
 export CLAUDE_CODE_DISABLE_WORKFLOWS="${CLAUDE_CODE_DISABLE_WORKFLOWS:-1}"
 
-# Launcher contract for CLAUDE_CODE_PROCESS_WRAPPER: exec the real binary (do not
-# daemonize) and keep the wrapper env var set so re-spawns stay wrapped. `exec`
-# inherits the current environment, so the var passes through unchanged.
-exec claude "$@"
+# Normalize argv to `<claude binary> <its argv...>`, the shape exec needs.
+binary_given=0
+if [ $# -gt 0 ] && [ -x "$1" ]; then
+  case "$1" in
+    /*) binary_given=1 ;;
+  esac
+fi
+[ "$binary_given" -eq 1 ] || set -- "$managed_claude" "$@"
+
+# Patch only user-initiated launches. A self-spawn inherits CLAUDECODE from the
+# session that started it, and the interactive session at the root of that tree
+# already applied the patch.
+if [ -z "${CLAUDECODE:-}" ]; then
+  # Resolve this script's real path through the stow symlink (BSD readlink has
+  # no -f), then derive repo root: dot-local/bin/claude-launcher -> repo root.
+  src="${BASH_SOURCE[0]}"
+  while [ -h "$src" ]; do
+    dir="$(cd -P "$(dirname "$src")" && pwd)"
+    src="$(readlink "$src")"
+    [[ $src != /* ]] && src="$dir/$src"
+  done
+  repo_root="$(cd -P "$(dirname "$src")/../.." && pwd)"
+  patch="$repo_root/extras/claude-code-patch.sh"
+
+  # Best-effort — mirror the alias's `;` (run claude even if the patch fails).
+  [ -x "$patch" ] && "$patch" || true
+fi
+
+exec "$@"

@@ -2,28 +2,14 @@
   "skillListingMaxDescChars": 500,
   "skillListingBudgetFraction": 0.02,
   "env": {
+    "CLAUDE_CODE_PROCESS_WRAPPER": "/Users/trevor.smith/.local/bin/claude-launcher",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-5",
-    "ANTHROPIC_VERTEX_PROJECT_ID": "consolo-dev-vertex-wsky",
-    "CLAUDE_CODE_USE_VERTEX": "1",
-    "CLOUD_ML_REGION": "global",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-5",
     "SUPERSET_DEBUG_HOOKS": "1",
-    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
-    "OTEL_METRICS_EXPORTER": "otlp",
-    "OTEL_LOGS_EXPORTER": "otlp",
-    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
-    "OTEL_EXPORTER_OTLP_ENDPOINT": "https://claude-otel-collector.entanalytics-prod-app.prj.gcp.wellsky.io",
-    "OTEL_METRICS_INCLUDE_ACCOUNT_UUID": "true",
-    "OTEL_METRICS_INCLUDE_SESSION_ID": "true",
-    "OTEL_METRICS_INCLUDE_VERSION": "true",
-    "OTEL_LOG_USER_PROMPTS": "0",
-    "OTEL_LOG_TOOL_DETAILS": "0",
-    "OTEL_LOG_TOOL_CONTENT": "0",
-    "OTEL_RESOURCE_ATTRIBUTES": "user.email=trevor.smith@wellsky.com,billing.project_id=consolo-dev-vertex-wsky,default.region=global",
-    "CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS": "5000",
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "70",
+    "CLAUDE_CODE_SCROLL_SPEED": "2",
+    "CLAUDE_AFK_TIMEOUT_MS": "86400000",
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000",
-    "CLAUDE_CODE_SCROLL_SPEED": "3",
-    "CLAUDE_AFK_TIMEOUT_MS": "86400000"
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "80"
   },
   "permissions": {
     "allow": [
@@ -73,7 +59,6 @@
     ],
     "defaultMode": "default"
   },
-  "model": "claude-opus-4-8",
   "skillOverrides": {
     "no-mistakes": "user-invocable-only",
     "computer-use": "user-invocable-only",
@@ -163,7 +148,72 @@
     "unit-gen:generate-tests-from-pr": "user-invocable-only"
   },
   "hooks": {
-    "PreToolUse": [],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Read|Write|Edit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/nono-hook.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "rtk hook claude"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "matcher": "",
@@ -196,12 +246,76 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "bash ~/.claude/hooks/caveman-reminder.sh"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "TeammateIdle": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "timeout": 10
           }
         ]
       }
@@ -215,7 +329,9 @@
     "command": "mise exec node@25 -- claude-powerline --theme=tokyo-night --style=powerline"
   },
   "enabledPlugins": {
+    "architect@wellsky-plugins": false,
     "atlassian@claude-plugins-official": false,
+    "bug-fix@wellsky-plugins": false,
     "caveman@caveman": true,
     "chrome-devtools-mcp@chrome-devtools-plugins": false,
     "claude-code-setup@claude-plugins-official": false,
@@ -223,31 +339,7 @@
     "code-review@claude-plugins-official": false,
     "code-simplifier@claude-plugins-official": false,
     "commit-commands@claude-plugins-official": false,
-    "csharp-lsp@claude-plugins-official": false,
-    "hookify@claude-plugins-official": true,
-    "pr-review-toolkit@claude-plugins-official": true,
-    "ruby-lsp@claude-plugins-official": false,
-    "security-guidance@claude-plugins-official": true,
-    "security-screener@wellsky-plugins": true,
-    "shared@wellsky-plugins": true,
-    "skill-creator@claude-plugins-official": false,
-    "sourcegraph@claude-plugins-official": false,
-    "superpowers@claude-plugins-official": false,
-    "typescript-lsp@claude-plugins-official": false,
-    "unit-gen@wellsky-plugins": true,
-    "workflow@wellsky-plugins": true,
-    "zapier@claude-plugins-official": false,
-    "architect@wellsky-plugins": false,
-    "bug-fix@wellsky-plugins": false,
-    "iac-assistant@wellsky-plugins": false,
-    "otel-telemetry@wellsky-plugins": false,
-    "product-management@wellsky-plugins": false,
-    "ws-atlassian@wellsky-plugins": false,
-    "terraform-code-generation@hashicorp": false,
-    "terraform-module-generation@hashicorp": false,
-    "wsh-data@wellsky-home": false,
-    "wsh-infra@wellsky-home": false,
-    "dotnet@dotnet-agent-skills": false,
+    "csharp-lsp@claude-plugins-official": true,
     "dotnet-ai@dotnet-agent-skills": false,
     "dotnet-aspnet@dotnet-agent-skills": false,
     "dotnet-blazor@dotnet-agent-skills": false,
@@ -261,32 +353,40 @@
     "dotnet-test@dotnet-agent-skills": false,
     "dotnet-upgrade@dotnet-agent-skills": false,
     "dotnet11@dotnet-agent-skills": false,
+    "dotnet@dotnet-agent-skills": false,
+    "hookify@claude-plugins-official": true,
+    "iac-assistant@wellsky-plugins": false,
+    "mattpocock-skills@mattpocock-skills": true,
+    "otel-telemetry@wellsky-plugins": false,
+    "playwright@claude-plugins-official": false,
+    "pr-review-toolkit@claude-plugins-official": false,
+    "product-management@wellsky-plugins": false,
+    "ruby-lsp@claude-plugins-official": false,
+    "security-guidance@claude-plugins-official": true,
+    "security-screener@wellsky-plugins": true,
+    "shared@wellsky-plugins": true,
+    "skill-creator@claude-plugins-official": false,
+    "sourcegraph@claude-plugins-official": false,
+    "superpowers@claude-plugins-official": false,
+    "terraform-code-generation@hashicorp": false,
+    "terraform-module-generation@hashicorp": false,
     "terragrunt-skill@jfr992": false,
     "terrashark@terrashark": false,
+    "typescript-lsp@claude-plugins-official": false,
+    "unit-gen@wellsky-plugins": true,
     "warp@claude-code-warp": true,
-    "playwright@claude-plugins-official": false,
-    "mattpocock-skills@mattpocock-skills": true,
-    "wshp@wshp.claude-plugins": true
+    "workflow@wellsky-plugins": true,
+    "ws-atlassian@wellsky-plugins": false,
+    "wsh-data@wellsky-home": false,
+    "wsh-infra@wellsky-home": false,
+    "wshp@wshp.claude-plugins": true,
+    "zapier@claude-plugins-official": false
   },
   "extraKnownMarketplaces": {
-    "caveman": {
-      "source": {
-        "source": "github",
-        "repo": "JuliusBrussee/caveman"
-      },
-      "autoUpdate": true
-    },
     "chrome-devtools-plugins": {
       "source": {
         "source": "github",
         "repo": "ChromeDevTools/chrome-devtools-mcp"
-      },
-      "autoUpdate": true
-    },
-    "dotnet-agent-skills": {
-      "source": {
-        "source": "github",
-        "repo": "dotnet/skills"
       },
       "autoUpdate": true
     },
@@ -316,7 +416,8 @@
         "source": "git",
         "url": "git@github.com:mediwareinc/wellsky-claude-code-plugins.git",
         "ref": "fix/combined-skill-descriptions"
-      }
+      },
+      "autoUpdate": true
     },
     "wellsky-home": {
       "source": {
@@ -334,20 +435,35 @@
       "source": {
         "source": "directory",
         "path": "/Users/trevor.smith/dev/personal/mattpocock-skills"
-      }
+      },
+      "autoUpdate": true
     },
     "wshp.claude-plugins": {
       "source": {
         "source": "directory",
         "path": "/Users/trevor.smith/dev/wellsky/wshp.claude-plugins"
+      },
+      "autoUpdate": true
+    },
+    "caveman": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/trevor.smith/dev/personal/caveman"
+      }
+    },
+    "dotnet-agent-skills": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/trevor.smith/dev/personal/dotnet-agent-skills"
       }
     }
   },
   "otelHeadersHelper": "python3 /Users/trevor.smith/.claude/plugins/cache/wellsky-plugins/otel-telemetry/1.3.0/scripts/otel-token-helper.py",
   "syntaxHighlightingDisabled": false,
   "alwaysThinkingEnabled": true,
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "tui": "fullscreen",
+  "autoMemoryEnabled": false,
   "autoDreamEnabled": true,
   "skipDangerousModePermissionPrompt": true,
   "editorMode": "vim",
