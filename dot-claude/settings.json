@@ -58,6 +58,7 @@
     ],
     "defaultMode": "default"
   },
+  "disableClaudeAiConnectors": true,
   "skillOverrides": {
     "no-mistakes": "user-invocable-only",
     "computer-use": "user-invocable-only",
@@ -331,6 +332,8 @@
   "worktree": {
     "baseRef": "fresh"
   },
+  "disableRemoteControl": true,
+  "disableArtifact": true,
   "statusLine": {
     "type": "command",
     "command": "mise exec node@25 -- claude-powerline --theme=tokyo-night --style=powerline"
@@ -382,7 +385,7 @@
     "typescript-lsp@claude-plugins-official": false,
     "unit-gen@wellsky-plugins": true,
     "warp@claude-code-warp": true,
-    "workflow@wellsky-plugins": true,
+    "workflow@wellsky-plugins": false,
     "ws-atlassian@wellsky-plugins": false,
     "wsh-data@wellsky-home": false,
     "wsh-infra@wellsky-home": false,
@@ -466,9 +469,6 @@
     }
   },
   "otelHeadersHelper": "python3 /Users/trevor.smith/.claude/plugins/cache/wellsky-plugins/otel-telemetry/1.3.0/scripts/otel-token-helper.py",
-  "disableArtifact": true,
-  "disableRemoteControl": true,
-  "disableClaudeAiConnectors": true,
   "syntaxHighlightingDisabled": false,
   "alwaysThinkingEnabled": true,
   "effortLevel": "medium",
