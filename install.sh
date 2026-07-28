@@ -91,6 +91,24 @@ install_no_mistakes() {
 	curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh
 }
 
+install_tuicr() {
+	# tuicr: Rust code-review TUI backing the vendored /tuicr skill (see
+	# vendor/tuicr). Install-if-missing (idempotent); upgrade with `tuicr update`.
+	if command -v tuicr >/dev/null 2>&1; then
+		echo "tuicr already installed ($(tuicr --version 2>/dev/null))."
+		return
+	fi
+	if command -v brew >/dev/null 2>&1; then
+		echo "Installing tuicr using Homebrew..."
+		brew install agavra/tap/tuicr
+	elif command -v curl >/dev/null 2>&1; then
+		echo "Installing tuicr..."
+		curl -fsSL https://tuicr.dev/install.sh | sh
+	else
+		echo "Neither brew nor curl found; skipping tuicr install."
+	fi
+}
+
 setup_dotfiles() {
 	# ~/.warp must exist as a real directory before stow runs: Warp writes
 	# runtime data into it (worktrees/, typescript-language-server/, generated
@@ -116,5 +134,6 @@ init_submodules
 update_vendored_skills
 install_pinned_npm_tools
 install_no_mistakes
+install_tuicr
 setup_dotfiles
 echo "Dot files installed."
