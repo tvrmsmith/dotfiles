@@ -24,12 +24,14 @@ NPM_SKILLS=(
   "lavish-axi|lavish-axi|0.1.38|skills/lavish/SKILL.md"
 )
 
-# Git-hosted single-file skills: the skill is one file inside a large upstream
-# git repo not worth a subtree (e.g. a Go CLI project). Fetch shallow and extract
-# just the one blob via `git show` — no working-tree checkout, no repo bloat.
+# Git-hosted skills: the skill is one file or one directory inside a large
+# upstream git repo not worth a subtree (e.g. a Go/Rust CLI project). Fetch
+# shallow and extract just that path — no working-tree checkout, no repo bloat.
+# A file subpath is extracted with `git show`, a directory with `git archive`.
 # prefix|remote|branch|subpath|url  (subpath is relative to the upstream repo root)
 GIT_SKILLS=(
   "no-mistakes|kunchenguid-no-mistakes|main|skills/no-mistakes/SKILL.md|https://github.com/kunchenguid/no-mistakes.git"
+  "tuicr|agavra-tuicr|main|skills/tuicr|https://github.com/agavra/tuicr.git"
 )
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -92,12 +94,27 @@ fetch_git_skill() {
   local dest="vendor/$prefix/$subpath"
   echo "→ vendoring vendor/$prefix from $remote/$branch ($subpath)"
   git fetch --quiet --depth 1 "$remote" "$branch"
-  if ! git cat-file -e "$remote/$branch:$subpath" 2>/dev/null; then
+  local kind
+  if ! kind="$(git cat-file -t "$remote/$branch:$subpath" 2>/dev/null)"; then
     echo "error: $subpath not found in $remote/$branch" >&2
     exit 1
   fi
-  mkdir -p "$(dirname "$dest")"
-  git show "$remote/$branch:$subpath" > "$dest"
+  case "$kind" in
+    blob)
+      mkdir -p "$(dirname "$dest")"
+      git show "$remote/$branch:$subpath" > "$dest"
+      ;;
+    tree)
+      # Replace wholesale so upstream deletions propagate; git archive keeps modes.
+      rm -rf "$dest"
+      mkdir -p "$dest"
+      git archive "$remote/$branch:$subpath" | tar -x -C "$dest"
+      ;;
+    *)
+      echo "error: $subpath in $remote/$branch is a $kind, expected blob or tree" >&2
+      exit 1
+      ;;
+  esac
 }
 
 list() {
