@@ -9,8 +9,9 @@ let warnedBadEndpoint = false
 // Orca receiver from building an unbounded queue of obsolete snapshots.
 const HOOK_POST_TIMEOUT_MS = 1000
 let activePost = false
-let pendingPost: { hookEventName: string; extra: Record<string, unknown> } | null = null
+let pendingPost: { hookEventName: string; extra: Record<string, unknown>; metadata: Record<string, unknown>; ompRuntime: boolean } | null = null
 let sessionMetadata: Record<string, unknown> = {}
+let runtimeOmpSessionMetadata: Record<string, unknown> = {}
 
 function updateSessionMetadata(ctx: unknown): void {
   const sessionManager = (ctx as { sessionManager?: { getSessionId?: () => unknown; getSessionFile?: () => unknown } } | null)?.sessionManager
@@ -20,6 +21,18 @@ function updateSessionMetadata(ctx: unknown): void {
     session_id: sessionId,
     ...(typeof sessionFile === 'string' && sessionFile ? { session_file: sessionFile } : {}),
   } : {}
+}
+
+function updateRuntimeOmpSessionMetadata(ctx: unknown): void {
+  if (!isOmpRuntime()) return
+  const sessionManager = (ctx as { sessionManager?: { getSessionId?: () => unknown; getSessionFile?: () => unknown } } | null)?.sessionManager
+  const sessionId = sessionManager?.getSessionId?.()
+  const sessionFile = sessionManager?.getSessionFile?.()
+  runtimeOmpSessionMetadata = typeof sessionId === 'string' && sessionId && typeof sessionFile === 'string' && sessionFile ? { session_id: sessionId } : {}
+}
+
+function getPostSessionMetadata(ompRuntime: boolean): Record<string, unknown> {
+  return ompRuntime ? runtimeOmpSessionMetadata : sessionMetadata
 }
 
 function getPersistedSessionMetadata(): Record<string, unknown> {
@@ -94,28 +107,41 @@ function processName(value: unknown): string {
   return String(value || '').split(/[\\/]/).pop()?.toLowerCase() || ''
 }
 
-function resolveHookPath(): string {
-  const configuredPath = '/hook/pi'
+const CONFIGURED_HOOK_PATH = '/hook/pi'
+let cachedOmpRuntime: boolean | null = null
+
+function isOmpRuntime(): boolean {
+  if (cachedOmpRuntime !== null) return cachedOmpRuntime
+  if (CONFIGURED_HOOK_PATH === '/hook/omp') {
+    cachedOmpRuntime = true
+    return true
+  }
   const executableNames = [
     processName(process.title),
     processName(process.env._),
     processName(process.argv[1]),
     processName(process.argv[0])
   ]
-  const isOmpExecutable = executableNames.some((name) =>
+  cachedOmpRuntime = executableNames.some((name) =>
     ['omp', 'omp.js', 'omp.sh', 'omp.cmd', 'omp.exe', 'omp.bat'].includes(name)
   )
-  // Why: a bare shell may launch either Pi or OMP after spawn. Runtime
-  // executable detection keeps that status labeled
-  // as OMP instead of silently reporting it as Pi.
-  if (isOmpExecutable) {
-    return '/hook/omp'
-  }
-  return configuredPath
+  return cachedOmpRuntime
+}
+
+function resolveHookPath(ompRuntime: boolean): string {
+  // Why: runtime detection keeps a bare-shell OMP launch from reporting as Pi.
+  if (ompRuntime) return '/hook/omp'
+  return CONFIGURED_HOOK_PATH
 }
 
 function post(hookEventName: string, extra: Record<string, unknown> = {}): void {
-  pendingPost = { hookEventName, extra }
+  const ompRuntime = isOmpRuntime()
+  pendingPost = {
+    hookEventName,
+    extra,
+    metadata: getPostSessionMetadata(ompRuntime),
+    ompRuntime,
+  }
   drainPosts()
 }
 
@@ -124,7 +150,7 @@ function drainPosts(): void {
   const next = pendingPost
   pendingPost = null
   activePost = true
-  void postOnce(next.hookEventName, next.extra)
+  void postOnce(next.hookEventName, next.extra, next.metadata, next.ompRuntime)
     .catch(() => {})
     .finally(() => {
       activePost = false
@@ -134,12 +160,14 @@ function drainPosts(): void {
 
 async function postOnce(
   hookEventName: string,
-  extra: Record<string, unknown>
+  extra: Record<string, unknown>,
+  metadata: Record<string, unknown>,
+  ompRuntime: boolean
 ): Promise<void> {
   const coords = resolveHookCoords()
   const paneKey = process.env.ORCA_PANE_KEY
   if (!coords.port || !coords.token || !paneKey) return
-  const url = `http://127.0.0.1:${coords.port}${resolveHookPath()}`
+  const url = `http://127.0.0.1:${coords.port}${resolveHookPath(ompRuntime)}`
   const body = JSON.stringify({
     paneKey,
     launchToken: process.env.ORCA_AGENT_LAUNCH_TOKEN || '',
@@ -147,7 +175,7 @@ async function postOnce(
     worktreeId: process.env.ORCA_WORKTREE_ID || '',
     env: coords.env,
     version: coords.version,
-    payload: { hook_event_name: hookEventName, ...getPersistedSessionMetadata(), ...extra },
+    payload: { hook_event_name: hookEventName, ...(ompRuntime ? metadata : getPersistedSessionMetadata()), ...extra },
   })
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
   let timeout: ReturnType<typeof setTimeout> | undefined
@@ -303,31 +331,36 @@ export default function (pi): void {
     post('session_start')
   })
 
-  pi.on('before_agent_start', (event) => {
+  pi.on('before_agent_start', (event, ctx) => {
+    updateRuntimeOmpSessionMetadata(ctx)
     post('before_agent_start', { prompt: event.prompt ?? '' })
   })
 
-  pi.on('agent_start', () => {
+  pi.on('agent_start', (_event, ctx) => {
+    updateRuntimeOmpSessionMetadata(ctx)
     clearPendingAgentEndCheck()
     agentEndReported = false
     post('agent_start')
   })
 
-  pi.on('tool_execution_start', (event) => {
+  pi.on('tool_execution_start', (event, ctx) => {
+    updateRuntimeOmpSessionMetadata(ctx)
     post('tool_execution_start', {
       tool_name: event.toolName,
       tool_input: event.args,
     })
   })
 
-  pi.on('tool_call', (event) => {
+  pi.on('tool_call', (event, ctx) => {
+    updateRuntimeOmpSessionMetadata(ctx)
     post('tool_call', {
       tool_name: event.toolName,
       tool_input: event.input,
     })
   })
 
-  pi.on('tool_execution_end', (event) => {
+  pi.on('tool_execution_end', (event, ctx) => {
+    updateRuntimeOmpSessionMetadata(ctx)
     post('tool_execution_end', {
       tool_name: event.toolName,
     })
@@ -337,7 +370,8 @@ export default function (pi): void {
   // so the dashboard preview reflects the most recent reply even before
   // agent_end fires. message_end is the right hook because pi guarantees
   // it fires after the message is finalized (post-streaming).
-  pi.on('message_end', (event) => {
+  pi.on('message_end', (event, ctx) => {
+    updateRuntimeOmpSessionMetadata(ctx)
     if (event.message?.role !== 'assistant') return
     const text = extractAssistantText(event.message)
     if (!text) return
@@ -390,13 +424,15 @@ export default function (pi): void {
     agentEndIdleRecheckMs = Math.min(agentEndIdleRecheckMs * 2, AGENT_END_IDLE_RECHECK_MAX_MS)
   }
 
-  pi.on('agent_settled', () => {
+  pi.on('agent_settled', (_event, ctx) => {
+    updateRuntimeOmpSessionMetadata(ctx)
     agentSettledSupported = true
     clearPendingAgentEndCheck()
     postAgentEndOnce()
   })
 
   pi.on('agent_end', (_event, ctx) => {
+    updateRuntimeOmpSessionMetadata(ctx)
     if (agentSettledSupported) return
     if (!ctx || typeof ctx.isIdle !== 'function') {
       postAgentEndOnce()
