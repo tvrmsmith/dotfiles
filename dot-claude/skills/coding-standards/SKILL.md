@@ -12,5 +12,8 @@ deriving one value from 3+ fields of an object → move it onto that object.
 Parse strings into value objects at the boundary (parse, don't validate).
 Domain invariants stay in the domain; DTOs own only merge/coalesce semantics.
 
+## Comments
+If you need a paragraph-long comment to justify why the workaround is OK, the code is wrong. Fix the code.
+
 ## React
 Writing/reviewing React → read [`react.md`](./react.md).
