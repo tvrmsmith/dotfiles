@@ -60,6 +60,10 @@ unset _ONEP_SSH_SOCK
 # and OMP injects CI=1 unconditionally via NON_INTERACTIVE_ENV).
 export PI_SHELL_PREFIX="source $HOME/.omp/bash-env.sh;"
 
+# no-mistakes is a local build with unreleased work; `update` would clobber it
+# and kill the daemon. Drop this once the work ships upstream.
+export NO_MISTAKES_NO_UPDATE_CHECK=1
+
 
 LOCAL="$HOME/.zshenv.local"
 [ -f "$LOCAL" ] && source "$LOCAL"
