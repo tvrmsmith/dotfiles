@@ -14,3 +14,9 @@ dot-warp/worktrees/
 # Optional Warp helper: typescript-language-server installed via npm into
 # ~/.warp/typescript-language-server/. node_modules tree, do not track.
 dot-warp/typescript-language-server/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
