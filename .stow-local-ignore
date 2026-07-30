@@ -10,7 +10,6 @@
 
 # Installation and scripts
 ^/install\.sh$
-^/setup-vertex-credentials\.sh$
 
 # Vendored third-party content (subtrees). Pulled into ~/.claude via
 # symlinks under dot-claude/skills/, not stowed directly.
@@ -30,6 +29,15 @@
 ^/\.gitignore$
 ^/\.gitmodules$
 
+# Codex isn't used on this machine, and its live ~/.codex files (superset
+# hooks, per-project trust levels) have diverged from what's here. Left tracked
+# but unstowed rather than merged.
+^/\.codex
+
+# Ad-hoc backups (e.g. dot-claude/settings.json.bak) are local scratch, never
+# something to link into $HOME.
+.*\.bak$
+
 # Editor and IDE
 ^/\.idea
 ^/\.vscode
@@ -41,6 +49,18 @@ settings\.local\.json
 # install into ~/.claude.
 ^/\.claude$
 
+
+# dot-agents/skills is a symlink to a directory, which stow 2.4.1 --dotfiles
+# cannot descend into: it mangles the path and aborts with exit 2 *before
+# linking anything at all*, making the whole install a no-op. install.sh
+# recreates this one link after stow runs.
+#
+# Pattern is the *translated* path (.agents, not dot-agents): stow applies the
+# --dotfiles rename before matching. Note only nested paths can be ignored this
+# way — no pattern suppresses a top-level package entry, which is why the fix
+# is to keep ~/.agents unfolded (install.sh pre-creates it) and skip just the
+# one child, rather than excluding dot-agents wholesale.
+^/\.agents/skills$
 
 # Stow-related
 ^/\.stow-.*
