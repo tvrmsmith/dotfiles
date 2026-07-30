@@ -26,7 +26,7 @@ Resolve each:
 - **Beads issue id** — take it from the user's argument if given; else infer from
   the branch name (e.g. `feature/imr-123-*` → `imr-123`); else check claimed
   items (`bd list --status in_progress`). If still ambiguous, ask the user and
-  wait — a wrong id closes the wrong issue at stage 5.
+  wait — a wrong id closes the wrong issue at stage 4.
 - **PR** — likely none yet (no-mistakes creates it). If a PR already exists for
   the branch (`gh pr view --json number,url`), note it and reuse it downstream.
 
@@ -73,10 +73,41 @@ before advancing past open review findings.
 
 ## 3. Review pause
 
-Once stage 2 completes, remind the user that this is where they normally review
-the code, present the PR URL, and **wait for them to prompt you to continue.**
-Merge only once they do, however the repo merges (merge queue, `gh pr merge`,
-or the user merging it themselves).
+Once stage 2 completes, present the PR URL and ask the user — with
+`AskUserQuestion` — which they want:
+
+- **Open tuicr** (recommend this first) — open the PR in a tuicr review pane so
+  they can read the diff and leave comments.
+- **Skip to merge** — no local review; go straight to the merge step below.
+
+### 3a. Open tuicr (only if chosen)
+
+Open the review in a **new tab in the user's current Orca workspace**, not the
+PR's own worktree — a terminal created against another worktree lands in a
+background workspace the user has to go hunting for. Load the `orca-cli` skill,
+resolve the executable, then:
+
+```bash
+orca worktree current --json                       # confirm the active workspace
+orca terminal create --worktree active --title "tuicr PR <#>" \
+  --command "tuicr pr <#>" --json
+orca terminal switch --terminal <handle> --json    # bring the tab to the front
+```
+
+`tuicr pr <#>` resolves the PR from the repo's `origin`, so running it from the
+current worktree is fine even when the PR branch is checked out elsewhere.
+
+Then **wait for the user to say their comments are ready.** Read them with the
+`tuicr` skill (`tuicr review comments --session gh:<owner>/<repo>/pr/<#>`), treat
+them as blocking feedback (`issue` first), fix, push, and re-present. Do not
+write agent-authored comments into their session. Loop until they say the review
+is done.
+
+### 3b. Merge
+
+Either path converges here: **wait for the user to prompt you to continue.**
+Merge only once they do, however the repo merges (merge queue, `gh pr merge`, or
+the user merging it themselves).
 
 ## 4. Close the beads issue
 
