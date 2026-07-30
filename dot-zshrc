@@ -81,8 +81,9 @@ bdr() {
     | glow -
 }
 
+# Manual ADC refresh. Claude Code also runs this itself via the gcpAuthRefresh
+# setting in dot-claude/settings.json when it hits an expired-credential error.
 alias gauth="gcloud auth application-default login"
-alias setup-vertex-creds="$DEV_PERSONAL/dotfiles/setup-vertex-credentials.sh"
 
 alias logdy='logdy --no-analytics --port=8090'
 
