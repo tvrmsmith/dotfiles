@@ -1,125 +1,214 @@
 ---
 name: orca-fan-out
-description: Lightweight fan-out of an already-discussed task set across Orca agents — classify each task as same-worktree tab vs child worktree, confirm the split, spawn, report. No DAG, no coordinator loop.
+description: Spawn this session's discussed task set across Orca workers (tabs or child worktrees) and collect their results as they land; also recovers a batch whose orchestrator session you have lost.
 disable-model-invocation: true
 ---
 
 # Orca Fan-Out
 
-Take the set of tasks **already discussed in this session** and spread them across Orca
-agents in one pass. Each task lands either in a new agent tab in the current workspace or
-in a new child Orca worktree. Then stop.
+Spread the tasks **already discussed in this session** across Orca **workers** — one Claude
+agent per task, each in a tab of this workspace or in its own child worktree — then go **idle**.
 
-This is the cheap alternative to `/orchestration`: no task DAG, no dispatch records, no
-`worker_done` waits, no coordinator loop. Fire and forget is the default — the user relays
-worker completions back here when they matter.
+Each worker's result comes back later as one line pushed into this session by `/orca-fan-in`,
+which the **human** invokes in the worker's session once satisfied with the work. Idle means
+this session spawns, reports, and waits for that push, writing nothing along the way.
 
-## Use / don't use
+## 0. Route
+
+**Recovery branch.** If this invocation asks to *find* or *recover* a batch rather than start
+one — "find my batch", "where's my batch", "recover my fan-out", "which session was the
+orchestrator", "list running fan-outs" — read `references/recovery.md` and follow it instead of
+steps 1-9 below.
+
+## Fan-out is for human-in-the-loop work only
+
+Every worker is a session a human will visit, judge, and release.
 
 | Situation | Tool |
 |---|---|
-| Several tasks from this conversation, want them running in parallel now | this skill |
-| Need supervision, blocking ask/reply, decision gates, task DAG | `orchestration` skill |
-| One task, full ownership transfer, this agent stops | `orca-cli` skill (handoff) |
-| Work that stays inside this agent's context (search, read-only recon) | `Agent` tool subagent |
+| Work that should run to completion unattended | `Agent` tool subagent |
+| Supervision, blocking ask/reply, decision gates, a task DAG | `orchestration` skill |
+| One task, full ownership transfer, this session stops | `orca-cli` skill (handoff) |
 
-Resolve the CLI once per the `orca-cli` skill's rules (`ORCA_CLI_COMMAND` → `orca-dev` in a
-dev checkout → `orca-ide` on Linux outside Orca → `orca`). Below, `ORCA` is that
-executable. Confirm the app is up with `ORCA status --json` before spawning anything.
+Workers are Claude. If a task names `codex`, `omp`, `pi`, or `grok`, say fan-out is Claude-only
+and leave that task out of the batch.
+
+Resolve the CLI once per the `orca-cli` skill's rules; below, `ORCA` is that executable.
 
 ## 1. Collect the task set
 
-Take the tasks from the current conversation. Arguments to the slash command narrow or
-override the set (e.g. `/orca-fan-out tasks 2 and 4 only`).
+Take the tasks from this conversation. Arguments narrow or override the set (`/orca-fan-out
+tasks 2 and 4 only`). If the session has no clear task set, say so and stop.
 
-If the session has no clear task set, say so and stop — do not invent one.
+Per task capture: a kebab-case slug (≤40 chars), a one-line goal, the bead id when the task has
+one, whether it lands committed code, and what it depends on.
 
-For each task capture: a kebab-case slug (≤40 chars), one-line goal, whether it writes
-files, and any skill it must run.
+Done when **every** task discussed in this session lands in exactly one bucket: a batch row, a
+deferred row (step 3), or excluded as non-Claude. Walk the conversation to confirm that, rather
+than listing what comes to mind.
 
 ## 2. Classify: tab or child worktree
 
-**Child worktree** if *any* of these hold:
+The axis is **branch and commits**, not writes.
 
-- Task edits files, and another task (or this session) may edit the same checkout concurrently
-- Task needs its own branch, commits, or PR
-- Task runs builds, test suites, servers, or migrations that mutate shared checkout state
-- Task outlives the current worktree (must survive its merge/cleanup)
+- **Child worktree** — the task lands committed code: its own branch, commits, a PR.
+- **Tab in this workspace** — human-gated work that commits nothing and needs no branch: walking
+  a log, an interactive review, a scratch doc, recon the human will read. A task that edits files
+  in a scratch path but commits nothing is a tab.
 
-**Tab in the current workspace** only if *all* hold:
+## 3. Hold back dependents
 
-- Read-only or output-only: research, review, log/diff analysis, doc writing to a scratch path
-- No branch of its own
-- Nothing else will be writing the same files while it runs
+Any task whose input is another task's output stays out of the batch. List it as **deferred**,
+naming the task it waits on; the human fans the deferred rows out later.
 
-Tie-break: if it writes, give it a worktree. A wasted worktree is cheap; two agents
-stomping one checkout is not.
+## 4. Ask: sequential or parallel
 
-## 3. Confirm before spawning
+- **Parallel** — every row spawns now.
+- **Sequential** — one worker at a time; the next row spawns when the previous result lands.
 
-Print one row per task — slug, target (`tab` / `worktree`), agent, one-line reason — and
-**wait for explicit approval**. Do not spawn on assumption. Apply any reclassification the
-user asks for, then proceed.
+Sequential's queue lives only in this conversation, which is why step 9 reprints it on every
+wake. A sequential batch parked on a worker the human never visits is the gate working.
 
-## 4. Spawn
+## 5. Confirm before spawning
 
-Default agent is `claude` unless the task or user says otherwise (`codex`, `omp`, `pi`,
-`grok` are also valid ids).
+Print one row per task — slug, target (`tab`/`worktree`), bead, one-line reason — plus the mode
+and the deferred list. **Wait for explicit approval.** Apply any reclassification the human
+asks for, then spawn.
 
-Tab in current workspace:
+## 6. Write the brief
+
+Pass only what the worker cannot discover: the task, decisions made in this session, and
+pointers. Point at `CLAUDE.md`, skill bodies, and bead descriptions rather than inlining them.
 
 ```text
-ORCA terminal create --worktree active --title "<slug>" --command "claude" --json
+/<skill> <args>            <- optional, first characters only
+<task, one paragraph>
+Slug: <slug>               <- the name step 9 tallies on
+Constraints: <decisions from this session that are not in the bead>
+Bead: <id>                 <- omit when the task has none
+Expected output: <the artifact to produce>
+No branch, no commits.     <- tab briefs end here
+Branch: <branch>           <- worktree briefs end here instead; step 7 fills it in
+```
+
+- The leading slash slot works: a brief whose first characters are `/skill args` invokes that
+  skill in the worker with its arguments intact, including user-invocation-only skills.
+- The `Slug:` slot carries this row's kebab-case slug from step 1, verbatim — the same string
+  step 7 passes to `worktree create --name` and `terminal create --title`. It is the name this
+  session's step-9 tally matches on and the only source the worker can trust for it, so the
+  worker's result line must reproduce it exactly.
+- The last line is one variant or the other, never both: a tab brief ends `No branch, no
+  commits.`, a worktree brief ends `Branch: <branch>`. That branch does not exist yet; step 7
+  fills the line in before the worker launches.
+- Beads are pre-created elsewhere. The `Bead:` slot passes the id through; the worker claims and
+  closes that bead itself.
+- In a repo with no beads DB, drop the `Bead:` line; the worker's result line points at a PR,
+  branch, or path instead.
+- The brief contains exactly the slots in the template above; nothing about done, because the
+  human decides done.
+- The brief is embedded below as `"<brief>"` inside a single-quoted `--command`, so keep it free
+  of both single and double quotes — a double quote splits the argument and truncates the brief.
+  Rephrase rather than escape.
+
+## 7. Spawn
+
+Confirm the app with `ORCA status --json` before spawning anything.
+
+Canonicalize this session's handle once. This is the address workers push to, and `terminal
+list` hands out aliases for the same tab:
+
+```text
+ORCA terminal show --terminal "$ORCA_TERMINAL_HANDLE" --json     # → result.terminal.handle
+```
+
+Orca injects `ORCA_TERMINAL_HANDLE` into every managed terminal it runs. If it is empty, find
+this session's terminal in `ORCA terminal list --worktree active --json` and canonicalize that
+one through `terminal show` instead.
+
+**Tab worker.** The inline env prefix is the only way a tab worker can find this session:
+
+```text
+ORCA terminal create --worktree active --title "<slug>" \
+  --command 'ORCA_FANOUT_ORCHESTRATOR=<handle> claude-launcher --dangerously-skip-permissions "<brief>"' --json
+```
+
+**Worktree worker.** Create, finalize, launch — two commands, deliberately, with the brief
+finished between them: `worktree create --agent claude` offers no permission-bypass control, so
+the agent goes in through `terminal create`.
+
+```text
+ORCA worktree create --name <slug> --parent-worktree active --json    # → result.worktree.id
+                                                                      #   result.worktree.branch
+ORCA terminal create --worktree id:<worktreeId> --title "<slug>" \
+  --command 'claude-launcher --dangerously-skip-permissions "<brief>"' --json
+```
+
+Finalize the brief between the two commands, not before — this is the other half of step 6's
+last-line rule: take `result.worktree.branch` from the create's output, write it into the
+brief's `Branch:` line, then run `terminal create` with the finished brief.
+
+Both creates return the worker handle at `result.terminal.handle`. A worktree worker needs no
+env prefix: it self-resolves this session from `cliProvenance.callerTerminalHandle` on its own
+worktree record, which `worktree create` just stamped with an alias of this session's terminal —
+the worker canonicalizes that alias on its side.
+
+Use `--parent-worktree active` — workers are children of this workspace. Reach for
+`--no-parent` only when the human calls a task unrelated to this line of work.
+
+Spawn rows one at a time. In sequential mode, spawn only the first. Every row, tab or worktree,
+waits for its Claude to finish booting before you read it — otherwise the read catches a
+still-booting TUI:
+
+```text
 ORCA terminal wait --terminal <handle> --for tui-idle --timeout-ms 120000 --json
-ORCA terminal send --terminal <handle> --text "<brief>" --enter --json
+ORCA terminal read --terminal <handle> --json
 ```
 
-Child worktree:
+A new worktree stops on Claude's bypass-permissions consent prompt before the brief runs, and
+bare `worktree create` can leave a fallback shell. For a worktree row, read
+`references/worktree-spawn.md` and follow it — it picks up from that wait and read.
+
+A row counts as **spawned** when a read shows the brief running in the worker and its canonical
+handle is recorded — for a worktree row, that is the confirming read after working through
+`references/worktree-spawn.md`, so no consent prompt is pending and no fallback shell is left
+open. That is the whole criterion for both row types.
+
+When the `tui-idle` wait times out, that worker never started: report it, leave the worker be,
+name it as **not delivered** in the step-8 roster, and keep it out of the step-9 outstanding
+tally — nothing is coming back from a worker that did not start.
+
+## 8. Report, then idle
+
+Print the roster: slug, target, worktree id, terminal handle, brief delivered. State that each
+result arrives when the human runs `/orca-fan-in` in that worker's session. Then stop.
+
+## 9. On wake
+
+A push arrives as an ordinary user turn:
 
 ```text
-ORCA worktree create --name <slug> --parent-worktree active --agent claude --prompt "<brief>" --json
+[fan-out] <slug> <ok|failed|blocked> — <one-sentence outcome>; details: <bead id / PR / branch / path>
 ```
 
-- `--parent-worktree active` is deliberate: these are children of the current workspace.
-  Use `--no-parent` only when the user calls a task unrelated to the current line of work.
-- Read the worker handle from `result.agentTerminalHandle`; older runtimes return only
-  `result.startupTerminal.handle`. If neither is present, get it from
-  `ORCA terminal list --worktree id:<repoId>::<newWorktreePath> --json`.
-- Never pair `worktree create --agent` with a follow-up `terminal create` of the same agent.
-- Spawn tasks one after another; each command is fast and independent.
-
-## 5. Writing the brief
-
-Per the global delegating rules, pass only what the worker cannot discover: the task, the
-decisions and constraints agreed in this session, and pointers (bead id, file path, PR
-number). Do not inline `CLAUDE.md`, skill bodies, or ticket descriptions.
-
-**Running a user-invocable-only skill:** those skills have
-`disable-model-invocation: true`, so the worker will not pick them up from a description.
-The slash command must be the **first characters of the prompt**, arguments after it:
-
-```text
-/comprehensive-code-review changes on this branch vs origin/main
-```
-
-The Claude TUI opens a command palette on a leading `/`. After sending, `ORCA terminal read
---terminal <handle> --json` once and confirm the command registered with its arguments
-intact; if the palette swallowed or mangled the line, re-send.
-
-## 6. Report and stop
-
-Print the final table: slug, target, worktree id (for worktrees), terminal handle, and
-whether the prompt was confirmed delivered. Then stop — no polling, no waiting.
-
-Wait on workers only if the user explicitly asks; then use
-`ORCA terminal wait --terminal <handle> --for tui-idle --timeout-ms <ms> --json` followed by
-`ORCA terminal read`.
+1. Split the input on the literal `[fan-out]` — two pushes landing together merge into one
+   message. Treat each fragment as its own result; when one looks truncated, read its bead
+   rather than guessing.
+2. Print each parsed result.
+3. Print ONE tally naming **every** outstanding slug, on every wake even when nothing else
+   changed — the queue lives only in this conversation, and reprinting it in full is what keeps
+   it alive across a compaction:
+   `3/5 landed — outstanding: docs-pass, migration-check` (plus `— next in queue: <slug>` in
+   sequential mode).
+4. Sequential mode only: spawn the next row (step 7).
+5. Stop. Reviewing, merging, and opening PRs belong to the human.
 
 ## Failures
 
-- Spawn fails for one task: report the exact error, keep the other spawns, and list what
-  did not start. Do not silently retry with different flags.
-- `terminal_handle_stale`: re-acquire with `terminal list` and use the replacement only —
-  never dual-send to old and new handles.
-- `tui-idle` wait times out: report it and leave the prompt unsent rather than blind-sending
-  into a terminal that may not be ready.
+- This session's own handle is unresolvable: spawn the worktree rows only, and name the tab rows
+  that could not start. Worktree workers are unaffected — they self-resolve from provenance.
+- One spawn fails: report the exact error, keep the other spawns, and name what did not start.
+  Report the failure rather than retrying with different flags.
+- `terminal_handle_stale`: re-acquire with `ORCA terminal list --worktree <selector> --json`,
+  canonicalize with `terminal show`, and use the replacement alone.
+- A push never arrives: leave the row in the outstanding list; the human tracks it in Orca's
+  sidebar.
