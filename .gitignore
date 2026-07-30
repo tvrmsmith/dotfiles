@@ -15,6 +15,13 @@ dot-warp/worktrees/
 # ~/.warp/typescript-language-server/. node_modules tree, do not track.
 dot-warp/typescript-language-server/
 
+# Ad-hoc local backups (e.g. dot-claude/settings.json.bak) — scratch, never
+# dotfile content.
+*.bak
+
+# 1Password writes this empty marker itself; machine-local state, not config.
+dot-config/1Password/telemetry-enabled
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db

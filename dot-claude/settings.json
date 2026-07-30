@@ -1,4 +1,5 @@
 {
+  "gcpAuthRefresh": "/Users/trevor.smith/.local/bin/gcp-auth-refresh",
   "skillListingMaxDescChars": 500,
   "skillListingBudgetFraction": 0.02,
   "env": {
@@ -153,7 +154,9 @@
     "simplify": "user-invocable-only",
     "dataviz": "user-invocable-only",
     "loop": "user-invocable-only",
-    "fewer-permission-prompts": "user-invocable-only"
+    "fewer-permission-prompts": "user-invocable-only",
+    "prd": "user-invocable-only",
+    "beads": "user-invocable-only"
   },
   "hooks": {
     "PermissionRequest": [
@@ -162,7 +165,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else { command -p cat 2>/dev/null || cat; } >/dev/null 2>&1 || :; fi",
             "timeout": 10
           }
         ]
@@ -174,7 +177,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else { command -p cat 2>/dev/null || cat; } >/dev/null 2>&1 || :; fi",
             "timeout": 10
           }
         ]
@@ -195,7 +198,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else { command -p cat 2>/dev/null || cat; } >/dev/null 2>&1 || :; fi",
             "timeout": 10
           }
         ]
@@ -216,7 +219,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else { command -p cat 2>/dev/null || cat; } >/dev/null 2>&1 || :; fi",
             "timeout": 10
           }
         ]
@@ -259,7 +262,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else { command -p cat 2>/dev/null || cat; } >/dev/null 2>&1 || :; fi",
             "timeout": 10
           }
         ]
@@ -278,7 +281,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else { command -p cat 2>/dev/null || cat; } >/dev/null 2>&1 || :; fi",
             "timeout": 10
           }
         ]
@@ -289,7 +292,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else { command -p cat 2>/dev/null || cat; } >/dev/null 2>&1 || :; fi",
             "timeout": 10
           }
         ]
@@ -300,7 +303,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else { command -p cat 2>/dev/null || cat; } >/dev/null 2>&1 || :; fi",
             "timeout": 10
           }
         ]
@@ -311,7 +314,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else { command -p cat 2>/dev/null || cat; } >/dev/null 2>&1 || :; fi",
             "timeout": 10
           }
         ]
@@ -322,7 +325,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else { command -p cat 2>/dev/null || cat; } >/dev/null 2>&1 || :; fi",
             "timeout": 10
           }
         ]
@@ -344,7 +347,7 @@
     "mattpocock-skills@mattpocock-skills": true,
     "security-guidance@claude-plugins-official": true,
     "security-screener@wellsky-plugins": true,
-    "shared@wellsky-plugins": true,
+    "shared@wellsky-plugins": false,
     "warp@claude-code-warp": true,
     "wshp@wshp.claude-plugins": true,
     "csharp-lsp@claude-plugins-official": false,
