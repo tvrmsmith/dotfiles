@@ -1,0 +1,34 @@
+#!/bin/sh
+# Idempotent ADC refresh for Claude Code's `gcpAuthRefresh` setting.
+#
+# Claude Code runs gcpAuthRefresh whenever it decides GCP credentials are
+# "expired or cannot be loaded", then retries the request. That detection
+# false-positives at session start even when ADC is perfectly healthy, so
+# pointing the setting straight at `gcloud auth application-default login`
+# throws a browser window at every new session.
+#
+# So probe first. `print-access-token` refreshes and returns a token from the
+# stored refresh_token without any user interaction, and is a no-op costing
+# well under a second when the credentials are already good. Only when that
+# genuinely fails do we escalate to the interactive login.
+#
+# Absolute gcloud path on purpose: .zprofile only adds the SDK to PATH in login
+# shells, and a GUI-launched Claude Code doesn't get one.
+#
+# The login flow must be the default browser-launching one. Claude Code shows
+# this script's output but cannot send it stdin, so --no-browser and
+# --no-launch-browser would block on a pasted code until the 3-minute timeout.
+
+GCLOUD=/opt/homebrew/share/google-cloud-sdk/bin/gcloud
+[ -x "$GCLOUD" ] || GCLOUD=$(command -v gcloud) || {
+	echo "gcp-auth-refresh: gcloud not found" >&2
+	exit 1
+}
+
+if "$GCLOUD" auth application-default print-access-token >/dev/null 2>&1; then
+	echo "gcp-auth-refresh: ADC already valid; no login needed."
+	exit 0
+fi
+
+echo "gcp-auth-refresh: ADC could not mint a token; starting browser login."
+exec "$GCLOUD" auth application-default login
