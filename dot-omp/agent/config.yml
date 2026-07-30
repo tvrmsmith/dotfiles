@@ -1,4 +1,4 @@
-lastChangelogVersion: 14.7.0
+lastChangelogVersion: 15.0.0
 modelRoles: 
   default: anthropic-vertex/claude-opus-4-7
   task: anthropic-vertex/claude-sonnet-4-6
