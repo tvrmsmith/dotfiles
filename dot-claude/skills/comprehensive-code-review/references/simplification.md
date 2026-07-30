@@ -1,6 +1,6 @@
 # Simplification Review
 
-Simplify recently modified code for clarity and maintainability **while preserving all functionality**. Behavior must not change. Run after other reviews pass, as polish step.
+Simplify recently modified code for clarity and maintainability **while preserving all functionality**. Behavior must not change. Advisory mode read diff like any other review — run alongside them. Apply mode edit, so run after other reviews pass, as polish step.
 
 ## Principles
 
