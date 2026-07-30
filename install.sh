@@ -118,6 +118,12 @@ setup_dotfiles() {
 	# so stow folds it (it's a read-only submodule).
 	mkdir -p "$HOME/.warp/tab_configs" "$HOME/.warp/default_tab_configs"
 
+	# ~/.agents must likewise exist as a real directory. Left absent, stow folds
+	# ~/.agents -> dot-agents/, and stow 2.4.1 --dotfiles then re-appends the
+	# translated name when it later needs to unfold, looking for a nonexistent
+	# dot-agents/.agents and aborting the entire install.
+	mkdir -p "$HOME/.agents"
+
 	# dot-claude/settings.json is stowed like everything else. It used to be
 	# excluded and regenerated per machine, because it carried work-only config
 	# (Vertex creds, WellSky OTEL endpoint) that breaks Claude Code on personal
@@ -127,6 +133,10 @@ setup_dotfiles() {
 	# means Claude Code's own writes — plugin toggles, effortLevel, marketplace
 	# entries — land in the repo instead of silently drifting from it.
 	stow --dotfiles -d "$SCRIPT_DIR" -t "$HOME" .
+
+	# The one entry stow can't place (see .stow-local-ignore): it's a symlink to
+	# a directory, which stow 2.4.1 --dotfiles tries to descend into.
+	ln -sfn "$SCRIPT_DIR/dot-claude/skills" "$HOME/.agents/skills"
 }
 
 install_gnu_stow
