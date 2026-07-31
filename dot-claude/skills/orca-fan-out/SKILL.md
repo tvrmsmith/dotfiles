@@ -75,6 +75,12 @@ Print one row per task — slug, target (`tab`/`worktree`), bead, one-line reaso
 and the deferred list. **Wait for explicit approval.** Apply any reclassification the human
 asks for, then spawn.
 
+Ask, in the same breath, **whether any row's brief should open with a skill invocation** — the
+`/<skill> <args>` slot in step 6. Name the row and the skill you would use, or say you propose
+none, and let the human correct it. This is not inferable from the task text: `/implement`,
+`/tdd`, and a bare brief all describe the same work, and the choice changes how the worker
+opens. Asking costs one line; guessing wrong costs a whole worker session.
+
 ## 6. Write the brief
 
 Pass only what the worker cannot discover: the task, decisions made in this session, and
@@ -92,7 +98,8 @@ Branch: <branch>           <- worktree briefs end here instead; step 7 fills it 
 ```
 
 - The leading slash slot works: a brief whose first characters are `/skill args` invokes that
-  skill in the worker with its arguments intact, including user-invocation-only skills.
+  skill in the worker with its arguments intact, including user-invocation-only skills. Whether
+  a row uses it is the human's call, asked in step 5 — not something to infer from the task.
 - The `Slug:` slot carries this row's kebab-case slug from step 1, verbatim — the same string
   step 7 passes to `worktree create --name` and `terminal create --title`. It is the name this
   session's step-9 tally matches on and the only source the worker can trust for it, so the
@@ -106,9 +113,9 @@ Branch: <branch>           <- worktree briefs end here instead; step 7 fills it 
   branch, or path instead.
 - The brief contains exactly the slots in the template above; nothing about done, because the
   human decides done.
-- The brief is embedded below as `"<brief>"` inside a single-quoted `--command`, so keep it free
-  of both single and double quotes — a double quote splits the argument and truncates the brief.
-  Rephrase rather than escape.
+- The brief is embedded below as `"<brief>"` inside a single-quoted `--command`, or passed as a
+  single-quoted `--prompt`, so keep it free of both single and double quotes — a double quote
+  splits the argument and truncates the brief. Rephrase rather than escape.
 
 ## 7. Spawn
 
@@ -132,23 +139,24 @@ ORCA terminal create --worktree active --title "<slug>" \
   --command 'ORCA_FANOUT_ORCHESTRATOR=<handle> claude-launcher --dangerously-skip-permissions "<brief>"' --json
 ```
 
-**Worktree worker.** Create, finalize, launch — two commands, deliberately, with the brief
-finished between them: `worktree create --agent claude` offers no permission-bypass control, so
-the agent goes in through `terminal create`.
+**Worktree worker.** One command — `worktree create` launches the agent itself via `--agent` and
+delivers the brief via `--prompt`, no `terminal create` needed:
 
 ```text
-ORCA worktree create --name <slug> --parent-worktree active --json    # → result.worktree.id
-                                                                      #   result.worktree.branch
-ORCA terminal create --worktree id:<worktreeId> --title "<slug>" \
-  --command 'claude-launcher --dangerously-skip-permissions "<brief>"' --json
+ORCA worktree create --name <slug> --parent-worktree active \
+  --agent claude --prompt '<brief>' --json      # → result.worktree.id
+                                                #   result.worktree.branch
+                                                #   result.agentTerminalHandle
 ```
 
-Finalize the brief between the two commands, not before — this is the other half of step 6's
-last-line rule: take `result.worktree.branch` from the create's output, write it into the
-brief's `Branch:` line, then run `terminal create` with the finished brief.
+The brief must therefore be finished before the command runs, so its `Branch:` line names the
+branch the slug will produce — `<slug>`, which is what `--name` derives it from. Confirm against
+`result.worktree.branch` in the output.
 
-Both creates return the worker handle at `result.terminal.handle`. A worktree worker needs no
-env prefix: it self-resolves this session from `cliProvenance.callerTerminalHandle` on its own
+Read the worker handle from `result.agentTerminalHandle`; older runtimes return only
+`result.startupTerminal.handle`, and may return neither for folder-based repos.
+
+A worktree worker needs no env prefix: it self-resolves this session from `cliProvenance.callerTerminalHandle` on its own
 worktree record, which `worktree create` just stamped with an alias of this session's terminal —
 the worker canonicalizes that alias on its side.
 
