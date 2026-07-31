@@ -30,7 +30,7 @@ NPM_SKILLS=(
 # A file subpath is extracted with `git show`, a directory with `git archive`.
 # prefix|remote|branch|subpath|url  (subpath is relative to the upstream repo root)
 GIT_SKILLS=(
-  "no-mistakes|kunchenguid-no-mistakes|main|skills/no-mistakes/SKILL.md|https://github.com/kunchenguid/no-mistakes.git"
+  "no-mistakes|tvrmsmith-no-mistakes|personal-build|skills/no-mistakes|git@github-personal:tvrmsmith/no-mistakes.git"
   "tuicr|agavra-tuicr|main|skills/tuicr|https://github.com/agavra/tuicr.git"
 )
 
