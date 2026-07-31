@@ -72,8 +72,11 @@ One line, opening with the literal sentinel `[fan-out]` — the orchestrator rou
 - `<slug>` is this worker's task slug, taken from the `Slug:` line of the brief that launched
   this session — the orchestrator's tally matches on that exact string. When that brief opened
   with a slash command, its slots came through as the invocation's arguments, so read them from
-  there. Only when the brief carried no slug, fall back to this tab's title; Orca renames tabs
-  from agent activity, so ask the human for the slug when the title is not obviously it.
+  there. Only when the brief carried no slug, **ask the human to read the slug off this tab's
+  label in the Orca sidebar** — that label is the `--title` fan-out spawned with and it holds the
+  slug verbatim. Do not take it from `terminal show`: that reports the pane's activity title
+  (`✳ Laptop awake fan-out task`), a different field from the tab label (`laptop-awake`), and the
+  slug is not recoverable from it.
 - `ok` / `failed` / `blocked` is the human's verdict, not a self-assessment. Ask when it is
   unclear.
 - Keep it a pointer. The durable record is the bead, PR, or branch that `details:` names; the
