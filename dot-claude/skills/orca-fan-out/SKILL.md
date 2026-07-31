@@ -100,6 +100,11 @@ Branch: <branch>           <- worktree briefs end here instead; step 7 fills it 
 - The leading slash slot works: a brief whose first characters are `/skill args` invokes that
   skill in the worker with its arguments intact, including user-invocation-only skills. Whether
   a row uses it is the human's call, asked in step 5 — not something to infer from the task.
+- **A slash command consumes its line, not the message.** The slots below it ride in the same
+  prompt and reach the worker as the invocation's arguments, so a slash-led brief is still one
+  delivery and still carries every slot. The slash line is never the whole brief — a row whose
+  task is fully described by `/<skill> <args>` still gets its `Slug:`, `Bead:`, and
+  `Expected output:` lines underneath.
 - The `Slug:` slot carries this row's kebab-case slug from step 1, verbatim — the same string
   step 7 passes to `worktree create --name` and `terminal create --title`. It is the name this
   session's step-9 tally matches on and the only source the worker can trust for it, so the
@@ -109,6 +114,10 @@ Branch: <branch>           <- worktree briefs end here instead; step 7 fills it 
   fills the line in before the worker launches.
 - Beads are pre-created elsewhere. The `Bead:` slot passes the id through; the worker claims and
   closes that bead itself.
+- A worktree row's `Expected output:` line ends by requiring the worker to **name its commit sha
+  and branch in the bead's close reason**. The bead outlives the worktree; removing a worktree
+  deletes its branch, and that recorded sha is then the only handle left on the commit. Recovery
+  (`references/recovery.md`) reads it.
 - In a repo with no beads DB, drop the `Bead:` line; the worker's result line points at a PR,
   branch, or path instead.
 - The brief contains exactly the slots in the template above; nothing about done, because the
@@ -172,9 +181,13 @@ ORCA terminal wait --terminal <handle> --for tui-idle --timeout-ms 120000 --json
 ORCA terminal read --terminal <handle> --json
 ```
 
-A new worktree stops on Claude's bypass-permissions consent prompt before the brief runs, and
+A new worktree can stop on Claude's bypass-permissions consent prompt before the brief runs, and
 bare `worktree create` can leave a fallback shell. For a worktree row, read
 `references/worktree-spawn.md` and follow it — it picks up from that wait and read.
+
+On a slash-led row, confirm the read shows the invoked skill running **and** the slots that
+followed it in the same prompt — a worker that lost its `Slug:` line falls back to a tab title
+Orca rewrites from agent activity.
 
 A row counts as **spawned** when a read shows the brief running in the worker and its canonical
 handle is recorded — for a worktree row, that is the confirming read after working through
@@ -188,7 +201,12 @@ tally — nothing is coming back from a worker that did not start.
 ## 8. Report, then idle
 
 Print the roster: slug, target, worktree id, terminal handle, brief delivered. State that each
-result arrives when the human runs `/orca-fan-in` in that worker's session. Then stop.
+result arrives when the human runs `/orca-fan-in` in that worker's session.
+
+Close the roster with the durability warning, once, whenever the batch holds a worktree row:
+**removing a worktree deletes its branch**, so a worker torn down before `/orca-fan-in` leaves
+its commit dangling and reachable only through a sha recorded elsewhere. A worker's work is
+durable once it is merged, or once its sha and branch are in its bead's close reason. Then stop.
 
 ## 9. On wake
 
@@ -220,3 +238,5 @@ A push arrives as an ordinary user turn:
   canonicalize with `terminal show`, and use the replacement alone.
 - A push never arrives: leave the row in the outstanding list; the human tracks it in Orca's
   sidebar.
+- A worker's worktree was removed before its push: the row is gone from every Orca listing and
+  its branch with it. Follow `references/recovery.md`, which starts from the bead.
