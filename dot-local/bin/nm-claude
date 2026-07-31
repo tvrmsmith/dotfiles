@@ -62,4 +62,9 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   fi
 fi
 
+# Mark the session as a gate step agent. Hooks inherit this env, which is how
+# dot-claude/hooks/adr-guard.sh tells a gate pass (ADR writes denied) apart from
+# an interactive session (ADR writes allowed, with guidance).
+export NM_GATE=1
+
 exec "$REAL_CLAUDE" "$@"
