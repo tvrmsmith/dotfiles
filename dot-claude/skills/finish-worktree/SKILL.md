@@ -58,6 +58,12 @@ Judgment rules the `help[]` output won't teach you:
   working — check `axi status` separately rather than cancelling or re-issuing.
 - The pipeline owns fixes (`--action fix`) and its background CI monitor owns
   rebases — leave both to it.
+- **Severity cap.** Count the review-step gate rounds you resolve. Rounds 1–3 act
+  on every finding. From round 4 on, act only on `warning` and above; accept
+  anything below warning as-is so the run advances, and carry those skipped
+  findings to the final report. Round 1 catches the real defects and rounds 2–3
+  the fallout from fixing them, so past that a nit costs more in churn commits
+  and regression risk than it is worth.
 
 **Handoff:** the target outcome is `checks-passed` (validated, CI green, not yet
 merged — merging happens after stage 3). Proceed to stage 2 reusing the PR (URL is
@@ -123,4 +129,5 @@ repo syncs). Verify with `bd show <id>` that status is closed.
 ## Final report
 
 Summarize the outcome in one compact block: PR merged (link), beads issue closed
-(id), and any stage that was skipped, capped, or needs follow-up.
+(id), any stage that was skipped, capped, or needs follow-up, and any
+low-severity findings dropped by the stage 1 severity cap.
