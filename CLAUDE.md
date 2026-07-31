@@ -18,6 +18,12 @@ Files/dirs prefixed `dot-` are symlinked into `$HOME` with the prefix replaced b
 - `NVIM_APPNAME` (set in `dot-zshenv`) selects the active neovim config: `nvim-LazyVim` (default), `nvim` (kickstart), or `nvim-Lazyman`. `nvims` command (Lazyman) switches interactively
 - Agent sandboxing (`mysbx`, `mysbx-*`, `nono-*`, files under `extras/agent-sandboxing/` + `dot-local/bin/mysbx`): see the repo-scoped `agent-sandboxing` skill at `.claude/skills/agent-sandboxing/SKILL.md`.
 
+## Issue tracker
+
+Issues live in beads (`bd`). The Matt Pocock skills — `/wayfinder` above all — read
+`docs/agents/issue-tracker.md` for how this repo expresses maps, child tickets, blocking, and
+the frontier query.
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
 ## Beads Issue Tracker
 
