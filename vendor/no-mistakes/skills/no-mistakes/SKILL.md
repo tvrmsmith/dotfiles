@@ -11,6 +11,25 @@ user-invocable: true
 the configured push target. You drive it through the `no-mistakes axi` command family, which prints
 machine-readable [TOON](https://toonformat.dev) to stdout and progress to stderr.
 
+
+## Active validation-step boundary
+
+A no-mistakes validation-step agent is already inside an active outer run. It
+must inspect, fix, and return only its assigned phase. It must never initialize,
+start, reattach, rerun, respond to, synchronize, abort, eject, or directly push
+a no-mistakes pipeline. Delivery requirements in user intent remain
+acceptance context, but the outer executor alone performs the other validation,
+push, PR, and CI phases.
+
+`NO_MISTAKES_GATE` is fast diagnostic evidence, not authorization by
+itself. The runtime combines managed Git identity with authenticated process
+ancestry. If a pipeline-control command returns
+`error.code: nested_gate_context`, stop immediately and
+return control to the outer executor. Safe inspection remains available through
+`no-mistakes axi status`, `no-mistakes axi logs`, help, and
+`no-mistakes doctor`.
+
+
 When the user invokes `/no-mistakes`, report the outcome at the end. If the user
 asks for something specific, translate that request into the matching `axi run`
 flags yourself - for example, "skip the lint step" becomes `--skip=lint`. Run
@@ -123,6 +142,16 @@ Run the pipeline and decide on its findings as they come up:
    - `ask-user` - the finding challenges the user's deliberate intent or
      touches product behavior. This is a call only the user can make - see
      [Escalate `ask-user` findings](#escalate-ask-user-findings) below.
+
+   `severity` decides whether a finding is worth a fix round at all.
+   Select `error` and `warning` findings; leave `info`
+   findings out of `--findings` unless the user asked for them or one is
+   plainly a real defect the reviewer under-rated. `info` is advisory - a
+   preference, a nit, a possible future cleanup - and every finding you select
+   costs a fix round plus the full rereview that round triggers. Reporting an
+   `info` finding is the whole point of it; fixing it usually is not.
+   The pipeline applies the same floor to its own automatic fixing
+   (`auto_fix.min_severity`, default `warning`).
 
    **Review auto-fix is disabled by default** (`auto_fix.review: 0`; a repo
    or global `auto_fix.review > 0` override re-enables it), so blocking and
