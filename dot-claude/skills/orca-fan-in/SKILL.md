@@ -70,13 +70,22 @@ One line, opening with the literal sentinel `[fan-out]` — the orchestrator rou
 ```
 
 - `<slug>` is this worker's task slug, taken from the `Slug:` line of the brief that launched
-  this session — the orchestrator's tally matches on that exact string. Only when the brief
-  carried no slug, fall back to this tab's title; Orca renames tabs from agent activity, so ask
-  the human for the slug when the title is not obviously it.
+  this session — the orchestrator's tally matches on that exact string. When that brief opened
+  with a slash command, its slots came through as the invocation's arguments, so read them from
+  there. Only when the brief carried no slug, fall back to this tab's title; Orca renames tabs
+  from agent activity, so ask the human for the slug when the title is not obviously it.
 - `ok` / `failed` / `blocked` is the human's verdict, not a self-assessment. Ask when it is
   unclear.
 - Keep it a pointer. The durable record is the bead, PR, or branch that `details:` names; the
   line only tells the orchestrator where to look.
+
+**Before sending, make the bead survive this worktree.** If this session committed anything, its
+bead's close reason must name the **commit sha and branch** — check `close_reason` in
+`bd show <id> --json`. Not closed yet: `bd close <id> --reason "<outcome>; commit <sha> on branch
+<branch>"`. Already closed without it: `bd update <id> --append-notes "commit <sha> on branch
+<branch>"`. Removing this
+worktree deletes its branch, and the sha in that reason is then the only handle left on the
+commit. Fan-in is the last moment anyone is looking.
 
 ## 4. Send it
 
