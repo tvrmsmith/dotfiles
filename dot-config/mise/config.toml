@@ -1,7 +1,7 @@
 [tools]
 dotnet = "latest"
 go = "1.25.1"
-node = "25"
+node = "25.9.0"
 opentofu = "latest"
 pnpm = "9"
 ruby = "3.4.7"
