@@ -6,7 +6,10 @@ defines when a row counts as spawned; work through both of these so that criteri
 
 ## Clear the bypass-permissions consent prompt
 
-Trust is per directory, so every *new* worktree stops on it before the brief runs.
+A new worktree *may* stop on it before the brief runs — one observed batch had one worktree stop
+and another, created the same way hours later, go straight to the brief. Trust is broader than
+per-worktree and its exact scope is unknown, so read for the prompt rather than assuming either
+way.
 
 Step 7's `terminal wait --for tui-idle` and the `terminal read` after it are where the prompt
 shows up — the prompt is what the freshly booted worker is idling on. When
