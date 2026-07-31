@@ -56,9 +56,10 @@ orchestrator. Print it, and whether `terminal show` still resolves it. If every 
 batch is gone the orchestrator has no witness left in Orca; ask the human which tab it was, or
 leave it unnamed and report the bead rows alone.
 
-**Tab rows leave no trace.** Terminals expose no provenance and no environment from outside, and
-Orca renames tabs from agent activity, so a tab worker's bead is all there is. With a live
-orchestrator handle, list its worktree's terminals as unattributed candidates:
+**Tab rows leave no trace the CLI can read.** Terminals expose no provenance and no environment
+from outside, and the `title` the CLI reports is the pane's activity title, not the tab label
+fan-out set — so a tab worker's bead is all the CLI has. With a live orchestrator handle, list
+its worktree's terminals as unattributed candidates:
 
 ```text
 ORCA terminal show --terminal <orchestrator-handle> --json      # → result.terminal.worktreeId
@@ -67,7 +68,10 @@ ORCA terminal list --worktree id:<worktreeId> --json
 
 Print `handle`, `title`, `preview`, and `lastOutputAt` per terminal, under a heading that says
 plainly these are candidates rather than confirmed members — the orchestrator's own tab and
-unrelated tabs land in this list too.
+unrelated tabs land in this list too. That `title` is activity text, so it will not match a
+slug; use `preview` and `lastOutputAt` to narrow, then **have the human match the row against
+the tab labels in the sidebar**, which do carry the slugs. The human closes this gap, not the
+CLI.
 
 ## 3. Rescue a gone worker's commit
 
