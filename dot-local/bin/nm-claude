@@ -37,7 +37,9 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   if main_root="$(main_root_for_remote "$remote")" && [ -d "$main_root" ]; then
     # NM_SKIP_CLAUDE_MD: don't perturb the gate's diffing with the CLAUDE.md
     # overwrite. Best-effort — never let linking failure block the run.
-    MAIN_ROOT="$main_root" NM_SKIP_CLAUDE_MD=1 "$LINK_SETTINGS" || true
+    # Keep the linker's own output off claude's stderr: no-mistakes captures
+    # that stream and reports it as the reason claude failed.
+    MAIN_ROOT="$main_root" NM_SKIP_CLAUDE_MD=1 "$LINK_SETTINGS" >/dev/null 2>&1 || true
 
     # Append gate-only review guidance into the gate worktree's CLAUDE.local.md.
     # link-claude-settings symlinks CLAUDE.local.md back to the real dev checkout;
