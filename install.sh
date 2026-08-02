@@ -65,7 +65,7 @@ install_pinned_npm_tools() {
 		echo "npm not found; skipping pinned npm tools (lavish-axi)."
 		return
 	fi
-	local want="0.1.38"
+	local want="0.1.45"
 	if lavish-axi --version 2>/dev/null | grep -q "$want"; then
 		echo "lavish-axi@$want already installed."
 	else
