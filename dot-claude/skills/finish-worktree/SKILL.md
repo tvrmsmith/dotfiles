@@ -71,8 +71,7 @@ Once stage 2 completes, present the PR URL and ask the user — with
 
 - **Open tuicr** (recommend this first) — open the PR in a tuicr review pane so
   they can read the diff and leave comments.
-- **Skip to merge** — no local review; go straight to 3b. Both paths still pass
-  through the re-sign step.
+- **Skip to merge** — no local review; go straight to the merge step below.
 
 ### 3a. Open tuicr (only if chosen)
 
@@ -97,50 +96,17 @@ them as blocking feedback (`issue` first), fix, push, and re-present. Do not
 write agent-authored comments into their session. Loop until they say the review
 is done.
 
-### 3b. Re-sign the pipeline's commits
-
-no-mistakes runs with commit signing turned off, so its auto-fix commits — and
-any its background CI monitor pushed — carry no signature. Re-sign the branch
-here, at the last possible moment: that monitor stays live until the PR merges,
-so an earlier rewrite just leaves fresh unsigned commits behind you.
-
-Check first, and **skip the whole step if there is nothing to fix** — a
-needless force-push costs a full CI re-run:
-
-```sh
-BASE=$(gh pr view <#> --json baseRefName -q .baseRefName)
-git log --format='%h %G? %s' "origin/$BASE..HEAD"
-```
-
-`%G?` is `G` for a good signature and `N` for none. If any line reads `N`:
-
-```sh
-git fetch origin
-git rebase --force-rebase --gpg-sign "$(git merge-base origin/$BASE HEAD)"
-git push --force-with-lease
-```
-
-Rebase onto the **merge base**, not `origin/$BASE`. That rewrites the commits in
-place with signatures and nothing else; rebasing onto the live base branch would
-also drag in whatever landed there since, turning a signing pass into a content
-change that can conflict.
-
-- `--force-with-lease` refuses the push if the pipeline pushed something you have
-  not fetched. Treat a refusal as a stop: fetch, re-read the log, and start the
-  check over rather than forcing past it.
-- Rewrite only the feature branch. Never rewrite the base.
-- Verify no line still reads `N` afterwards, and let CI go green on the new head
-  before merging. `U` means signed but the signer is not in this machine's
-  `allowed_signers` — signed is what this step is for, so treat it as done.
-- If signing itself fails (`error: Load key ... agent refused operation`), the
-  1Password SSH agent is not serving the key — load the `1password` skill.
-- If the CI monitor pushes again after the rewrite, run this step once more.
-
-### 3c. Merge
+### 3b. Merge
 
 Either path converges here: **wait for the user to prompt you to continue.**
 Merge only once they do, however the repo merges (merge queue, `gh pr merge`, or
 the user merging it themselves).
+
+Do not re-sign the branch first. no-mistakes runs with commit signing off, so its
+auto-fix and CI-monitor commits are unsigned — but these PRs squash-merge, so
+those commits never reach the base branch and GitHub signs the squash commit it
+creates with its own key either way. Rewriting the branch to sign them would buy
+a force-push and a full CI re-run for a history that gets discarded on merge.
 
 ## 4. Hand the beads issue back
 
