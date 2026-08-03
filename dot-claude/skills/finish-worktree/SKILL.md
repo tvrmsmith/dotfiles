@@ -1,6 +1,6 @@
 ---
 name: finish-worktree
-description: Finish development on a worktree end-to-end — take committed work from validation through a merged PR and a closed beads issue.
+description: Finish development on a worktree end-to-end — take committed work from validation through a merged PR, then hand the beads issue back to the user to close.
 disable-model-invocation: true
 ---
 
@@ -32,32 +32,20 @@ Resolve each:
 
 ## 1. no-mistakes gate
 
-Validate the committed changes through the no-mistakes pipeline. Drive its CLI
-directly (the Skill tool cannot invoke it from here) — the CLI is self-describing:
-`no-mistakes axi run --help` lists the flags, and every return prints a `help[]`
-list of the next commands (errors print `error:` + `help`). Follow those.
+Validate the committed changes by invoking the **`no-mistakes` skill**, which
+owns the pipeline contract — the CLI, the gate loop, `ask-user` escalation, and
+recovery. Follow it as written, with the overrides below layered on top.
 
-Start with the work's intent — a concise statement of the goal and any notable
-decisions/tradeoffs from this session, **not** the full beads body:
+Its `--intent` is the work's intent: the goal and any notable decisions or
+tradeoffs from this session, **not** the full beads body.
 
-```sh
-no-mistakes axi run --intent "<what the user set out to accomplish>"
-```
+Overrides for this flow:
 
-Then loop: each return is either a `gate:` (respond per its `help[]` lines) or an
-`outcome:` — repeat until an `outcome:`.
-
-Judgment rules the `help[]` output won't teach you:
-
-- A `gate:` finding marked `ask-user` is the user's call — **escalate it to them
-  verbatim** (id, file, description). `auto-fix`/`no-op` findings you may drive
-  yourself.
 - Run attended, without `--yes` — this flow has a human review pause at stage 3,
   and `--yes` would auto-resolve the `ask-user` findings meant for the user.
-- `axi run`/`axi respond` block for minutes (review, test, CI). A slow call is
-  working — check `axi status` separately rather than cancelling or re-issuing.
-- The pipeline owns fixes (`--action fix`) and its background CI monitor owns
-  rebases — leave both to it.
+- **Stop at `checks-passed`.** The no-mistakes skill would hand the PR to the
+  user to merge there; here that outcome is a handoff to stage 2 instead. Do not
+  ask the user to merge yet.
 - **Severity cap.** Count the review-step gate rounds you resolve. Rounds 1–3 act
   on every finding. From round 4 on, act only on `warning` and above; accept
   anything below warning as-is so the run advances, and carry those skipped
@@ -68,8 +56,7 @@ Judgment rules the `help[]` output won't teach you:
 **Handoff:** the target outcome is `checks-passed` (validated, CI green, not yet
 merged — merging happens after stage 3). Proceed to stage 2 reusing the PR (URL is
 in the `help` line). A `failed`/`cancelled` outcome or an `error:` is a stage
-failure. If you hit a gate or error the `help[]` lines don't resolve, read
-`~/.claude/skills/no-mistakes/SKILL.md` for the full contract before proceeding.
+failure — report and stop.
 
 ## 2. pr-review-loop
 
@@ -115,19 +102,21 @@ Either path converges here: **wait for the user to prompt you to continue.**
 Merge only once they do, however the repo merges (merge queue, `gh pr merge`, or
 the user merging it themselves).
 
-## 4. Close the beads issue
+## 4. Hand the beads issue back
 
-Once the PR is `MERGED` (`gh pr view <#> --json state`), close the backing issue:
+**Never close the issue yourself** — closing is the user's call, even after the
+PR merges. Do not run `bd close`.
 
-```bash
-bd close <id> --reason "Merged PR <#/url>"
-```
+Once the PR is `MERGED` (`gh pr view <#> --json state`), leave the issue
+`in_progress`, report its state and the merged PR, and tell the user it is ready
+for them to close. Close it only if they explicitly tell you to in that turn.
 
-Then persist per the beads skill's convention (`bd dolt push` if that is how the
-repo syncs). Verify with `bd show <id>` that status is closed.
+Still persist any updates you *did* make (`bd dolt push` if that is how the repo
+syncs).
 
 ## Final report
 
-Summarize the outcome in one compact block: PR merged (link), beads issue closed
-(id), any stage that was skipped, capped, or needs follow-up, and any
-low-severity findings dropped by the stage 1 severity cap.
+Summarize the outcome in one compact block: PR merged (link), beads issue id +
+its (still open) status and that it awaits the user's close, any stage that was
+skipped, capped, or needs follow-up, and any low-severity findings dropped by
+the stage 1 severity cap.
