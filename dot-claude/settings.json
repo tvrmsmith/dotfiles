@@ -61,7 +61,7 @@
   },
   "disableClaudeAiConnectors": true,
   "skillOverrides": {
-    "no-mistakes": "user-invocable-only",
+    "no-mistakes": "on",
     "computer-use": "user-invocable-only",
     "linear-tickets": "user-invocable-only",
     "orca-emulator": "user-invocable-only",
@@ -156,7 +156,8 @@
     "loop": "user-invocable-only",
     "fewer-permission-prompts": "user-invocable-only",
     "prd": "user-invocable-only",
-    "beads": "user-invocable-only"
+    "beads": "user-invocable-only",
+    "ralph": "user-invocable-only"
   },
   "hooks": {
     "PermissionRequest": [
@@ -236,6 +237,16 @@
       }
     ],
     "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/relink-settings.sh",
+            "timeout": 10
+          }
+        ]
+      },
       {
         "matcher": "",
         "hooks": [

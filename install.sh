@@ -132,6 +132,11 @@ setup_dotfiles() {
 	# .zshenv), leaving the tracked file machine-neutral. Symlinking it also
 	# means Claude Code's own writes — plugin toggles, effortLevel, marketplace
 	# entries — land in the repo instead of silently drifting from it.
+	#
+	# That link does not hold on its own: writers that save the file atomically
+	# (temp file + rename) replace it with a regular file, and `claude doctor`
+	# is one of them. dot-claude/hooks/relink-settings.sh runs at SessionStart
+	# and restores the link, adopting whatever the live file accumulated first.
 	stow --dotfiles -d "$SCRIPT_DIR" -t "$HOME" .
 
 	# The one entry stow can't place (see .stow-local-ignore): it's a symlink to
