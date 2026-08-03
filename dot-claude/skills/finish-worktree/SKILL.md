@@ -102,12 +102,6 @@ Either path converges here: **wait for the user to prompt you to continue.**
 Merge only once they do, however the repo merges (merge queue, `gh pr merge`, or
 the user merging it themselves).
 
-Do not re-sign the branch first. no-mistakes runs with commit signing off, so its
-auto-fix and CI-monitor commits are unsigned — but these PRs squash-merge, so
-those commits never reach the base branch and GitHub signs the squash commit it
-creates with its own key either way. Rewriting the branch to sign them would buy
-a force-push and a full CI re-run for a history that gets discarded on merge.
-
 ## 4. Hand the beads issue back
 
 **Never close the issue yourself** — closing is the user's call, even after the
