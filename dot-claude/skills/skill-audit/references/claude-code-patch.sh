@@ -11,10 +11,17 @@
 
 set -euo pipefail
 
-VERSIONS_DIR="$HOME/.local/share/claude/versions"
-BINARY=$(ls -t "$VERSIONS_DIR"/* 2>/dev/null | head -1)
+if ! command -v python3 &>/dev/null; then
+  echo "python3 is required (Arch: pacman -S python)" >&2
+  exit 1
+fi
 
-if [[ -z "$BINARY" ]]; then
+VERSIONS_DIR="$HOME/.local/share/claude/versions"
+# Newest version, excluding the .bak this script leaves next to each binary.
+# `command ls` because an interactive `ls` alias (eza) rejects BSD-style flags.
+BINARY=$(command ls -t "$VERSIONS_DIR"/* 2>/dev/null | grep -v '\.bak$' | head -1)
+
+if [[ -z "$BINARY" || ! -f "$BINARY" || ! -x "$BINARY" ]]; then
   echo "No Claude Code binary found in $VERSIONS_DIR" >&2
   exit 1
 fi
@@ -22,10 +29,18 @@ fi
 VERSION=$(basename "$BINARY")
 echo "Target: $BINARY (v$VERSION)"
 
-# Extract entitlements before patching (re-sign would strip them)
-ENTITLEMENTS=$(mktemp /tmp/claude-entitlements.XXXXXX.plist)
-codesign -d --entitlements "$ENTITLEMENTS" --xml "$BINARY" 2>/dev/null
-trap 'rm -f "$ENTITLEMENTS"' EXIT
+# Extract entitlements before patching (re-sign would strip them). macOS only —
+# on Linux there is no codesign and nothing to preserve.
+# BSD mktemp only substitutes trailing Xs, so a `.plist` after them is taken
+# literally — same path every run, and "mkstemp failed ... File exists" the
+# moment one is left behind. Make a temp dir, name the file inside it.
+ENTITLEMENTS=""
+if command -v codesign &>/dev/null; then
+  ENTITLEMENTS_DIR=$(mktemp -d /tmp/claude-entitlements.XXXXXX)
+  trap 'rm -rf "$ENTITLEMENTS_DIR"' EXIT
+  ENTITLEMENTS="$ENTITLEMENTS_DIR/entitlements.plist"
+  codesign -d --entitlements "$ENTITLEMENTS" --xml "$BINARY" 2>/dev/null
+fi
 
 PATCH_RC=0
 python3 - "$BINARY" <<'PYEOF' || PATCH_RC=$?
@@ -74,20 +89,25 @@ if not os.path.exists(backup):
     shutil.copy2(binary_path, backup)
     print(f"Backup: {backup}")
 
-# Patch
+# Patch. Write a sibling and rename over the target instead of writing in
+# place: Linux refuses to open a currently-executing binary for writing
+# (ETXTBSY), and a rename swaps the directory entry, not the running inode.
 patched = data[:pos] + REPLACE + data[pos + len(NEEDLE):]
-with open(binary_path, "wb") as f:
+tmp_path = binary_path + ".patched.tmp"
+with open(tmp_path, "wb") as f:
     f.write(patched)
+shutil.copymode(binary_path, tmp_path)
+os.replace(tmp_path, binary_path)
 
 print("Done. skillOverrides now applies to plugin skills.")
 PYEOF
 
-if [[ $PATCH_RC -eq 0 ]]; then
+if [[ $PATCH_RC -eq 0 && -n "$ENTITLEMENTS" ]]; then
   echo "Re-signing binary with entitlements..."
   codesign --force --sign - --entitlements "$ENTITLEMENTS" "$BINARY"
   echo "Signature valid. Entitlements preserved."
-elif [[ $PATCH_RC -eq 2 ]]; then
-  : # already patched, no re-sign needed
+elif [[ $PATCH_RC -eq 0 || $PATCH_RC -eq 2 ]]; then
+  : # patched on Linux (nothing to re-sign), or already patched
 else
   exit "$PATCH_RC"
 fi

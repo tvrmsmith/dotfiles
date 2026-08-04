@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
 # Patch Claude Code binary to allow skillOverrides for plugin-scoped skills.
-# Platform-agnostic: handles macOS codesigning when available, skips on Linux.
+# Runs on macOS and Linux (Arch): the codesign step is macOS-only and skipped
+# where codesign is absent; everything else is POSIX/GNU-portable.
 # Re-run after each Claude Code update.
 
 set -euo pipefail
 
-VERSIONS_DIR="$HOME/.local/share/claude/versions"
-BINARY=$(ls -t "$VERSIONS_DIR"/* 2>/dev/null | head -1)
+if ! command -v python3 &>/dev/null; then
+  echo "python3 is required (Arch: pacman -S python)" >&2
+  exit 1
+fi
 
-if [[ -z "$BINARY" ]]; then
+VERSIONS_DIR="$HOME/.local/share/claude/versions"
+# Newest version, excluding the .bak this script leaves next to each binary.
+# `command ls` because an interactive `ls` alias (eza) rejects BSD-style flags.
+BINARY=$(command ls -t "$VERSIONS_DIR"/* 2>/dev/null | grep -v '\.bak$' | head -1)
+
+if [[ -z "$BINARY" || ! -f "$BINARY" || ! -x "$BINARY" ]]; then
   echo "No Claude Code binary found in $VERSIONS_DIR" >&2
   exit 1
 fi
@@ -19,9 +27,13 @@ echo "Target: $BINARY (v$VERSION)"
 # Extract entitlements on macOS (codesign would strip them)
 ENTITLEMENTS=""
 if command -v codesign &>/dev/null; then
-  ENTITLEMENTS=$(mktemp /tmp/claude-entitlements.XXXXXX.plist)
+  # BSD mktemp only substitutes trailing Xs, so a `.plist` after them is taken
+  # literally — same path every run, and "mkstemp failed ... File exists" the
+  # moment one is left behind. Make a temp dir, name the file inside it.
+  ENTITLEMENTS_DIR=$(mktemp -d /tmp/claude-entitlements.XXXXXX)
+  trap 'rm -rf "$ENTITLEMENTS_DIR"' EXIT
+  ENTITLEMENTS="$ENTITLEMENTS_DIR/entitlements.plist"
   codesign -d --entitlements "$ENTITLEMENTS" --xml "$BINARY" 2>/dev/null
-  trap 'rm -f "$ENTITLEMENTS"' EXIT
 fi
 
 PATCH_RC=0
@@ -93,8 +105,14 @@ for p in PATCHES:
     data = data[:pos] + replace + data[pos + len(needle):]
     applied += 1
 
-with open(binary_path, "wb") as f:
+# Write a sibling and rename over the target instead of writing in place:
+# Linux refuses to open a currently-executing binary for writing (ETXTBSY),
+# and a rename swaps the directory entry without touching the running inode.
+tmp_path = binary_path + ".patched.tmp"
+with open(tmp_path, "wb") as f:
     f.write(data)
+shutil.copymode(binary_path, tmp_path)
+os.replace(tmp_path, binary_path)
 
 print(f"Done. Applied {applied} patch(es). skillOverrides + /skills UI fixed for plugin skills.")
 PYEOF
