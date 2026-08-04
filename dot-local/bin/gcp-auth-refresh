@@ -18,6 +18,13 @@
 # The login flow must be the default browser-launching one. Claude Code shows
 # this script's output but cannot send it stdin, so --no-browser and
 # --no-launch-browser would block on a pasted code until the 3-minute timeout.
+#
+# Several Claude Code sessions can hit an expired-credential error at the same
+# moment and each run this script, so the login is single-flighted behind a
+# lock: exactly one process opens a browser, the rest wait for it to finish and
+# then re-probe. `mkdir` is the atomic primitive here because macOS has no
+# flock(1); the lock records its owner PID so a crashed run doesn't wedge every
+# later one.
 
 GCLOUD=/opt/homebrew/share/google-cloud-sdk/bin/gcloud
 [ -x "$GCLOUD" ] || GCLOUD=$(command -v gcloud) || {
@@ -25,10 +32,63 @@ GCLOUD=/opt/homebrew/share/google-cloud-sdk/bin/gcloud
 	exit 1
 }
 
-if "$GCLOUD" auth application-default print-access-token >/dev/null 2>&1; then
+LOCK_DIR="${TMPDIR:-/tmp}/gcp-auth-refresh.lock"
+# Well under Claude Code's 3-minute hook timeout, leaving room for the probes.
+WAIT_SECONDS=150
+
+probe() {
+	"$GCLOUD" auth application-default print-access-token >/dev/null 2>&1
+}
+
+# True when the lock exists and its owner is still running.
+lock_is_live() {
+	owner=$(cat "$LOCK_DIR/pid" 2>/dev/null) || return 1
+	[ -n "$owner" ] || return 1
+	kill -0 "$owner" 2>/dev/null
+}
+
+if probe; then
+	echo "gcp-auth-refresh: ADC already valid; no login needed."
+	exit 0
+fi
+
+while :; do
+	if mkdir "$LOCK_DIR" 2>/dev/null; then
+		echo $$ >"$LOCK_DIR/pid"
+		trap 'rm -rf "$LOCK_DIR"' EXIT INT TERM
+		break
+	fi
+
+	if ! lock_is_live; then
+		echo "gcp-auth-refresh: clearing stale lock at $LOCK_DIR." >&2
+		rm -rf "$LOCK_DIR"
+		continue
+	fi
+
+	echo "gcp-auth-refresh: another login is already running; waiting for it."
+	waited=0
+	while [ "$waited" -lt "$WAIT_SECONDS" ] && lock_is_live; do
+		sleep 2
+		waited=$((waited + 2))
+	done
+
+	if probe; then
+		echo "gcp-auth-refresh: the other login succeeded; nothing to do."
+		exit 0
+	fi
+
+	if [ "$waited" -ge "$WAIT_SECONDS" ]; then
+		echo "gcp-auth-refresh: timed out waiting for the in-flight login." >&2
+		exit 1
+	fi
+	# The other login finished but ADC is still bad — retry for the lock.
+done
+
+# Re-probe under the lock: we may have raced a login that just succeeded.
+if probe; then
 	echo "gcp-auth-refresh: ADC already valid; no login needed."
 	exit 0
 fi
 
 echo "gcp-auth-refresh: ADC could not mint a token; starting browser login."
-exec "$GCLOUD" auth application-default login
+"$GCLOUD" auth application-default login
