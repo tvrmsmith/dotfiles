@@ -1,0 +1,182 @@
+#!/bin/sh
+# Orca archive hook: tear down the Aspire stack belonging to a worktree being removed.
+#
+# `aspire run --detach` outlives the terminal that started it, so removing a
+# worktree strands a whole stack pointed at a checkout that no longer exists.
+# It does not die quietly: once its containers are gone the AppHost spins
+# forever retrying Kafka, and one stranded stack burned 31 CPU-hours before
+# this hook existed.
+#
+# Orca runs this from the worktree directory before removal, with
+# ORCA_WORKTREE_PATH set, under /bin/bash, with a 120s timeout (see
+# src/main/hooks.ts: HOOK_TIMEOUT). Orca logs a failure but removes the
+# worktree regardless, so this keeps its own log and always exits 0 — a partial
+# teardown must never look clean just because Orca carried on. macOS /bin/bash
+# is 3.2, hence plain sh and no arrays.
+
+set -u
+
+LOG_FILE="${HOME}/.local/state/aspire-teardown.log"
+# The AppHost ignores SIGTERM once it is in its reconnect loop, so escalate
+# fast. Well inside Orca's 120s budget either way.
+TERM_GRACE_SECONDS=5
+# DCP names containers <resource>-<8 hex>, and the CLI log is the only record
+# tying a stack to the names it chose.
+CONTAINER_RE='\b[a-z][a-z0-9]*(-[a-z0-9]+)*-[a-z0-9]{8}\b'
+
+mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null
+
+log() {
+	printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*" >>"$LOG_FILE"
+}
+
+# All descendants of a pid, depth first. dcp parents the service processes, so
+# killing the tree is what actually clears a stack.
+descendants() {
+	for child in $(pgrep -P "$1" 2>/dev/null); do
+		printf '%s\n' "$child"
+		descendants "$child"
+	done
+}
+
+log_files_in() {
+	grep -oE -- '--log-file [^[:space:]]+' | awk '{ print $2 }' | sort -u
+}
+
+container_names_in() {
+	[ -n "$1" ] || return 0
+	# shellcheck disable=SC2086 # paths come from argv, no spaces
+	grep -hoE "$CONTAINER_RE" $1 2>/dev/null | sort -u
+}
+
+# Killing the wrong tree is expensive and silent, so the matching has to be
+# testable against a live stack without touching it.
+dry_run=
+case ${1:-} in
+-n | --dry-run)
+	dry_run=1
+	shift
+	;;
+esac
+
+act() {
+	if [ -n "$dry_run" ]; then
+		log "DRY-RUN would run: $*"
+	else
+		"$@"
+	fi
+}
+
+worktree=${ORCA_WORKTREE_PATH:-${1:-}}
+worktree=${worktree%/}
+
+# Every process match below is anchored on this path, so a short or relative
+# one would match far too much. Bail rather than guess.
+if [ -z "$worktree" ] || [ "$worktree" = "$HOME" ] ||
+	[ "${worktree#/}" = "$worktree" ] ||
+	[ "$(printf '%s' "$worktree" | awk -F/ '{ print NF - 1 }')" -lt 4 ]; then
+	log "refusing to act on implausible worktree path '$worktree'"
+	exit 0
+fi
+
+apphost_pids=
+stack_pids=
+stack_cmds=
+other_cmds=
+
+while read -r pid cmd; do
+	case $cmd in
+	"$worktree"/*AppHost*)
+		apphost_pids="$apphost_pids $pid"
+		stack_pids="$stack_pids $pid"
+		stack_cmds="$stack_cmds
+$cmd"
+		;;
+	*aspire*" --apphost $worktree/"* | *" --project $worktree/"*)
+		stack_pids="$stack_pids $pid"
+		stack_cmds="$stack_cmds
+$cmd"
+		;;
+	*AppHost*--log-file*)
+		# Another worktree's stack. Its containers are off limits.
+		other_cmds="$other_cmds
+$cmd"
+		;;
+	esac
+done <<EOF
+$(ps -eo pid=,command=)
+EOF
+
+if [ -z "$stack_pids" ]; then
+	log "no Aspire stack running for $worktree"
+	exit 0
+fi
+
+log "tearing down Aspire stack for $worktree (apphost:${apphost_pids:- none})"
+
+# Read the container names before killing anything: the logs name them, and a
+# dead stack's log is no longer discoverable from its (gone) process.
+stack_logs=$(printf '%s' "$stack_cmds" | log_files_in | tr '\n' ' ')
+other_logs=$(printf '%s' "$other_cmds" | log_files_in | tr '\n' ' ')
+protected=$(container_names_in "$other_logs")
+live=$(docker ps --format '{{.Names}}' 2>/dev/null)
+
+containers=
+for name in $(container_names_in "$stack_logs"); do
+	printf '%s\n' "$live" | grep -qxF "$name" || continue
+	if printf '%s\n' "$protected" | grep -qxF "$name"; then
+		log "leaving $name alone; another live stack claims it"
+		continue
+	fi
+	containers="$containers $name"
+done
+
+kill_pids=$stack_pids
+for pid in $stack_pids; do
+	kill_pids="$kill_pids $(descendants "$pid" | tr '\n' ' ')"
+done
+
+# dcp is not a descendant of the AppHost — it monitors it — so its tree has to
+# be found by the pid it was told to watch.
+for apphost in $apphost_pids; do
+	while read -r pid cmd; do
+		case $cmd in
+		*"dcp start-apiserver"*"--monitor $apphost "*)
+			kill_pids="$kill_pids $pid $(descendants "$pid" | tr '\n' ' ')"
+			;;
+		esac
+	done <<EOF
+$(ps -eo pid=,command=)
+EOF
+done
+
+kill_pids=$(printf '%s\n' $kill_pids | grep -E '^[0-9]+$' | sort -un | tr '\n' ' ')
+
+log "signalling $(printf '%s\n' $kill_pids | wc -l | tr -d ' ') processes:$kill_pids"
+act kill -TERM $kill_pids 2>/dev/null
+if [ -z "$dry_run" ]; then
+	sleep "$TERM_GRACE_SECONDS"
+	# One at a time: a single kill(1) call gives up on the whole list at the
+	# first pid that has already exited.
+	for pid in $kill_pids; do
+		kill -KILL "$pid" 2>/dev/null
+	done
+
+	survivors=
+	for pid in $kill_pids; do
+		kill -0 "$pid" 2>/dev/null && survivors="$survivors $pid"
+	done
+	[ -n "$survivors" ] && log "WARNING: survived SIGKILL:$survivors"
+fi
+
+# dcp removes its containers on a graceful exit but not after SIGKILL, which is
+# the path taken above.
+if [ -n "$containers" ]; then
+	log "removing containers:$containers"
+	log "docker rm: $(act docker rm -f $containers 2>&1 | tr '\n' ' ')"
+else
+	log "no containers to remove"
+fi
+
+log "teardown complete for $worktree"
+exit 0
