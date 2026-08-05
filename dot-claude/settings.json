@@ -412,7 +412,8 @@
     "ws-atlassian@wellsky-plugins": false,
     "wsh-data@wellsky-home": false,
     "wsh-infra@wellsky-home": false,
-    "zapier@claude-plugins-official": false
+    "zapier@claude-plugins-official": false,
+    "coding-standards@coding-standards": true
   },
   "extraKnownMarketplaces": {
     "chrome-devtools-plugins": {
@@ -487,6 +488,12 @@
       "source": {
         "source": "directory",
         "path": "/Users/trevor.smith/dev/personal/dotnet-agent-skills"
+      }
+    },
+    "coding-standards": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/trevor.smith/dev/personal/coding-standards"
       }
     }
   },
