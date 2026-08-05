@@ -24,11 +24,17 @@ LIVE_SETTINGS="$HOME/.claude/settings.json"
 
 # Only adopt live content that parses - a truncated or half-written file must
 # not overwrite the tracked copy.
-if command -v python3 >/dev/null 2>&1; then
-	python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$LIVE_SETTINGS" 2>/dev/null || exit 0
-fi
+command -v python3 >/dev/null 2>&1 || exit 0
+python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$LIVE_SETTINGS" 2>/dev/null || exit 0
+
+# The link has to be relative, exactly as stow writes it. An absolute one
+# resolves to the same file and Claude Code never notices, but stow does not
+# recognise it as its own and aborts the next install before linking anything.
+link_target=$(python3 -c \
+	'import os,sys; print(os.path.relpath(sys.argv[1], os.path.dirname(sys.argv[2])))' \
+	"$REPO_SETTINGS" "$LIVE_SETTINGS") || exit 0
 
 cp "$LIVE_SETTINGS" "$REPO_SETTINGS" || exit 0
-ln -sfn "$REPO_SETTINGS" "$LIVE_SETTINGS"
+ln -sfn "$link_target" "$LIVE_SETTINGS"
 
 exit 0
