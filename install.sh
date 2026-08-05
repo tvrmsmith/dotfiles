@@ -137,6 +137,17 @@ setup_dotfiles() {
 	# (temp file + rename) replace it with a regular file, and `claude doctor`
 	# is one of them. dot-claude/hooks/relink-settings.sh runs at SessionStart
 	# and restores the link, adopting whatever the live file accumulated first.
+	#
+	# Stow only owns links written relative to the package, so a link restored
+	# any other way reads as a foreign target and aborts the whole install
+	# before anything is placed. Drop any link that already points at our own
+	# copy and let stow lay it down again.
+	claude_settings="$HOME/.claude/settings.json"
+	if [ -L "$claude_settings" ] &&
+		[ "$(readlink -f "$claude_settings")" = "$(readlink -f "$SCRIPT_DIR/dot-claude/settings.json")" ]; then
+		rm -f "$claude_settings"
+	fi
+
 	stow --dotfiles -d "$SCRIPT_DIR" -t "$HOME" .
 
 	# The one entry stow can't place (see .stow-local-ignore): it's a symlink to
