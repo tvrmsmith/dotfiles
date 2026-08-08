@@ -103,10 +103,13 @@ Capture the pushed short SHA for the iteration summary and the thread replies.
 
 ### 3g. Reply to comments and resolve threads
 
-For each inline review-thread comment acted on this iteration:
+**Every inline review thread this iteration gets a reply and ends resolved** — a decision was made on each one, so none is left open. Leave a thread unresolved only when the user explicitly asks for it to stay visible.
 
 - **Fixed** → post a very concise reply on the thread (e.g. `Fixed in <sha>.`), then resolve the thread.
-- **Deferred** → post a concise reply noting the reason, and leave the thread unresolved so it stays visible.
+- **Deferred** → post a concise reply stating the decision and the reason it was not fixed, then resolve the thread. Deferring is an answer, not an open question; the reply is the record, and the final report (section 5) carries the deferral forward.
+- **No action needed** (the bot confirmed correct behaviour or filed an informational note) → resolve the thread; a reply is optional.
+
+Before moving to 3h, re-run the `reviewThreads` query and confirm every thread reports `isResolved: true` except any the user asked to keep open. An unresolved thread left behind is a defect in this step, not a signal.
 
 Mechanics: inline review comments live in review threads. Reply with
 `gh api repos/<owner>/<repo>/pulls/<n>/comments -f body=... -F in_reply_to=<comment_id>`.
