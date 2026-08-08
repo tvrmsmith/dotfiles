@@ -12,6 +12,8 @@
 #   - .claude/skills/imr/           (personal repo-scoped imr command skill)
 #   - CONTEXT-MAP.md                (personal domain-model map at repo root,
 #                                     gitignored; skipped until present)
+#   - mise.local.toml               (personal, gitignored mise repo config;
+#     .mise.local.toml                both spellings, whichever the repo uses)
 #   - **/CONTEXT.md                 (personal per-context glossaries under src/,
 #                                     gitignored; multi-context repo layout)
 #
@@ -37,6 +39,8 @@ LINK_PATHS=(
   "docs/agents"
   ".claude/skills/imr"
   "CONTEXT-MAP.md"
+  "mise.local.toml"
+  ".mise.local.toml"
 )
 
 # Must be inside a git repo.
