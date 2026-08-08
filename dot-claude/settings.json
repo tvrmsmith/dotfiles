@@ -1,11 +1,8 @@
 {
-  "gcpAuthRefresh": "/Users/trevor.smith/.local/bin/gcp-auth-refresh",
   "skillListingMaxDescChars": 500,
   "skillListingBudgetFraction": 0.02,
   "env": {
     "CLAUDE_CODE_PROCESS_WRAPPER": "/Users/trevor.smith/.local/bin/claude-launcher",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-5",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-5",
     "SUPERSET_DEBUG_HOOKS": "1",
     "CLAUDE_CODE_SCROLL_SPEED": "2",
     "CLAUDE_AFK_TIMEOUT_MS": "86400000",
@@ -72,6 +69,7 @@
     "claude-code-setup:claude-automation-recommender": "user-invocable-only",
     "shared:pr-comments-analyzer": "user-invocable-only",
     "claude-md-management:claude-md-improver": "user-invocable-only",
+    "wshp:test-best-practices": "off",
     "shared:skill-builder": "off",
     "superpowers:writing-skills": "off",
     "caveman:caveman-compress": "user-invocable-only",
@@ -395,7 +393,6 @@
     "dotnet11@dotnet-agent-skills": false,
     "dotnet@dotnet-agent-skills": false,
     "iac-assistant@wellsky-plugins": false,
-    "otel-telemetry@wellsky-plugins": false,
     "playwright@claude-plugins-official": false,
     "pr-review-toolkit@claude-plugins-official": false,
     "product-management@wellsky-plugins": false,
@@ -497,7 +494,6 @@
       }
     }
   },
-  "otelHeadersHelper": "python3 /Users/trevor.smith/.claude/plugins/cache/wellsky-plugins/otel-telemetry/1.3.0/scripts/otel-token-helper.py",
   "syntaxHighlightingDisabled": false,
   "alwaysThinkingEnabled": true,
   "effortLevel": "medium",
