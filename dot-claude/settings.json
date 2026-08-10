@@ -6,7 +6,7 @@
     "SUPERSET_DEBUG_HOOKS": "1",
     "CLAUDE_CODE_SCROLL_SPEED": "2",
     "CLAUDE_AFK_TIMEOUT_MS": "86400000",
-    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "250000",
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "80"
   },
   "permissions": {
@@ -261,6 +261,15 @@
           {
             "type": "command",
             "command": "command -v bd >/dev/null 2>&1 && bd prime --mcp || true"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -r '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ] && [ -x '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/trevor.smith/.orca/agent-hooks/claude-hook.sh'; else { command -p cat 2>/dev/null || cat; } >/dev/null 2>&1 || :; fi",
+            "timeout": 10
           }
         ]
       }
