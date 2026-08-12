@@ -367,7 +367,7 @@
   "disableArtifact": true,
   "statusLine": {
     "type": "command",
-    "command": "mise exec node@25 -- claude-powerline --theme=tokyo-night --style=powerline"
+    "command": "$HOME/.claude/bin/statusline.sh"
   },
   "enabledPlugins": {
     "caveman@caveman": true,
