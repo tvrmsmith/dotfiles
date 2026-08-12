@@ -1,7 +1,12 @@
 [gpg]
 	format = ssh
 [gpg "ssh"]
-	program = /Users/trevor.smith/.local/bin/op-ssh-sign
+	# Resolved off PATH (~/.local/bin, stowed from dot-local/bin), not pinned to
+	# an absolute path: the wrapper already picks the right 1Password binary per
+	# platform, and any absolute prefix makes every commit on another machine die
+	# with "cannot exec". git does a PATH lookup for a bare name here but does
+	# NOT expand ~, so a bare command name is the only portable spelling.
+	program = op-ssh-sign
 	allowedSignersFile = ~/.ssh/allowed_signers
 [commit]
 	gpgsign = true
@@ -63,7 +68,7 @@
 	path = ~/.gitconfig.local
 [credential "https://github.com"]
 	helper = 
-	helper = !/opt/homebrew/bin/gh auth git-credential
+	helper = !gh auth git-credential
 [credential "https://gist.github.com"]
 	helper = 
-	helper = !/opt/homebrew/bin/gh auth git-credential
+	helper = !gh auth git-credential
