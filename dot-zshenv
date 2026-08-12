@@ -26,6 +26,18 @@ export OMP_MODEL="anthropic-vertex/claude-opus-4-7"
 export ENABLE_LSP_TOOL=1
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 
+# Node carries its own CA store and never consults the macOS keychain, so on the
+# TLS-intercepting corporate network every registry fetch dies with
+# SELF_SIGNED_CERT_IN_CHAIN — which npm's retry/backoff presents as a multi-minute
+# hang, not an error. `corporate-ca-bundle` exports the keychain's CA:TRUE anchors
+# here; NODE_EXTRA_CA_CERTS *adds* to Node's roots, so it is safe off the corporate
+# network too, and the -s guard covers the machine where the bundle is absent.
+# Deliberately not SSL_CERT_FILE/CURL_CA_BUNDLE/REQUESTS_CA_BUNDLE: those REPLACE
+# the trust store, and this bundle holds only the corporate CAs. See dotfiles-3x1.
+_CORP_CA="$XDG_CONFIG_HOME/corporate-ca.crt"
+[ -s "$_CORP_CA" ] && export NODE_EXTRA_CA_CERTS="$_CORP_CA"
+unset _CORP_CA
+
 export NVM_DIR="$HOME/.nvm"
 
 export POWERLINE_NERD_FONTS=1

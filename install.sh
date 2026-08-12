@@ -57,6 +57,17 @@ update_vendored_skills() {
 	fi
 }
 
+export_corporate_ca() {
+	# Must run before anything that talks to a registry: on a TLS-intercepting
+	# corporate network Node rejects every fetch with SELF_SIGNED_CERT_IN_CHAIN and
+	# npm retries silently for minutes before failing. .zshenv exports this for
+	# normal shells; install.sh has to set it for its own npm calls. See dotfiles-3x1.
+	local bundle
+	bundle=$("$SCRIPT_DIR/dot-local/bin/corporate-ca-bundle" --path)
+	"$SCRIPT_DIR/dot-local/bin/corporate-ca-bundle" || return 0
+	[ -s "$bundle" ] && export NODE_EXTRA_CA_CERTS="$bundle"
+}
+
 install_pinned_npm_tools() {
 	# Pinned global npm tools invoked by Claude Code hooks. Pinned (not `npx -y`)
 	# so a later malicious publish is not auto-adopted, and the hook calls the
@@ -155,6 +166,7 @@ setup_dotfiles() {
 	ln -sfn "$SCRIPT_DIR/dot-claude/skills" "$HOME/.agents/skills"
 }
 
+export_corporate_ca
 install_gnu_stow
 init_submodules
 update_vendored_skills
