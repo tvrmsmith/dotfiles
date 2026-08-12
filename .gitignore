@@ -22,6 +22,12 @@ dot-warp/typescript-language-server/
 # 1Password writes this empty marker itself; machine-local state, not config.
 dot-config/1Password/telemetry-enabled
 
+# Generated trust bundle (corporate-ca-bundle). Only ever appears here if stow
+# folded ~/.config into dot-config/, which would route the write into the repo.
+# Machine-specific, derived from the keychain, and this repo is public — the
+# anchors must not be committed. See dotfiles-3x1.
+dot-config/corporate-ca.crt
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
