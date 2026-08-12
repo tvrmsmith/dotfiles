@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+#
+# Export this machine's corporate TLS trust anchors as a PEM bundle, for tools that carry
+# their own CA store and so never see the macOS keychain.
+#
+# The corporate network terminates TLS at an inspecting proxy. curl(1) is fine — it uses
+# the system trust store — but Node, and anything built on it, is not: every registry
+# fetch fails with SELF_SIGNED_CERT_IN_CHAIN, and npm's retry/backoff turns that into a
+# multi-minute silent hang rather than an error. See bead dotfiles-3x1.
+#
+# No proxy hostname appears in this repo on purpose: it is public, and the anchors are
+# read from the keychain by trust attribute, so nothing here needs to name the network.
+#
+#   corporate-ca-bundle            # refresh the bundle, print its path
+#   corporate-ca-bundle --path     # print the path, write nothing
+#   corporate-ca-bundle --quiet    # refresh, print nothing (for install.sh)
+#
+# The consumer is NODE_EXTRA_CA_CERTS, exported from .zshenv when this file is non-empty.
+# NODE_EXTRA_CA_CERTS *adds* to Node's built-in roots; SSL_CERT_FILE, CURL_CA_BUNDLE and
+# REQUESTS_CA_BUNDLE replace theirs, so a bundle holding three corporate CAs and nothing
+# else would break public TLS for those tools. Only the additive variable is safe here.
+#
+# The sandbox images solve the same problem separately, from the same keychain, in
+# _mysbx_write_ca_bundle (extras/agent-sandboxing/lib/mysbx-core.zsh, bead dotfiles-ji8).
+set -uo pipefail
+
+keychain=${CORPORATE_CA_KEYCHAIN:-/Library/Keychains/System.keychain}
+out=${CORPORATE_CA_BUNDLE:-${XDG_CONFIG_HOME:-$HOME/.config}/corporate-ca.crt}
+
+quiet=0
+case "${1:-}" in
+  --path)  printf '%s\n' "$out"; exit 0 ;;
+  --quiet) quiet=1 ;;
+  '')      ;;
+  *)       printf 'usage: corporate-ca-bundle [--path|--quiet]\n' >&2; exit 2 ;;
+esac
+
+say() { [ "$quiet" -eq 1 ] || printf '%s\n' "$*"; }
+
+if [ "$(uname)" != Darwin ]; then
+  say "corporate-ca-bundle: not macOS — nothing to export"
+  exit 0
+fi
+command -v security >/dev/null 2>&1 || { printf 'corporate-ca-bundle: no security(1)\n' >&2; exit 1; }
+
+tmp=$(mktemp -d) || exit 1
+trap 'rm -rf "$tmp"' EXIT
+
+security find-certificate -a -p "$keychain" >"$tmp/raw.pem" 2>/dev/null
+if [ -n "${CORPORATE_CA_EXTRA_FILE:-}" ]; then
+  [ -r "$CORPORATE_CA_EXTRA_FILE" ] \
+    || { printf 'corporate-ca-bundle: unreadable CORPORATE_CA_EXTRA_FILE: %s\n' \
+           "$CORPORATE_CA_EXTRA_FILE" >&2; exit 1; }
+  cat "$CORPORATE_CA_EXTRA_FILE" >>"$tmp/raw.pem"
+fi
+
+awk -v dir="$tmp" '
+  /-----BEGIN CERTIFICATE-----/ { n++ }
+  n { print > (dir "/cert-" n ".pem") }
+' "$tmp/raw.pem"
+
+# CA:TRUE only. System.keychain also holds this machine's identity, device-auth and
+# management-attestation leaf certs; they can never sign anything a registry serves, and
+# handing them to every node process is leakage for no benefit. `-text | grep` rather than
+# `-ext basicConstraints` because macOS ships LibreSSL, which has no -ext.
+: >"$tmp/bundle.pem"
+kept=0
+for cert in "$tmp"/cert-*.pem; do
+  [ -f "$cert" ] || continue
+  /usr/bin/openssl x509 -in "$cert" -noout -text 2>/dev/null | grep -q 'CA:TRUE' || continue
+  /usr/bin/openssl x509 -in "$cert" -noout -subject 2>/dev/null | sed 's/^/# /' >>"$tmp/bundle.pem"
+  cat "$cert" >>"$tmp/bundle.pem"
+  kept=$((kept + 1))
+done
+
+# An empty bundle would make every node process warn on startup, so remove the file
+# rather than leaving a zero-byte one the .zshenv guard would still have to reject.
+mkdir -p "$(dirname "$out")"
+if [ "$kept" -eq 0 ]; then
+  rm -f "$out"
+  say "corporate-ca-bundle: no CA certificates in $keychain — removed $out"
+  exit 0
+fi
+
+# Only replace on a real change: the mtime is the only signal anyone has that the anchors
+# moved, and a rewrite every login would destroy it.
+if cmp -s "$tmp/bundle.pem" "$out" 2>/dev/null; then
+  say "corporate-ca-bundle: $out unchanged ($kept CA(s))"
+else
+  mv "$tmp/bundle.pem" "$out" || exit 1
+  chmod 644 "$out"
+  say "corporate-ca-bundle: wrote $out ($kept CA(s))"
+fi
