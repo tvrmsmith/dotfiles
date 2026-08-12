@@ -60,6 +60,10 @@ dolt-pprof/
 # Backup data (auto-exported JSONL, local-only)
 backup/
 
+# Interaction log. This repo is PUBLIC and the log quotes session content
+# verbatim, including work infrastructure detail. Keep it local.
+interactions.jsonl
+
 # Per-project environment file (Dolt connection config, GH#2520)
 .env
 
