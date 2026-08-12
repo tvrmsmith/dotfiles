@@ -163,12 +163,31 @@ setup_dotfiles() {
 	# before anything is placed. Drop any link that already points at our own
 	# copy and let stow lay it down again.
 	claude_settings="$HOME/.claude/settings.json"
+	dropped_claude_settings=0
 	if [ -L "$claude_settings" ] &&
 		[ "$(readlink -f "$claude_settings")" = "$(readlink -f "$SCRIPT_DIR/dot-claude/settings.json")" ]; then
 		rm -f "$claude_settings"
+		dropped_claude_settings=1
 	fi
 
-	stow --dotfiles -d "$SCRIPT_DIR" -t "$HOME" .
+	# An aborted stow places nothing, so the link dropped just above stays gone.
+	# Claude Code then writes settings.json fresh as a regular file and the
+	# SessionStart relink hook adopts that stub over the tracked copy. Put the
+	# link back and stop, rather than leaving the window open.
+	if ! stow --dotfiles -d "$SCRIPT_DIR" -t "$HOME" .; then
+		if [ "$dropped_claude_settings" = 1 ]; then
+			restore_link="$SCRIPT_DIR/dot-claude/settings.json"
+			if command -v python3 >/dev/null 2>&1; then
+				# Stow only recognises links spelled relative to the package.
+				restore_link=$(python3 -c \
+					'import os,sys; print(os.path.relpath(sys.argv[1], os.path.dirname(sys.argv[2])))' \
+					"$restore_link" "$claude_settings") || restore_link="$SCRIPT_DIR/dot-claude/settings.json"
+			fi
+			ln -sfn "$restore_link" "$claude_settings"
+		fi
+		echo "install.sh: stow aborted; resolve the conflicts above and re-run." >&2
+		exit 1
+	fi
 
 	# The one entry stow can't place (see .stow-local-ignore): it's a symlink to
 	# a directory, which stow 2.4.1 --dotfiles tries to descend into.
