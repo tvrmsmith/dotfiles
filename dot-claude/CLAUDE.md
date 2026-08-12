@@ -28,8 +28,7 @@ Match found → use existing copy, no clone. No match → clone to temp. Persona
 
 ## Communication Style
 
-- Spec and plan reviews → present via `lavish` skill (rich reviewable HTML artifact) by default
-  - Delegate the full lavish flow to a background subagent to keep bulky HTML out of main context; it relays only feedback summaries + decisions. Keep in main thread only when feedback drives immediate main-thread edits.
+- Spec and plan reviews → `lavish-delegate` skill by default.
 
 ## Planning
 
@@ -53,6 +52,7 @@ Match found → use existing copy, no clone. No match → clone to temp. Persona
 - **Bug fixes**: always start by reproducing the bug in an E2E setting as close as possible to how an end user experiences it. Ensures you find the real problem so the fix actually solves it.
 - **Boy-scout rule**: see something off — pixel glitch, lint warning, test flake — even outside current scope, fix it along the way. Obsess over pixel perfection in UI.
 - **Coding standards**: ALWAYS load the `coding-standards` skill before writing, modifying, or reviewing code, and follow it.
+- **Agent-facing docs**: ALWAYS load the `writing-for-agents` skill before writing, editing, or reviewing any document an agent consumes — a `SKILL.md`, `AGENTS.md`/`CLAUDE.md`, a subagent prompt, a hook's injected text, a doc reached by a pointer from one of those — and follow it. Same rule when a skill isn't firing and you're diagnosing why.
 - **Cross-boundary contract approval**: any contract crossing a service or independent-deploy boundary (service↔service, frontend↔BFF, Kafka/event schemas, APIs consumed outside the owning service) needs my approval before implementation — load the `contract-approval` skill and follow it. Internal seams you change within one PR don't need approval.
 
 ## Tool Preferences

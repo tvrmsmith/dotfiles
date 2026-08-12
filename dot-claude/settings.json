@@ -224,6 +224,16 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/lavish-poll-guard.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "*",
         "hooks": [
           {
@@ -250,7 +260,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "mkdir -p \"$HOME/.claude/logs\"; lavish-axi >>\"$HOME/.claude/logs/lavish-hook.log\" 2>&1 || true",
+            "command": "mkdir -p \"$HOME/.claude/logs\"; out=\"$(lavish-axi 2>&1)\"; printf '%s\\n' \"$out\" >>\"$HOME/.claude/logs/lavish-hook.log\"; printf '%s\\n' \"$out\" | grep -E '^sessions\\[|^  /' || true",
             "timeout": 20
           }
         ]
