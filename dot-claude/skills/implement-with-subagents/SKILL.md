@@ -17,7 +17,7 @@ Four words, each at one level. Keep each at its own level.
 
 - **slice** — one vertical slice, arriving already sliced from planning. The skill's input, never something this skill produces.
 - **seam** — a public boundary inside the slice: the *location* where an interface lives. §1 finds them, §3 agrees them. A seam is placed, never built, owned or run green.
-- **assignment** — the code on one side of a seam, and the unit one worker owns. **A seam yields an assignment per side**: a contract seam yields two, client and server, which is what makes them parallelizable; a seam with several implementations yields one per implementation; an ordinary seam yields one.
+- **assignment** — a body of code that meets a seam's interface, and the unit one worker owns. A seam yields **one assignment per participant**, however many that is; several participants at one seam is the parallel case (§1).
 - **cycle** — one failing test plus the minimum code to green it. Many cycles per assignment: the first trivially small, each one after building on what the last taught.
 
 ## Modes
@@ -30,7 +30,7 @@ Four words, each at one level. Keep each at its own level.
 Parent reads the slice and the relevant code, then produces:
 
 - The **seams** to test at — public boundaries only.
-- The **assignments** each seam yields, one per side.
+- The **assignments** each seam yields.
 - An **order**, so each assignment's cycles teach the next.
 - A **parallel tag** per assignment. **Parallel when truth is independent:** one assignment can proceed beside another exactly when its expected values come from outside the sibling work — the spec, an agreed contract, a worked example. An assignment whose correctness can only be judged against what another worker is producing is sequential. Disjoint files is not the test; parallel workers need disjoint **import graphs**, or a sibling's half-written code reds their run.
 - A **fit check** per assignment: it must comfortably fit one worker context window. An assignment that doesn't fit splits, adding a seam if the split needs one. A *slice* that doesn't fit goes back to planning to be split there.
@@ -62,7 +62,7 @@ The design carries:
 - **Seam signatures** — real typed signatures, living as text in the review artifact; the repo stays untouched until §4. Seams only, never every hop. A cross-boundary seam cites its `contract-approval` record instead of re-litigating shape.
 - **Module ownership** — which module owns each new piece of behaviour.
 - **Failure semantics** — per seam: what throws, what catches it, what partial state survives.
-- **One-way doors** — each seam tagged reversible or expensive-to-change, so review attention lands on the two that matter.
+- **One-way doors** — each seam tagged reversible or expensive-to-change, so review attention lands on the ones that matter.
 - **Flow** — entry point through the hops, as a diagram, marked **illustrative and non-binding**: interior structure belongs to the refactor step, and a worker stays free to deviate from it.
 - **Assumptions** — every place the spec was silent and the parent chose.
 
