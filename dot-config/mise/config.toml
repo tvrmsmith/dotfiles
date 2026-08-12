@@ -9,6 +9,7 @@ terraform = "latest"
 uv = "latest"
 java = "21"
 postgres = "latest"
+"npm:lavish-axi" = "0.1.50"
 
 [settings]
 

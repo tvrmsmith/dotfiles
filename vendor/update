@@ -21,7 +21,7 @@ SUBTREES=(
 # binary so the vendored skill uses the pinned global install (see install.sh)
 # instead of auto-fetching latest on every call. Bump the version here to update.
 NPM_SKILLS=(
-  "lavish-axi|lavish-axi|0.1.45|skills/lavish/SKILL.md"
+  "lavish-axi|lavish-axi|0.1.50|skills/lavish/SKILL.md"
 )
 
 # Git-hosted skills: the skill is one file or one directory inside a large
