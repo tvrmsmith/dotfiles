@@ -72,16 +72,25 @@ install_pinned_npm_tools() {
 	# Pinned global npm tools invoked by Claude Code hooks. Pinned (not `npx -y`)
 	# so a later malicious publish is not auto-adopted, and the hook calls the
 	# local binary offline instead of hitting the registry on every session.
-	if ! command -v npm >/dev/null 2>&1; then
-		echo "npm not found; skipping pinned npm tools (lavish-axi)."
-		return
-	fi
-	local want="0.1.45"
+	#
+	# Installed through mise's npm backend, not `npm install -g`: mise scopes
+	# global npm packages to the active node version, so a subagent, sandbox, or
+	# repo resolving a different node loses the binary entirely ("No version is
+	# set for shim: lavish-axi"). The npm: tool is pinned in dot-config/mise/
+	# config.toml and resolves under any node.
+	local want="0.1.50"
 	if lavish-axi --version 2>/dev/null | grep -q "$want"; then
 		echo "lavish-axi@$want already installed."
-	else
-		echo "Installing lavish-axi@$want..."
+		return
+	fi
+	if command -v mise >/dev/null 2>&1; then
+		echo "Installing lavish-axi@$want via mise..."
+		mise install "npm:lavish-axi@$want"
+	elif command -v npm >/dev/null 2>&1; then
+		echo "mise not found; installing lavish-axi@$want with npm -g (node-version scoped)..."
 		npm install -g "lavish-axi@$want"
+	else
+		echo "neither mise nor npm found; skipping pinned npm tools (lavish-axi)."
 	fi
 }
 
