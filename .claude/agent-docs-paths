@@ -1,0 +1,8 @@
+# Extra agent-facing paths for dot-claude/hooks/agent-docs-guard.sh.
+# One extended-regex per line, matched against the edited file's path.
+#
+# Everything under dot-claude/skills/ is a skill's own source. The guard
+# recognises SKILL.md by name already; this catches the rest of a skill
+# directory — REFERENCE.md, GLOSSARY.md, templates, helper scripts — which is
+# agent-facing because of where it sits, not what it is called.
+(^|/)dot-claude/skills/
