@@ -135,6 +135,15 @@ setup_dotfiles() {
 	# dot-agents/.agents and aborting the entire install.
 	mkdir -p "$HOME/.agents"
 
+	# ~/.config for the same reason, and this one has teeth: corporate-ca-bundle
+	# writes the trust bundle to $XDG_CONFIG_HOME/corporate-ca.crt. Folded, that
+	# write lands in dot-config/ — the machine's corporate CAs committed into a
+	# public repo. export_corporate_ca runs before stow and mkdir -p's the
+	# directory itself, so today this is belt-and-braces; it stops being that the
+	# moment those calls are reordered. .gitignore covers the same case at the
+	# other end.
+	mkdir -p "$HOME/.config"
+
 	# dot-claude/settings.json is stowed like everything else. It used to be
 	# excluded and regenerated per machine, because it carried work-only config
 	# (Vertex creds, WellSky OTEL endpoint) that breaks Claude Code on personal
