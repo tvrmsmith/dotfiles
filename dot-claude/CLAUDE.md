@@ -1,5 +1,7 @@
 # Global Agent Instructions
 
+- Laptop leaves network coverage — network failures are transient; retry, don't blame creds/remote/config.
+
 ## Repository Layout
 
 - Personal repos under `~/dev/personal/` (e.g. `~/dev/personal/dotfiles`, `~/dev/personal/oh-my-pi`, `~/dev/personal/ralph`)
