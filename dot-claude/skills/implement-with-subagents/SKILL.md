@@ -27,6 +27,8 @@ Four words, each at one level. Keep each at its own level.
 
 ## 1. Seams and assignments
 
+**Load `codebase-design` before anything else.** Its vocabulary and seam rules govern this section and §3: the interface is the test surface, and one adapter means a hypothetical seam. Placing a seam where no test can live is the failure this catches.
+
 Parent reads the slice and the relevant code, then produces:
 
 - The **seams** to test at — public boundaries only.
