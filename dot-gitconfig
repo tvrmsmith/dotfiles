@@ -16,6 +16,12 @@
 	email = trevor.smith@wellsky.com
 [alias]
 	up = pull --rebase
+	# Advance the base branch from its remote, then rebase the current branch
+	# onto it. Defaults: base "main", remote "upstream"; override as
+	# `git sync <base> <remote>`. On the base branch itself, fast-forward only
+	# and skip the rebase. The `fetch . <remote>/<base>:<base>` spelling updates
+	# the base branch without checking it out, and refuses a non-fast-forward.
+	sync = "!f() { b=${1:-main}; r=${2:-upstream}; git fetch $r --prune || return 1; if [ \"$(git symbolic-ref --short HEAD)\" = \"$b\" ]; then git merge --ff-only $r/$b; else git fetch . $r/$b:$b && git rebase $b; fi; }; f"
 [merge "ours"]
 	driver = true
 [core]
