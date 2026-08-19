@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pstack evaluation for the dotfiles setup</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #161923;
+    --panel2: #1c2030;
+    --line: #2a2f42;
+    --text: #dfe3ee;
+    --dim: #9aa3bd;
+    --take: #4ade80;
+    --adapt: #fbbf24;
+    --skip: #f87171;
+    --accent: #7dd3fc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0 0 6rem;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.6 ui-sans-serif, -apple-system, "SF Pro Text", Inter, system-ui, sans-serif;
+  }
+  main { max-width: 1080px; margin: 0 auto; padding: 0 1.5rem; }
+  header {
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #171b28, var(--bg));
+    padding: 2.5rem 0 2rem;
+  }
+  h1 { font-size: 1.9rem; margin: 0 0 .4rem; letter-spacing: -.02em; }
+  h2 {
+    font-size: 1.25rem;
+    margin: 3rem 0 .9rem;
+    padding-bottom: .45rem;
+    border-bottom: 1px solid var(--line);
+    letter-spacing: -.01em;
+  }
+  h3 { font-size: 1rem; margin: 1.8rem 0 .5rem; color: var(--accent); }
+  p { margin: .7rem 0; }
+  .sub { color: var(--dim); font-size: .92rem; }
+  code {
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: .05rem .3rem;
+    font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  pre {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: .9rem 1rem;
+    overflow-x: auto;
+    font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  pre code { background: none; border: 0; padding: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .92rem; }
+  th, td { text-align: left; padding: .6rem .7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--dim); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; }
+  tbody tr:hover { background: #171b27; }
+  .badge {
+    display: inline-block;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    padding: .15rem .45rem;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  .take { background: rgba(74,222,128,.15); color: var(--take); border: 1px solid rgba(74,222,128,.35); }
+  .adapt { background: rgba(251,191,36,.13); color: var(--adapt); border: 1px solid rgba(251,191,36,.33); }
+  .skip { background: rgba(248,113,113,.13); color: var(--skip); border: 1px solid rgba(248,113,113,.33); }
+  .verdict {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 1.1rem 1.3rem;
+    margin: 1.5rem 0;
+  }
+  .verdict p:first-child { margin-top: 0; }
+  .verdict p:last-child { margin-bottom: 0; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .8rem; margin: 1.2rem 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: .9rem 1rem; }
+  .card h4 { margin: 0 0 .35rem; font-size: .95rem; }
+  .card p { margin: 0; font-size: .88rem; color: var(--dim); }
+  .num { font-size: 1.6rem; font-weight: 700; color: var(--accent); display: block; }
+  ul { margin: .6rem 0; padding-left: 1.2rem; }
+  li { margin: .35rem 0; }
+  .conflict { border-left: 3px solid var(--skip); }
+  .footnote { color: var(--dim); font-size: .85rem; margin-top: 2.5rem; border-top: 1px solid var(--line); padding-top: 1rem; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <main>
+    <h1>pstack, evaluated against your setup</h1>
+    <p class="sub">
+      <a href="https://github.com/backnotprop/pstack">backnotprop/pstack</a>, a mirror of the Cursor plugin
+      <code>cursor/plugins/pstack</code> by poteto (React core team, ex Meta/Netflix, now Cursor). MIT licensed.
+      13 workflow skills, 19 principle skills, 14 playbooks, 1 subagent. Evaluated 2026-08-19 at commit <code>bf5378a</code>.
+    </p>
+  </main>
+</header>
+
+<main>
+
+<div class="verdict">
+  <p><strong>Verdict: cherry-pick, do not install the plugin.</strong></p>
+  <p>
+    pstack is written for Cursor, and the coupling is not cosmetic. Its flagship skills spawn four named
+    frontier models per run (<code>gpt-5.3-codex-high-fast</code>, <code>composer-2.5-fast</code>). Claude Code's Agent tool
+    accepts sonnet, opus, haiku, and fable. The multi-model diversity that makes <code>interrogate</code>,
+    <code>arena</code>, and <code>how --critique</code> work does not survive the port.
+  </p>
+  <p>
+    The 19 principle skills are pure prose with zero tool coupling. They port perfectly, they are the best
+    thing in the repo, and they are the piece your setup is actually missing. Take those. Take
+    <code>show-me-your-work</code>. Adapt two or three others later if you feel the gap. Leave
+    <code>poteto-mode</code> alone, because it contradicts three of your standing rules.
+  </p>
+</div>
+
+<div class="cards">
+  <div class="card"><span class="num">2</span><p>skills worth taking as-is (<code>unslop</code>, already installed, and <code>show-me-your-work</code>)</p></div>
+  <div class="card"><span class="num">12</span><p>principle skills that fill a real gap for you</p></div>
+  <div class="card"><span class="num">4</span><p>skills worth adapting later, each needing real work</p></div>
+  <div class="card"><span class="num">5</span><p>skills to skip outright, mostly duplicates or Cursor-only</p></div>
+</div>
+
+<h2>What blocks a straight install</h2>
+
+<table>
+  <thead><tr><th>Blocker</th><th>Detail</th><th>Hits</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Model slugs</strong></td>
+      <td>Tables hardcode <code>gpt-5.3-codex-high-fast</code>, <code>gpt-5.5-high-fast</code>, <code>composer-2.5-fast</code>, <code>claude-opus-4-7-thinking-xhigh</code>. Your Agent tool takes sonnet, opus, haiku, fable. Cross-family diversity is the entire mechanism, not a tuning knob.</td>
+      <td><code>interrogate</code>, <code>arena</code>, <code>architect</code>, <code>how</code>, <code>reflect</code>, <code>poteto-mode</code></td>
+    </tr>
+    <tr>
+      <td><strong>Task tool shape</strong></td>
+      <td>Uses <code>subagent_type: generalPurpose</code>, <code>readonly: true</code>, <code>run_in_background: true</code>. Yours are <code>general-purpose</code> / <code>Explore</code>, no readonly flag, plus <code>isolation: worktree</code> which pstack has no concept of.</td>
+      <td>every fan-out skill</td>
+    </tr>
+    <tr>
+      <td><strong>Missing Cursor built-ins</strong></td>
+      <td><code>poteto-mode</code> routes to <code>create-skill</code>, <code>babysit</code>, <code>/deslop</code>, <code>control-cli</code>, <code>control-ui</code>. None ship in pstack. Three are Cursor built-ins, two live in the unpublished <code>cursor-team-kit</code>.</td>
+      <td><code>poteto-mode</code>, <code>automate-me</code></td>
+    </tr>
+    <tr>
+      <td><strong>MCP dependency</strong></td>
+      <td><code>why</code> discovers MCP servers at run time and queries Linear, Slack, Notion, Sentry, Datadog, Databricks in parallel. You ban MCP servers outright. That is 23 KB of skill plus 8 source guides with one usable survivor, <code>code-archaeology</code>.</td>
+      <td><code>why</code>, <code>reflect</code></td>
+    </tr>
+    <tr>
+      <td><strong>Transcript layout</strong></td>
+      <td><code>reflect</code> and <code>automate-me</code> mine Cursor's <code>agent-transcripts/*.jsonl</code>. Claude Code writes <code>~/.claude/projects/**/*.jsonl</code> with a different schema.</td>
+      <td><code>reflect</code>, <code>automate-me</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Where it contradicts your CLAUDE.md</h2>
+
+<div class="verdict conflict">
+  <p><strong>Never block on the human.</strong> pstack's delegation principle says proceed on anything reversible and let the human course-correct after the fact. Your rule says "confirm decisions with me before acting: surface the choice, recommend, wait for my explicit answer." These are opposites, and <code>poteto-mode</code> cites the pstack version as a non-negotiable. Installing it puts two contradictory instructions in the same context window, which is how you get an agent that picks one at random.</p>
+  <p><strong>Todolists.</strong> Every pstack playbook opens with "open a todolist and copy the steps in verbatim." Your beads block prohibits TodoWrite entirely and routes all task tracking to <code>bd</code>. The playbooks are salvageable, but every step-tracking instruction has to be rewritten to <code>bd create</code>.</p>
+  <p><strong>Planning.</strong> poteto says "i don't believe in planning, the best spec is code." Your rule sends creative and design work to <code>/wayfinder</code> and <code>/grill-with-docs</code> before implementation. Not a hard conflict, but the two philosophies pull in different directions on the same tasks.</p>
+</div>
+
+<h2>Skill-by-skill fit</h2>
+
+<table>
+  <thead><tr><th>Skill</th><th>Verdict</th><th>Fit against your work</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>unslop</code></td>
+      <td><span class="badge take">TAKEN</span></td>
+      <td>Already vendored and wired into your global CLAUDE.md. No dependencies, no Cursor coupling. The one skill in the repo that installs clean.</td>
+    </tr>
+    <tr>
+      <td>19 <code>principle-*</code></td>
+      <td><span class="badge take">TAKE 12</span></td>
+      <td>Pure prose, one rule each, roughly 1 to 4 KB. Nothing in your setup covers deletion bias, idempotency, or shared-state discipline. See the shortlist below.</td>
+    </tr>
+    <tr>
+      <td><code>show-me-your-work</code></td>
+      <td><span class="badge take">TAKE</span></td>
+      <td>A TSV decision log plus a 40-line bash appender. Portable as written. Fills a real hole: beads tracks work items, this tracks decisions with evidence pointers. Aimed exactly at overnight ralph runs and orca fan-out you review the next morning.</td>
+    </tr>
+    <tr>
+      <td><code>figure-it-out</code></td>
+      <td><span class="badge adapt">ADAPT</span></td>
+      <td>Designs a bespoke rigorous playbook for large migrations and unattended runs. Closest pstack skill to how you actually use ralph and orca. Depends on <code>architect</code>, <code>arena</code>, and <code>show-me-your-work</code>, so it lands only after those. Its hypothesis loop with VERIFIED / NOT VERIFIED / INCONCLUSIVE verdicts is the strongest single idea here.</td>
+    </tr>
+    <tr>
+      <td><code>arena</code></td>
+      <td><span class="badge adapt">ADAPT</span></td>
+      <td>N candidates, cross-judge, pick a base, graft the losers in. You already have <code>orca-fan-out</code> and <code>orca-fan-in</code>, and pstack's worktree isolation rule matches your orca model. What it adds is the graft phase and the rejection record. What it loses is model diversity, though you could restore it by running <code>codex</code> and <code>gemini</code> CLIs as Bash runners.</td>
+    </tr>
+    <tr>
+      <td><code>architect</code></td>
+      <td><span class="badge adapt">ADAPT</span></td>
+      <td>Types and signatures with <code>not implemented</code> bodies before code. Real overlap with mattpocock's <code>codebase-design</code> and <code>to-spec</code>, but pstack's version is more concrete about the artifact. Pairs well with your <code>contract-approval</code> gate, since a sketch is exactly what you want approved. Depends on <code>arena</code>.</td>
+    </tr>
+    <tr>
+      <td><code>how</code></td>
+      <td><span class="badge adapt">ADAPT</span></td>
+      <td>Explain mode is a structured Explore fan-out with a fixed output format, and it maps cleanly onto your haiku / sonnet / opus rubric. Critique mode needs the model table rewritten. Moderate value, since your rubric already covers the routing decision.</td>
+    </tr>
+    <tr>
+      <td><code>interrogate</code></td>
+      <td><span class="badge skip">SKIP</span></td>
+      <td>Four-model adversarial review. You already run <code>comprehensive-code-review</code>, <code>review-loop</code>, <code>pr-review-loop</code>, <code>no-mistakes</code>, and <code>tuicr</code>. Without cross-family models it degrades to four opus agents disagreeing with themselves. The one part worth stealing is the act on / consider / noted / dismissed bucketing, which you could fold into <code>comprehensive-code-review</code>.</td>
+    </tr>
+    <tr>
+      <td><code>poteto-mode</code></td>
+      <td><span class="badge skip">SKIP</span></td>
+      <td>The router, and the thing the whole repo is built around. Skip it. It conflicts with your confirm-first rule, your no-TodoWrite rule, and your planning rule, and it routes to five skills that do not exist outside Cursor. Mine its 14 playbooks for ideas instead. Bug fix, visual parity, session pickup, and trace forensics are the ones with no equivalent in your set.</td>
+    </tr>
+    <tr>
+      <td><code>why</code></td>
+      <td><span class="badge skip">SKIP</span></td>
+      <td>Largest skill in the repo, and almost all of it is MCP query plumbing for tools you refuse to run. Read <code>references/sources/code-archaeology.md</code> once for the git-log technique, then walk away.</td>
+    </tr>
+    <tr>
+      <td><code>tdd</code></td>
+      <td><span class="badge skip">SKIP</span></td>
+      <td>Duplicate of mattpocock's <code>tdd</code>, which you already have. Two skills with the same name and overlapping triggers is worse than either alone.</td>
+    </tr>
+    <tr>
+      <td><code>typescript-best-practices</code></td>
+      <td><span class="badge skip">SKIP</span></td>
+      <td>Good content, wrong shape for you. Its trigger is "any .ts or .tsx file," which collides head-on with your always-load <code>coding-standards</code> rule. If you want the discriminated-union and branded-primitive rules, paste them into <code>coding-standards</code> rather than adding a second always-firing skill.</td>
+    </tr>
+    <tr>
+      <td><code>automate-me</code></td>
+      <td><span class="badge skip">SKIP</span></td>
+      <td>Drafts a personal <code>-mode</code> skill by mining your transcripts. Your global CLAUDE.md already is that artifact, hand-tuned over months, and it is better than a mined draft. Also depends on Cursor's <code>create-skill</code> and Cursor transcript paths.</td>
+    </tr>
+    <tr>
+      <td><code>reflect</code></td>
+      <td><span class="badge skip">SKIP</span></td>
+      <td>Three reviewers over the transcript, routed to skill edits. Needs both the Cursor transcript layout and MCP. You cover the same ground with <code>bd remember</code> and <code>skill-audit</code>. Revisit only if you rewrite the transcript discovery for <code>~/.claude/projects</code>.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>The 12 principles worth taking</h2>
+
+<p>These have no equivalent anywhere in your current set, or they sharpen something you already believe.</p>
+
+<table>
+  <thead><tr><th>Principle</th><th>Why it earns a slot for you</th></tr></thead>
+  <tbody>
+    <tr><td><code>separate-before-serializing-shared-state</code></td><td>The highest-value one. You run parallel agents across orca worktrees and ralph loops constantly, and "instructions are not concurrency control" is exactly the failure you hit when two agents touch one branch.</td></tr>
+    <tr><td><code>make-operations-idempotent</code></td><td>Your <code>install.sh</code> and stow setup live or die on this. Your own beads memory records stow aborting with exit 2 and silently no-opping the whole install.</td></tr>
+    <tr><td><code>laziness-protocol</code></td><td>Deletion before addition, flat over layered. Counterweight to the agent's default of writing more code.</td></tr>
+    <tr><td><code>subtract-before-you-add</code></td><td>Sequencing companion to the above. Remove dead weight first, then build on the smaller base.</td></tr>
+    <tr><td><code>minimize-reader-load</code></td><td>Layers to trace and state to hold, as two countable axes. Sharper than "keep it readable" and it complements mattpocock's deep-module vocabulary.</td></tr>
+    <tr><td><code>build-the-lever</code></td><td>Write the codemod instead of grinding 100 edits by hand. Directly relevant to your bulk-migration work and to <code>split-loop-branch</code> style cleanups.</td></tr>
+    <tr><td><code>fix-root-causes</code></td><td>Reinforces your existing "reproduce E2E first" rule, and adds the nil-check-guard antipattern you do not currently name.</td></tr>
+    <tr><td><code>prove-it-works</code></td><td>Verify the real artifact, never a self-report or "it compiles." The rule your <code>no-mistakes</code> gate enforces mechanically, stated as a habit.</td></tr>
+    <tr><td><code>encode-lessons-in-structure</code></td><td>Your <code>agent-docs-guard</code> hook is this principle already. Naming it makes the reflex reusable.</td></tr>
+    <tr><td><code>foundational-thinking</code></td><td>Name the data shape before writing logic. Pairs with your vertical-slice definition.</td></tr>
+    <tr><td><code>redesign-from-first-principles</code></td><td>Integrate a new requirement as if it were there on day one, rather than bolting it on.</td></tr>
+    <tr><td><code>boundary-discipline</code></td><td>Guards at the edges, pure functions inside. Complements the domain and DTO rules in your <code>coding-standards</code>.</td></tr>
+  </tbody>
+</table>
+
+<h3>The seven to leave out</h3>
+<ul>
+  <li><code>never-block-on-the-human</code>. Contradicts your confirm-first rule. Leaving it out is the point.</li>
+  <li><code>guard-the-context-window</code>. Your delegation section already says this, in more detail, with a model rubric.</li>
+  <li><code>type-system-discipline</code>. Overlaps <code>coding-standards</code>. Merge the good lines instead.</li>
+  <li><code>experience-first</code>, <code>exhaust-the-design-space</code>. Weak against your defaults. You already obsess over UI polish and reach for prototypes.</li>
+  <li><code>outcome-oriented-execution</code>, <code>migrate-callers-then-delete-legacy-apis</code>. Narrow to planned multi-phase rewrites. Add them if you start one.</li>
+</ul>
+
+<h2>How to install what you take</h2>
+
+<p>
+  One structural recommendation first. Do not symlink 12 principle skills into <code>dot-claude/skills/</code>.
+  Twelve skill descriptions sit in your context on every turn of every session, roughly 500 to 800 tokens,
+  whether or not any of them fire. Twelve pointers for material that is really one flat rule set is the wrong
+  shape. Collapse them into one reference file that your CLAUDE.md points at with a single line.
+</p>
+
+<h3>Step 1. Vendor the whole repo, expose a slice</h3>
+<p>Extend the entry you already added, so <code>vendor/update</code> pulls the full <code>skills</code> tree. Disk is free, context is not. Symlink only what you expose.</p>
+<pre><code>GIT_SKILLS=(
+  ...
+  "pstack|backnotprop-pstack|main|skills|https://github.com/backnotprop/pstack.git"
+)</code></pre>
+<p class="sub">
+  Note the tradeoff: <code>fetch_git_skill</code> does <code>rm -rf</code> on the destination before extracting, so any
+  local edit you make under <code>vendor/pstack/skills/</code> is destroyed on the next update. Keep your adaptations in
+  <code>dot-claude/skills/</code> as real files, and treat the vendor tree as read-only upstream.
+</p>
+
+<h3>Step 2. Symlink the two skills that port clean</h3>
+<pre><code>ln -sfn ../../vendor/pstack/skills/unslop            dot-claude/skills/unslop  # done
+ln -sfn ../../vendor/pstack/skills/show-me-your-work dot-claude/skills/show-me-your-work</code></pre>
+
+<h3>Step 3. Write one principles skill, not twelve</h3>
+<p>
+  A single <code>dot-claude/skills/engineering-principles/SKILL.md</code>, one heading per principle, roughly two to
+  four lines each, condensed from the 12 upstream files. One description in context instead of twelve. Add one
+  line to your Engineering Standards section pointing at it. Cost: one line of always-loaded context, versus
+  twelve.
+</p>
+
+<h3>Step 4. Stop there</h3>
+<p>
+  Run for a couple of weeks. If you find yourself wanting a decision-quality gate on a design before you write
+  code, come back for <code>architect</code> and <code>arena</code> together, and budget real time to rewrite the model
+  tables and the Task call shape. That is the only adaptation in this repo I would call clearly worth the effort,
+  and only after the principles have proven themselves.
+</p>
+
+<h2>Two things I would push back on</h2>
+<p>
+  <strong>The principles are load-bearing for the whole repo, and pstack knows it.</strong> <code>poteto-mode</code>
+  opens by demanding the agent read all 19 and then cite, by name, which principle changed which decision. That
+  citation requirement is the actual innovation here, more than any individual playbook. If you take the
+  principles without any mechanism forcing the agent to cite them against real choices, you get 12 more rules
+  the agent nods at and ignores. Worth stealing the citation demand along with the content.
+</p>
+<p>
+  <strong>The parallelism story is weaker than the README claims for you specifically.</strong> "Fearless
+  parallelism" in pstack means several models attacking one problem and a judge picking a winner. Yours means
+  several agents attacking different beads in different worktrees. Those are different shapes. pstack's fan-out
+  skills solve a problem you mostly do not have, which is why they cluster in the adapt and skip columns despite
+  being the repo's showcase.
+</p>
+
+<p class="footnote">
+  Generated from a read of the pstack tree at <code>bf5378a</code>: README, all 13 workflow SKILL.md files, all 19
+  principle frontmatters, <code>poteto-mode</code> in full, and the <code>interrogate</code>, <code>arena</code>,
+  <code>architect</code>, <code>how</code>, <code>show-me-your-work</code>, <code>figure-it-out</code>, and
+  <code>reflect</code> bodies. The 14 playbooks under <code>skills/poteto-mode/playbooks/</code> and the
+  <code>references/</code> prompt templates were listed but not read line by line.
+</p>
+
+</main>
+</body>
+</html>
