@@ -182,7 +182,7 @@ async function postOnce(
     // Why: status reporting must never fail the pi run just because Orca
     // is unavailable or the loopback request failed (e.g. Orca restart).
     if (!isWslRuntime()) return
-    postViaWindowsCurl(url, coords, body)
+    postViaWindowsCurl(body, ompRuntime)
   } finally {
     if (timeout) clearTimeout(timeout)
   }
@@ -230,32 +230,30 @@ function resolveWindowsCurlPath(): string | null {
   return cachedWindowsCurlPath
 }
 
-// Why: WSL loopback is not the Windows loopback, so a WSL-side POST cannot
-// reach Orca. curl.exe runs on the Windows side, where 127.0.0.1 IS the
-// listener Orca binds. Fire-and-forget: blocking on the spawn would stall
-// the pi event loop (and the TUI) on every hook event.
-function postViaWindowsCurl(url: string, coords: { token: string }, body: string): void {
+// Why: WSL loopback is not the Windows loopback, so use curl.exe on the host.
+function postViaWindowsCurl(body: string, ompRuntime: boolean): void {
   const curlPath = resolveWindowsCurlPath()
-  if (!curlPath) return
+  const windowsPort = process.env.ORCA_AGENT_HOOK_PORT
+  const windowsToken = process.env.ORCA_AGENT_HOOK_TOKEN
+  if (!curlPath || !windowsPort || !windowsToken) return
+  // Why: a stale guest endpoint must fall back to current host coordinates.
+  const windowsUrl = `http://127.0.0.1:${windowsPort}${resolveHookPath(ompRuntime)}`
   try {
     const { spawn } = require('child_process')
     const child = spawn(
       curlPath,
       [
         '-sS',
-        // Why: the spawn is detached from the event loop, so these bounds
-        // size a background process, not TUI latency. WSL->Win32 interop
-        // connects can exceed 0.5s on loaded machines (observed 3/3 drops
-        // to a healthy listener); size for delivery, not snappiness.
+        // Why: detached delivery may take seconds under loaded WSL interop.
         '--connect-timeout', '3',
         '--max-time', '10',
         '--noproxy', '127.0.0.1',
         '-o', 'NUL',
         '-X', 'POST',
         '-H', 'Content-Type: application/json',
-        '-H', `X-Orca-Agent-Hook-Token: ${coords.token}`,
+        '-H', `X-Orca-Agent-Hook-Token: ${windowsToken}`,
         '--data-binary', '@-',
-        url
+        windowsUrl
       ],
       { stdio: ['pipe', 'ignore', 'ignore'] }
     )
@@ -263,8 +261,7 @@ function postViaWindowsCurl(url: string, coords: { token: string }, body: string
     child.stdin.on('error', () => {})
     child.stdin.end(body)
   } catch {
-    // Why: the bridge is best-effort; a failed spawn must not surface
-    // inside the pi TUI.
+    // Why: status delivery must not surface inside the agent TUI.
   }
 }
 
