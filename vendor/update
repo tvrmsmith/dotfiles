@@ -32,6 +32,7 @@ NPM_SKILLS=(
 GIT_SKILLS=(
   "no-mistakes|tvrmsmith-no-mistakes|personal-build|skills/no-mistakes|git@github-personal:tvrmsmith/no-mistakes.git"
   "tuicr|agavra-tuicr|main|skills/tuicr|https://github.com/agavra/tuicr.git"
+  "pstack|backnotprop-pstack|main|skills/unslop|https://github.com/backnotprop/pstack.git"
 )
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
