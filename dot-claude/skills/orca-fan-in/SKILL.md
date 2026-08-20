@@ -7,11 +7,46 @@ disable-model-invocation: true
 # Orca Fan-In
 
 This session is a **worker** spawned by `/orca-fan-out`. The human has judged the work and is
-releasing it. Resolve the orchestrator's terminal handle, then send it one line.
+releasing it. Verify the work is complete, make its record durable, then send the orchestrator
+one line.
 
 Resolve the CLI once per the `orca-cli` skill's rules; below, `ORCA` is that executable.
 
-## 1. Resolve the orchestrator handle
+## 1. Check the work is done
+
+Re-read the brief's `Expected output:` and, when it carried a `Bead:` line, the bead
+(`bd show <id>`). Each thing they ask for is either produced or named to the human as not
+produced. Anything still open, say what is missing and stop: the result line closes this row out
+in the orchestrator's tally.
+
+## 2. Close the bead, then push it
+
+Bead rows only. Skip this step when the brief carried no `Bead:` line.
+
+This is the last moment anyone is looking at this worktree, and removing a worktree deletes its
+branch.
+
+```text
+bd close <id> --reason "<outcome>; commit <sha> on branch <branch>"
+```
+
+The sha and branch are required whenever this session committed anything: that sha is the only
+handle left on the commit once the branch is gone, and recovery reads it. Bead already closed
+without them: `bd update <id> --append-notes "commit <sha> on branch <branch>"`. Check
+`close_reason` in `bd show <id> --json` either way.
+
+Then push both records out of this worktree:
+
+```text
+git push -u origin <branch>     # the commits; skip for a tab row that committed nothing
+bd dolt push                    # the bead closure
+```
+
+A push that fails on the network is transient, so retry it. A push that fails for any other
+reason: report the exact error to the human and say the work still lives only in this worktree,
+which they must not remove yet.
+
+## 3. Resolve the orchestrator handle
 
 A fallback chain, not a branch — try each in order and take the first that yields a handle.
 
@@ -47,7 +82,7 @@ If no fallback yields a handle — the environment is empty and either this fall
 or the provenance field is absent — the chain has no answer. Say so, hand the result to the human
 as text, and stop. Sending into the wrong session is worse than not sending.
 
-## 2. Canonicalize it
+## 4. Canonicalize it
 
 Handles are aliases; the string you resolved may not be the one the runtime routes on.
 
@@ -61,12 +96,12 @@ Fan-out re-acquires on a stale handle because it is re-finding its *own* termina
 identify; fan-in would be guessing at someone else's, and a wrong guess sends into a stranger's
 session.
 
-## 3. Compose the line
+## 5. Compose the line
 
 One line, opening with the literal sentinel `[fan-out]` — the orchestrator routes on it:
 
 ```text
-[fan-out] <slug> <ok|failed|blocked> — <one-sentence outcome>; details: <bead id / PR / branch / path>
+[fan-out] <slug> ok — <one-sentence outcome>; details: <bead id / PR / branch / path>
 ```
 
 - `<slug>` is this worker's task slug, taken from the `Slug:` line of the brief that launched
@@ -77,20 +112,12 @@ One line, opening with the literal sentinel `[fan-out]` — the orchestrator rou
   slug verbatim. Do not take it from `terminal show`: that reports the pane's activity title
   (`✳ Laptop awake fan-out task`), a different field from the tab label (`laptop-awake`), and the
   slug is not recoverable from it.
-- `ok` / `failed` / `blocked` is the human's verdict, not a self-assessment. Ask when it is
-  unclear.
+- The status is `ok`. Step 1 stopped the run on anything unfinished, so reaching here means the
+  work landed.
 - Keep it a pointer. The durable record is the bead, PR, or branch that `details:` names; the
   line only tells the orchestrator where to look.
 
-**Before sending, make the bead survive this worktree.** If this session committed anything, its
-bead's close reason must name the **commit sha and branch** — check `close_reason` in
-`bd show <id> --json`. Not closed yet: `bd close <id> --reason "<outcome>; commit <sha> on branch
-<branch>"`. Already closed without it: `bd update <id> --append-notes "commit <sha> on branch
-<branch>"`. Removing this
-worktree deletes its branch, and the sha in that reason is then the only handle left on the
-commit. Fan-in is the last moment anyone is looking.
-
-## 4. Send it
+## 6. Send it
 
 ```text
 ORCA terminal send --terminal <canonical-handle> --text "[fan-out] ..." --enter --json
