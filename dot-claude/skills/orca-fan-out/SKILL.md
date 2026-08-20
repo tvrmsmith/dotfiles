@@ -3,7 +3,6 @@ name: orca-fan-out
 description: Spawn this session's discussed task set across Orca workers (tabs or child worktrees) and collect their results as they land; also recovers a batch whose orchestrator session you have lost.
 disable-model-invocation: true
 ---
-
 # Orca Fan-Out
 
 Spread the tasks **already discussed in this session** across Orca **workers** — one Claude
@@ -24,11 +23,13 @@ steps 1-9 below.
 
 Every worker is a session a human will visit, judge, and release.
 
-| Situation | Tool |
-|---|---|
-| Work that should run to completion unattended | `Agent` tool subagent |
-| Supervision, blocking ask/reply, decision gates, a task DAG | `orchestration` skill |
-| One task, full ownership transfer, this session stops | `orca-cli` skill (handoff) |
+
+| Situation                                                   | Tool                       |
+| ----------------------------------------------------------- | -------------------------- |
+| Work that should run to completion unattended               | `Agent` tool subagent      |
+| Supervision, blocking ask/reply, decision gates, a task DAG | `orchestration` skill      |
+| One task, full ownership transfer, this session stops       | `orca-cli` skill (handoff) |
+
 
 Workers are Claude. If a task names `codex`, `omp`, `pi`, or `grok`, say fan-out is Claude-only
 and leave that task out of the batch.
@@ -37,8 +38,7 @@ Resolve the CLI once per the `orca-cli` skill's rules; below, `ORCA` is that exe
 
 ## 1. Collect the task set
 
-Take the tasks from this conversation. Arguments narrow or override the set (`/orca-fan-out
-tasks 2 and 4 only`). If the session has no clear task set, say so and stop.
+Take the tasks from this conversation. Arguments narrow or override the set (`/orca-fan-out tasks 2 and 4 only`). If the session has no clear task set, say so and stop.
 
 Per task capture: a kebab-case slug (≤40 chars), a one-line goal, the bead id when the task has
 one, whether it lands committed code, and what it depends on.
@@ -53,8 +53,8 @@ The axis is **branch and commits**, not writes.
 
 - **Child worktree** — the task lands committed code: its own branch, commits, a PR.
 - **Tab in this workspace** — human-gated work that commits nothing and needs no branch: walking
-  a log, an interactive review, a scratch doc, recon the human will read. A task that edits files
-  in a scratch path but commits nothing is a tab.
+a log, an interactive review, a scratch doc, recon the human will read. A task that edits files
+in a scratch path but commits nothing is a tab.
 
 ## 3. Hold back dependents
 
@@ -76,8 +76,8 @@ and the deferred list. **Wait for explicit approval.** Apply any reclassificatio
 asks for, then spawn.
 
 Ask, in the same breath, **whether any row's brief should open with a skill invocation** — the
-`/<skill> <args>` slot in step 6. Name the row and the skill you would use, or say you propose
-none, and let the human correct it. This is not inferable from the task text: `/implement`,
+`/<skill> <args>` slot in step 6. Name the row and the skill you would use, or say you propose  
+none, and let the human correct it. This is not inferable from the task text: `/implement-with-subagents`,  
 `/tdd`, and a bare brief all describe the same work, and the choice changes how the worker
 opens. Asking costs one line; guessing wrong costs a whole worker session.
 
@@ -98,40 +98,38 @@ Branch: <branch>           <- worktree briefs end here instead; step 7 fills it 
 ```
 
 - The leading slash slot works: a brief whose first characters are `/skill args` invokes that
-  skill in the worker with its arguments intact, including user-invocation-only skills. Whether
-  a row uses it is the human's call, asked in step 5 — not something to infer from the task.
+skill in the worker with its arguments intact, including user-invocation-only skills. Whether
+a row uses it is the human's call, asked in step 5 — not something to infer from the task.
 - **A slash command consumes its line, not the message.** The slots below it ride in the same
-  prompt and reach the worker as the invocation's arguments, so a slash-led brief is still one
-  delivery and still carries every slot. The slash line is never the whole brief — a row whose
-  task is fully described by `/<skill> <args>` still gets its `Slug:`, `Bead:`, and
-  `Expected output:` lines underneath.
+prompt and reach the worker as the invocation's arguments, so a slash-led brief is still one
+delivery and still carries every slot. The slash line is never the whole brief — a row whose
+task is fully described by `/<skill> <args>` still gets its `Slug:`, `Bead:`, and
+`Expected output:` lines underneath.
 - The `Slug:` slot carries this row's kebab-case slug from step 1, verbatim — the same string
-  step 7 passes to `worktree create --name` and `terminal create --title`. It is the name this
-  session's step-9 tally matches on and the only source the worker can trust for it, so the
-  worker's result line must reproduce it exactly.
-- The last line is one variant or the other, never both: a tab brief ends `No branch, no
-  commits.`, a worktree brief ends `Branch: <branch>`. That branch does not exist yet; step 7
-  fills the line in before the worker launches.
+step 7 passes to `worktree create --name` and `terminal create --title`. It is the name this
+session's step-9 tally matches on and the only source the worker can trust for it, so the
+worker's result line must reproduce it exactly.
+- The last line is one variant or the other, never both: a tab brief ends `No branch, no commits.`, a worktree brief ends `Branch: <branch>`. That branch does not exist yet; step 7
+fills the line in before the worker launches.
 - Beads are pre-created elsewhere. The `Bead:` slot passes the id through; the worker claims and
-  closes that bead itself.
+closes that bead itself.
 - A worktree row's `Expected output:` line ends by requiring the worker to **name its commit sha
-  and branch in the bead's close reason**. The bead outlives the worktree; removing a worktree
-  deletes its branch, and that recorded sha is then the only handle left on the commit. Recovery
-  (`references/recovery.md`) reads it.
+and branch in the bead's close reason**. The bead outlives the worktree; removing a worktree
+deletes its branch, and that recorded sha is then the only handle left on the commit. Recovery
+(`references/recovery.md`) reads it.
 - In a repo with no beads DB, drop the `Bead:` line; the worker's result line points at a PR,
-  branch, or path instead.
+branch, or path instead.
 - The brief contains exactly the slots in the template above; nothing about done, because the
-  human decides done.
+human decides done.
 - The brief is embedded below as `"<brief>"` inside a single-quoted `--command`, or passed as a
-  single-quoted `--prompt`, so keep it free of both single and double quotes — a double quote
-  splits the argument and truncates the brief. Rephrase rather than escape.
+single-quoted `--prompt`, so keep it free of both single and double quotes — a double quote
+splits the argument and truncates the brief. Rephrase rather than escape.
 
 ## 7. Spawn
 
 Confirm the app with `ORCA status --json` before spawning anything.
 
-Canonicalize this session's handle once. This is the address workers push to, and `terminal
-list` hands out aliases for the same tab:
+Canonicalize this session's handle once. This is the address workers push to, and `terminal list` hands out aliases for the same tab:
 
 ```text
 ORCA terminal show --terminal "$ORCA_TERMINAL_HANDLE" --json     # → result.terminal.handle
@@ -217,26 +215,27 @@ A push arrives as an ordinary user turn:
 ```
 
 1. Split the input on the literal `[fan-out]` — two pushes landing together merge into one
-   message. Treat each fragment as its own result; when one looks truncated, read its bead
-   rather than guessing.
+ message. Treat each fragment as its own result; when one looks truncated, read its bead
+ rather than guessing.
 2. Print each parsed result.
 3. Print ONE tally naming **every** outstanding slug, on every wake even when nothing else
-   changed — the queue lives only in this conversation, and reprinting it in full is what keeps
-   it alive across a compaction:
-   `3/5 landed — outstanding: docs-pass, migration-check` (plus `— next in queue: <slug>` in
-   sequential mode).
+ changed — the queue lives only in this conversation, and reprinting it in full is what keeps
+ it alive across a compaction:
+ `3/5 landed — outstanding: docs-pass, migration-check` (plus `— next in queue: <slug>` in
+ sequential mode).
 4. Sequential mode only: spawn the next row (step 7).
 5. Stop. Reviewing, merging, and opening PRs belong to the human.
 
 ## Failures
 
 - This session's own handle is unresolvable: spawn the worktree rows only, and name the tab rows
-  that could not start. Worktree workers are unaffected — they self-resolve from provenance.
+that could not start. Worktree workers are unaffected — they self-resolve from provenance.
 - One spawn fails: report the exact error, keep the other spawns, and name what did not start.
-  Report the failure rather than retrying with different flags.
+Report the failure rather than retrying with different flags.
 - `terminal_handle_stale`: re-acquire with `ORCA terminal list --worktree <selector> --json`,
-  canonicalize with `terminal show`, and use the replacement alone.
+canonicalize with `terminal show`, and use the replacement alone.
 - A push never arrives: leave the row in the outstanding list; the human tracks it in Orca's
-  sidebar.
+sidebar.
 - A worker's worktree was removed before its push: the row is gone from every Orca listing and
-  its branch with it. Follow `references/recovery.md`, which starts from the bead.
+its branch with it. Follow `references/recovery.md`, which starts from the bead.
+
