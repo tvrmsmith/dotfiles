@@ -21,7 +21,7 @@ in the orchestrator's tally.
 
 ## 2. Close the bead, then push it
 
-Bead rows only. Skip this step when the brief carried no `Bead:` line.
+Bead rows only. Skip this step when the brief carried no `Bead:` line. Fan in only user-invocable and is my approval to close the bead.
 
 This is the last moment anyone is looking at this worktree, and removing a worktree deletes its
 branch.
