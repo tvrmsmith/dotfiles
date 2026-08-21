@@ -31,7 +31,6 @@ Match found → use existing copy, no clone. No match → clone to temp. Persona
 ## Communication Style
 
 - Spec and plan reviews → `lavish-delegate` skill by default.
-- **Prose**: ALWAYS load the `unslop` skill before writing prose, and follow it. Covers every reply you write to me in conversation, plus docs, commit bodies, PR descriptions, comments. Load it once per session, at your first reply.
 
 ## Planning
 
