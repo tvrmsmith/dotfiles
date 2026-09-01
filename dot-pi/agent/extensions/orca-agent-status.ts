@@ -428,8 +428,12 @@ export default function (pi): void {
     postAgentEndOnce()
   })
 
-  pi.on('agent_end', (_event, ctx) => {
+  pi.on('agent_end', (event, ctx) => {
     updateRuntimeOmpSessionMetadata(ctx)
+    if (event?.willContinue === true) {
+      clearPendingAgentEndCheck()
+      return
+    }
     if (agentSettledSupported) return
     if (!ctx || typeof ctx.isIdle !== 'function') {
       postAgentEndOnce()
