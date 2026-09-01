@@ -1,5 +1,4 @@
 {
-  "outputStyle": "Concise",
   "skillListingMaxDescChars": 500,
   "skillListingBudgetFraction": 0.02,
   "env": {
@@ -546,6 +545,7 @@
       }
     }
   },
+  "outputStyle": "Concise",
   "syntaxHighlightingDisabled": false,
   "alwaysThinkingEnabled": true,
   "effortLevel": "medium",
@@ -557,6 +557,5 @@
   "preferredNotifChannel": "auto",
   "showTurnDuration": true,
   "teammateMode": "in-process",
-  "skipAutoPermissionPrompt": true,
   "useAutoModeDuringPlan": false
 }
