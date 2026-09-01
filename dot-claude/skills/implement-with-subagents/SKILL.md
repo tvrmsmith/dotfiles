@@ -13,12 +13,13 @@ One **slice**, given as a bead id, a path, or a description. Flag: `--solo`. §2
 
 ## Vocabulary
 
-Four words, each at one level. Keep each at its own level.
+Each word sits at one level. Keep it there.
 
 - **slice**. One vertical slice, arriving already sliced from planning. The skill's input, never something this skill produces.
 - **seam**. A public boundary inside the slice: the *location* where an interface lives. §1 finds them, §3 agrees them. A seam is placed, never built, owned or run green.
 - **assignment**. A body of code that meets a seam's interface, and the unit one worker owns. A seam yields **one assignment per participant**, however many that is; several participants at one seam is the parallel case (§1).
-- **cycle**. One failing test plus the minimum code to green it. Many cycles per assignment: the first trivially small, each one after building on what the last taught.
+- **scenario**. One behaviour of one assignment, as Gherkin at that assignment's seam and in that suite's language, where the suite expresses its tests that way. §1 derives them from the ticket's slice-wide acceptance criteria. Many scenarios per assignment.
+- **cycle**. One failing test plus the minimum code to green it. One scenario is one cycle's red test. Many cycles per assignment: the first trivially small, each one after building on what the last taught.
 
 ## Modes
 
@@ -34,10 +35,13 @@ Parent reads the slice and the relevant code, then produces:
 - The **seams** to test at, public boundaries only.
 - The **assignments** each seam yields.
 - An **order**, so each assignment's cycles teach the next.
-- A **parallel tag** per assignment. **Parallel when truth is independent:** one assignment can proceed beside another exactly when its expected values come from outside the sibling work, the spec, an agreed contract, a worked example. An assignment whose correctness can only be judged against what another worker is producing is sequential. Disjoint files is not the test; parallel workers need disjoint **import graphs**, or a sibling's half-written code reds their run.
+- A **parallel tag** per assignment. **Parallel when truth is independent:** one assignment can proceed beside another exactly when its expected values come from outside the sibling work, the spec, an agreed contract, a worked example. An assignment whose correctness can only be judged against what another worker is producing is sequential. Disjoint files is not the test; parallel workers need disjoint **import graphs**, or a sibling's half-written code reds their run. A suite's shared step-definition file is one such graph: assignments landing in the same suite either run sequentially or each take their own step file.
 - A **fit check** per assignment: it must comfortably fit one worker context window. An assignment that doesn't fit splits, adding a seam if the split needs one. A *slice* that doesn't fit goes back to planning to be split there.
+- The **scenarios** per assignment, where the suite expresses its tests as scenarios. One glob for `**/*.feature` settles it, per suite, and hands §4 the file it matches against. Derived from the ticket's behavioural acceptance criteria, which are slice-wide and mechanism-free by construction: here each is realised at the seam that can observe it. A criterion spanning several assignments splits across the ones that can, plus a `@contract` scenario at each boundary it crosses, cited against the `contract-approval` record. A `@contract` scenario pins semantics the contract artifact cannot express: idempotent replay, retry thresholds, state transitions, ordering, emission obligations. One needing a mock response the artifact does not yet describe extends the artifact in the same slice. Where the union still leaves the composition itself unobserved, say so and raise it: that gap is the one thing earning a cross-service test, and it is the parent's call, not a worker's.
 
-Done when every seam has its assignments, and every assignment an order position, a parallel/sequential tag, and a fit check.
+**A suite carrying no scenarios yet** keeps the repo's existing test idiom, and §4 runs plain cycles. Where the slice looks like a good place to adopt them, recommend it via `AskUserQuestion` and wait: on yes, the layout, runner wiring and shared step file become their own assignment, ordered first and sequential, since every later assignment reads the conventions it establishes. Once that lands the suite carries its own signal and later slices detect it.
+
+Done when every seam has its assignments, and every assignment an order position, a parallel/sequential tag, a fit check, and its scenarios.
 
 ## 2. Model selection
 
@@ -78,14 +82,16 @@ The parent is the **loop driver**: it invokes the `tdd` skill itself to carry th
 
 **guarded**, per assignment:
 
-- Parent writes the contract and expected values (sourced from spec / worked example / known-good literal).
+- Parent writes the contract and expected values (sourced from spec / worked example / known-good literal), the assignment's **scenario text** among them: it *is* an expected value, so a worker authoring its own would spend the anti-bias arm.
 - Dispatch one implementer worker (Agent, `general-purpose`, chosen model) given only: the assignment, the contract + expected values, and an instruction to **load `tdd` and `coding-standards` itself** (same reason as §3 step 2). It works in **cycles**, preserving every assertion and injected expected value as given. If it judges the contract wrong, it stops and escalates to the parent.
 
 `**--solo**`. One worker, dispatched once with the whole slice and its confirmed seams, writing every contract, test and implementation itself; no parent expected-value injection.
 
 **When the §3 gate fired:** the signature and failure semantics of the assignment's seam are part of the contract the worker must hold. The flow diagram is not.
 
-**In-loop verification:** each cycle runs the worker's own test file, nothing wider. Project-wide typecheck and the full suite wait for §5. A wide check run under parallel workers reports a sibling's unfinished code as your own failure.
+**Scenarios in the loop:** one scenario per cycle, red before green. A worker matches the suite's conventions against the feature file §1 hands it, reuses an existing step definition wherever one fits, and adds genuinely new steps to the suite's shared file.
+
+**In-loop verification:** each cycle runs the worker's own test file, nothing wider. Project-wide typecheck and the full suite wait for §5. A wide check run under parallel workers reports a sibling's unfinished code as your own failure. An assignment that changes a contract artifact is the exception: it runs conformance for that artifact in-loop, since its truth is self-contained and no sibling can red it.
 
 **Fit overflow:** a worker whose assignment turns out not to fit returns "doesn't fit" with a split suggestion instead of pushing through; parent splits it per §1.
 
@@ -93,7 +99,7 @@ An assignment is done when its tests are green; the loop is done when every assi
 
 ## 5. Fan-in check
 
-Every assignment green, parent runs the project-wide checks the workers deferred: full typecheck, full test suite. Failures here are integration failures between assignments, the parent's to triage and dispatch, since no single worker can see them. Done when the tree is green.
+Every assignment green, parent runs the project-wide checks the workers deferred: full typecheck, full test suite, and contract conformance where the repo can bring a provider up locally. Failures here are integration failures between assignments, the parent's to triage and dispatch, since no single worker can see them. Done when the tree is green.
 
 ## 6. Commit
 
