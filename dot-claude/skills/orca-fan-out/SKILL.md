@@ -75,11 +75,10 @@ Print one row per task — slug, target (`tab`/`worktree`), bead, one-line reaso
 and the deferred list. **Wait for explicit approval.** Apply any reclassification the human
 asks for, then spawn.
 
-Ask, in the same breath, **whether any row's brief should open with a skill invocation** — the
-`/<skill> <args>` slot in step 6. Name the row and the skill you would use, or say you propose  
-none, and let the human correct it. This is not inferable from the task text: `/implement-with-subagents`,  
-`/tdd`, and a bare brief all describe the same work, and the choice changes how the worker
-opens. Asking costs one line; guessing wrong costs a whole worker session.
+Recommend, in the same breath, the `/<skill> <args>` slot in step 6 — `/implement-with-subagents`
+on every worktree row, since it ends where fan-out wants a worker to end, at a commit on a
+feature branch handed off to `no-mistakes`. A tab row commits nothing, so it defaults to a plain
+brief. The human can override any row to a plain brief, `/tdd`, or another skill.
 
 ## 6. Write the brief
 
@@ -98,8 +97,8 @@ Branch: <branch>           <- worktree briefs end here instead; step 7 fills it 
 ```
 
 - The leading slash slot works: a brief whose first characters are `/skill args` invokes that
-skill in the worker with its arguments intact, including user-invocation-only skills. Whether
-a row uses it is the human's call, asked in step 5 — not something to infer from the task.
+skill in the worker with its arguments intact, including user-invocation-only skills. Step 5
+recommends the slot per row; the human's answer decides it.
 - **A slash command consumes its line, not the message.** The slots below it ride in the same
 prompt and reach the worker as the invocation's arguments, so a slash-led brief is still one
 delivery and still carries every slot. The slash line is never the whole brief — a row whose
