@@ -1,18 +1,9 @@
-# Arming and clearing AFK
+# Arming AFK
 
-Reached from `SKILL.md`, run once, in the session where Trevor typed `/afk`.
+Reached from `SKILL.md`, run once, in the session where Trevor typed `/afk`. Clearing the flag
+is not here; `SKILL.md` handles that inline.
 
-## A bare return word (`back`, `done`, `I am back`)
-
-```bash
-rm -f ~/.claude/afk
-```
-
-Leave `~/.claude/afk-sessions` alone. Each marker tells its own session he is back on the next
-prompt he types there, so clearing them silences the notice. Report AFK off, then stop. Nothing
-below applies.
-
-## Anything else
+## Arm the flag
 
 ```bash
 echo $(( $(date +%s) + <seconds> )) > ~/.claude/afk
