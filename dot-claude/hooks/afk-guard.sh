@@ -73,10 +73,10 @@ find "$MARKS" -type f -mtime +7 -delete 2>/dev/null
 # call and hand the decision back to the agent.
 if [ "$event" = "PreToolUse" ]; then
   cat >&2 <<EOF
-Trevor is AFK and will not see this question. Take the reversible option, apply
-it, and log it as a decision with its reason, in the AFK log format defined in
-~/.claude/skills/afk/SKILL.md. When no option is safe to take alone, park the
-item in that log and move to other work.
+Trevor is AFK and will not see this question. Decide, log, park: take the
+reversible option, log it as a decision with its reason, and park the item
+instead when no option is safe to take alone. Format and rules:
+~/.claude/skills/afk/SKILL.md, from "Decide alone" down.
 EOF
   exit 2
 fi
@@ -126,8 +126,8 @@ last_message | grep -qx 'AFK: idle' && exit 0
 until=$(date -r "$expiry" '+%H:%M' 2>/dev/null || date -d "@$expiry" '+%H:%M' 2>/dev/null || echo "later")
 cat >&2 <<EOF
 Trevor is AFK until $until and cannot answer a question or approve anything,
-including 1Password prompts. Read ~/.claude/skills/afk/SKILL.md and follow it:
-decide it yourself, log the decision, park what needs him, and keep working.
+including 1Password prompts. Decide, log, park: follow
+~/.claude/skills/afk/SKILL.md from "Decide alone" down, and keep working.
 End a response with the exact line "AFK: idle" only once every item in that log
 reads done or parked; that is what lets this session stop.
 EOF

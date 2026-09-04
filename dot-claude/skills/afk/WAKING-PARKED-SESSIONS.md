@@ -30,11 +30,7 @@ The read decides what the target is, and only one of the four cases gets typed a
 | Claude's `❯` prompt and status bar, composer empty | parked and safe | type the line |
 | a dialog footer such as `Enter to select` | a question owns the keyboard | ESC, re-read, then type |
 | `❯` with text after it | an unsent draft of Trevor's | leave it, report it |
-| a spinner, `esc to interrupt`, or a shell prompt | working, or not Claude's composer at all | leave it |
-
-The shell case is the one that bites: a Claude terminal can have a shell in the foreground, and
-there the line is not a message but a command Enter runs. Confirm Claude's own composer is what
-is on screen before sending anything.
+| a spinner, `esc to interrupt`, or a shell prompt | working, or not Claude's composer at all — at a shell the line is a command Enter runs | leave it |
 
 Clear a dialog with an ESC byte, which answers nothing (Claude records `User declined to answer
 questions`):
@@ -44,9 +40,8 @@ ORCA terminal send --terminal <handle> --text $'\033'
 ```
 
 `--interrupt` sends Ctrl-C, which a question selector ignores; ESC is what dismisses it. Clearing
-the dialog restarts nothing on its own: cancelling the question ends a tool call inside a turn
-that was already over, so no `Stop` fires and the guard never sees it. The typed line is what
-wakes it, and the re-read is what proves the composer is empty and safe to type into.
+the dialog wakes nothing. The typed line does that, and the re-read proves the composer is empty
+first.
 
 Type one line, no newlines and no apostrophes so the quoting survives, with the clock time read
 off the flag. Send the text and the Enter as **two** calls a beat apart, since one combined call
@@ -56,8 +51,6 @@ does not land:
 ORCA terminal send --terminal <handle> --text 'Trevor is AFK until <HH:MM> and cannot answer. If your last turn ended in a question or an approval request, take the reversible option and carry on under ~/.claude/skills/afk/SKILL.md. Otherwise ignore this.'
 ORCA terminal send --terminal <handle> --enter
 ```
-
-The closing sentence makes the line a no-op for any session that was not actually parked.
 
 Reach for `terminal send` rather than a `SendMessage` cross-session message. An inbound peer
 message lands in a held-for-approval queue the receiving human has to release, so it never

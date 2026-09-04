@@ -7,8 +7,8 @@ disable-model-invocation: true
 # AFK
 
 Trevor has walked away. Nobody will answer a question, approve a plan, or put a finger on the
-1Password prompt until he is back. Keep the work already in flight moving under your own
-judgment, and leave him a log he can read in thirty seconds.
+1Password prompt until he is back. Every turn until he is: **decide, log, park**. Decide what he
+would have been asked, log what you decided, park what only he can do.
 
 **Two readers reach this file.** Trevor typed `/afk`: arm the flag, wake the parked sessions,
 then run the rest. The guard sent you: the flag is already armed and other sessions are already
@@ -97,8 +97,7 @@ AFK: idle
 
 Write that line, on its own, once every item in the AFK log above it reads done or parked and
 nothing is half-finished. If you cannot point at the log line covering what you were last
-working on, you are not idle. Inventing new scope to avoid the marker gives him more to review,
-not less.
+working on, you are not idle. Finish the scope you were given, then write the marker.
 
 ## When he comes back
 
