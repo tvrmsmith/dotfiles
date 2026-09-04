@@ -1,6 +1,6 @@
 ---
 name: afk
-description: Put this session, and every other session on this machine, in unattended mode while Trevor is away.
+description: Unattended mode for every session on this machine. `/afk 2h` or `/afk back at 4pm` to arm (8h default), `/afk back` to clear.
 disable-model-invocation: true
 ---
 
@@ -60,8 +60,7 @@ something kills it. That takes the whole remote surface off the table: `git push
 - Branch and commit as much as the work needs. Push, PRs, and reviews wait for his return; park
   each one with the exact command he should run.
 - A command that does stall on a prompt: interrupt it, park it, move on. Rerunning hangs again.
-- Network drops on this laptop are transient, so retry a failed network call once. On the second
-  failure, park it rather than looping.
+- Retry a failed network call once. On the second failure, park it rather than looping.
 
 ## Still his call
 
