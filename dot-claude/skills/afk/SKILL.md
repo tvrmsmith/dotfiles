@@ -51,44 +51,55 @@ anything sharing its `tabId`, since `terminal list` hands out aliases for one ta
 permission dialog is not at a text prompt, and Enter there submits the highlighted option:
 
 ```text
-ORCA terminal read --terminal <handle> --json     # → result.terminal.tail
+ORCA terminal read --terminal <handle> --limit 200 --json   # → result.terminal.tail
 ```
 
-A tail ending in `Enter to select` or any other dialog footer means a dialog owns the keyboard.
-Clear it with an ESC byte, which answers nothing (Claude records `User declined to answer
-questions`) and hands the turn back to the agent:
+The read decides what the target is, and only one of the four cases gets typed at:
+
+| tail shows | meaning | action |
+| --- | --- | --- |
+| Claude's `❯` prompt and status bar, composer empty | parked and safe | type the line |
+| a dialog footer such as `Enter to select` | a question owns the keyboard | ESC, re-read, then type |
+| `❯` with text after it | an unsent draft of Trevor's | leave it, report it |
+| a spinner, `esc to interrupt`, or a shell prompt | working, or not Claude's composer at all | leave it |
+
+The shell case is the one that bites: a Claude terminal can have a shell in the foreground, and
+there the line is not a message but a command Enter runs. Confirm Claude's own composer is what
+is on screen before sending anything.
+
+Clear a dialog with an ESC byte, which answers nothing (Claude records `User declined to answer
+questions`):
 
 ```text
 ORCA terminal send --terminal <handle> --text $'\033'
 ```
 
-`--interrupt` sends Ctrl-C, which a question selector ignores; ESC is what dismisses it. Read
-once more to confirm the dialog cleared, then treat the session as an ordinary prompt and type
-at it below. Clearing the dialog restarts nothing on its own: cancelling the question ends the
-tool call inside a turn that was already over, so no `Stop` fires and the guard never sees it.
-The typed line is what wakes it.
+`--interrupt` sends Ctrl-C, which a question selector ignores; ESC is what dismisses it. Clearing
+the dialog restarts nothing on its own: cancelling the question ends a tool call inside a turn
+that was already over, so no `Stop` fires and the guard never sees it. The typed line is what
+wakes it, and the re-read is what proves the composer is empty and safe to type into.
 
-**Check the composer before typing.** The confirming read shows the prompt line, and a session
-whose human was mid-sentence when he walked away holds an unsent draft there (`❯ adr can not be
-fixed in the p`). Typing appends to that draft and Enter submits the pair as one garbled
-message. Leave those alone and name them in the report as needing a keystroke from Trevor.
-
-For a session at an empty prompt, type one line, no newlines and no apostrophes so the quoting
-survives. Send the text and the Enter as **two** calls, since one combined call does not land:
+Type one line, no newlines and no apostrophes so the quoting survives, with the clock time read
+off the flag. Send the text and the Enter as **two** calls a beat apart, since one combined call
+does not land:
 
 ```text
 ORCA terminal send --terminal <handle> --text 'Trevor is AFK until <HH:MM> and cannot answer. If your last turn ended in a question or an approval request, pick the option you would defend and carry on under ~/.claude/skills/afk/SKILL.md. Otherwise ignore this.'
 ORCA terminal send --terminal <handle> --enter
 ```
 
-Sending to a session that turns out to be mid-task is harmless: the input queues and it reads it
-when it finishes, and the closing sentence makes it a no-op for anything that was not parked.
+The closing sentence makes the line a no-op for any session that was not actually parked.
 
 Reach for `terminal send` rather than a `SendMessage` cross-session message. An inbound peer
 message lands in a held-for-approval queue the receiving human has to release, so it never
 arrives while that human is the one who is away. Typed terminal input has no such gate.
 
-Report the count told, then say that sessions Orca does not manage were not reached.
+Confirm each one, since `bytesWritten` only proves the bytes reached the pty. Re-read the target
+and look for the line in the tail; the default read returns about 16 lines, so pass
+`--limit 200` or a busy session's own output will have scrolled it away.
+
+Report a row per target with what was done to it, call out the ones left for Trevor to unstick,
+and say that sessions Orca does not manage were never reached.
 
 ## Decide alone
 
