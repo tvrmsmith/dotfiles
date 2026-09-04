@@ -12,16 +12,9 @@
 set -uo pipefail
 
 FLAG="$HOME/.claude/afk"
-[ -f "$FLAG" ] || exit 0
+MARKS="$HOME/.claude/afk-sessions"
 
 input=$(cat)
-
-expiry=$(head -n 1 "$FLAG" | tr -dc '0-9')
-now=$(date +%s)
-if [ -z "$expiry" ] || [ "$now" -ge "$expiry" ]; then
-  rm -f "$FLAG"
-  exit 0
-fi
 
 json_flag() {
   printf '%s' "$input" | python3 -c "
@@ -43,9 +36,42 @@ except Exception:
 " 2>/dev/null
 }
 
+event=$(json_value hook_event_name)
+mark="$MARKS/$(json_value session_id)"
+
+# A typed prompt is proof Trevor is back at the keyboard. Tell the sessions that
+# actually ran under AFK, once each, and only those: UserPromptSubmit stdout is
+# injected into the agent's context. This runs before the flag check, since the
+# whole point is to reach a session after AFK has ended.
+if [ "$event" = "UserPromptSubmit" ]; then
+  if [ -f "$mark" ]; then
+    rm -f "$mark"
+    cat <<EOF
+Trevor is back: he typed this prompt himself, so AFK is over for this session.
+Drop the AFK log and the "AFK: idle" marker from your responses, and put the
+decisions you were making alone back to him.
+EOF
+  fi
+  exit 0
+fi
+
+[ -f "$FLAG" ] || exit 0
+
+expiry=$(head -n 1 "$FLAG" | tr -dc '0-9')
+now=$(date +%s)
+if [ -z "$expiry" ] || [ "$now" -ge "$expiry" ]; then
+  rm -f "$FLAG"
+  exit 0
+fi
+
+# This session is running under AFK, so it earns a return notice later. Markers
+# clear themselves on that notice; sweep the ones whose sessions never came back.
+mkdir -p "$MARKS" 2>/dev/null && : > "$mark"
+find "$MARKS" -type f -mtime +7 -delete 2>/dev/null
+
 # PreToolUse on AskUserQuestion: the one stall with no guesswork in it. Deny the
 # call and hand the decision back to the agent.
-if [ "$(json_value hook_event_name)" = "PreToolUse" ]; then
+if [ "$event" = "PreToolUse" ]; then
   cat >&2 <<EOF
 Trevor is AFK and will not see this question. Pick the option you would defend,
 apply it, and record it in the AFK log as a decision with its reason. When no
