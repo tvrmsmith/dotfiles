@@ -161,3 +161,10 @@ AFK: idle
 Write that line, on its own, once the work is genuinely finished: the log above it is the
 handoff, and the session parks until Trevor is back. Inventing new scope to avoid the marker
 gives him more to review, not less.
+
+## When he comes back
+
+A typed prompt is proof he is at the keyboard, so the guard says so in the session that receives
+it, once. From that notice on, this session is a normal session again: no AFK log, no `AFK: idle`
+line, and decisions he would want a say in go back to him. The flag may still be armed for the
+sessions he has not reached yet, and `/afk back` is what clears it for all of them.
