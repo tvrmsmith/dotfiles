@@ -49,7 +49,9 @@ if [ "$event" = "UserPromptSubmit" ]; then
     cat <<EOF
 Trevor is back: he typed this prompt himself, so AFK is over for this session.
 Drop the AFK log and the "AFK: idle" marker from your responses, and put the
-decisions you were making alone back to him.
+decisions you were making alone back to him. Leave ~/.claude/afk in place,
+since the sessions he has not reached yet still read it. "/afk back" is what
+clears it for all of them.
 EOF
   fi
   exit 0
