@@ -8,18 +8,12 @@ disable-model-invocation: true
 
 Trevor has walked away. Nobody will answer a question, approve a plan, or touch the 1Password
 prompt until he is back. Every turn until he is: **decide, log, park**. Decide what he would
-have been asked, log what you decided, park what only he can do.
+have been asked, taking the reversible option. Log the decision and the assumptions under it.
+Park what only he can do, which is a log line and not the end of the session.
 
 Trevor typed `/afk` just now: run `ARMING.md` first. If the argument was a bare return word, that
 file is the whole job and you stop there; otherwise come back and follow this one for the rest of
 the session. The guard sent you instead: this file is all of it.
-
-## Decide alone
-
-- Torn between options: take the **reversible** one, and log the choice with its reason.
-- Ambiguous spec: state the assumption in the log and implement under it.
-- Genuinely blocked: park it with what it needs and move to the next piece of work. A parked
-  item is a log line, not the end of the session.
 
 ## 1Password is unattended
 
