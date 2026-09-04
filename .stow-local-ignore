@@ -24,6 +24,9 @@
 # Bat theme conversion scripts
 ^/bat-into-tokyonight
 
+# bats suite for install.sh
+^/tests
+
 # Version control
 ^/\.git
 ^/\.gitignore$
@@ -49,17 +52,24 @@ settings\.local\.json
 # install into ~/.claude.
 ^/\.claude$
 
+# Tool state written into the repo root by agents and CLIs run from here:
+# the beads issue DB, lavish HTML artifacts, orca worktree metadata,
+# superpowers scratch. Repo-local working data, not config to install.
+^/\.beads
+^/\.lavish
+^/\.orca
+^/\.superpowers
 
 # dot-agents/skills is a symlink to a directory, which stow 2.4.1 --dotfiles
 # cannot descend into: it mangles the path and aborts with exit 2 *before
 # linking anything at all*, making the whole install a no-op. install.sh
 # recreates this one link after stow runs.
 #
-# Pattern is the *translated* path (.agents, not dot-agents): stow applies the
-# --dotfiles rename before matching. Note only nested paths can be ignored this
-# way — no pattern suppresses a top-level package entry, which is why the fix
-# is to keep ~/.agents unfolded (install.sh pre-creates it) and skip just the
-# one child, rather than excluding dot-agents wholesale.
+# Pattern is the *translated* path (.agents, not dot-agents) because this one
+# is nested. Verified on stow 2.4.1, a top-level package entry matches its
+# on-disk name (^/dot-alpha$ ignores it, ^/\.alpha$ does not), while a path
+# below a package matches after the --dotfiles rename. So the literal dot-dirs
+# above are spelled ^/\.beads etc, and dot-* packages would be spelled dot-*.
 ^/\.agents/skills$
 
 # Stow-related
