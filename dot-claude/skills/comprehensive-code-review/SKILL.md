@@ -81,11 +81,11 @@ Merge every aspect except Spec conformance into one report, deduped, grouped by 
 Present **Spec conformance** as its own section, un-merged. Include that section every time: where no spec existed, the section says so. Every aspect selected in step 2 appears in the report, with "no findings" stated explicitly where it ran clean. Close with a recommended action order.
 
 Log each aspect:
-`cc-review-ab record <run id> <aspect> <critical> <important> <suggestion> <tokens> <seconds>`,
+`cc-review-ab record <run id> <aspect> <critical> <important> <suggestion> --agent <spawned name>`,
 writing the aspect as `<stem>=<agent/model>` for the ones step 3 never sent to `assign`.
-Count what that agent reported, before deduping against other aspects. Run `cc-agent-times` and find
-the row whose agent id carries the name you spawned that aspect under. Log its `out tok` as
-`<tokens>` and its `secs` as `<seconds>`.
+Count what that agent reported, before deduping against other aspects. `--agent` reads the tokens
+and seconds off that subagent's transcript, so spawn each agent under a name unique within the
+session and pass that same name here.
 
 Step 4 is done when every aspect selected in step 2 appears in the report and has been logged.
 

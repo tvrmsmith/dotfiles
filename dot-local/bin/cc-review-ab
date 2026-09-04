@@ -4,9 +4,17 @@
   cc-review-ab assign <aspect>...    -> run id + "aspect<TAB>agent[/model]" per aspect
                                         bare id randomizes; "id=agent[/model]" pins it
   cc-review-ab record <run> <aspect>[=agent[/model]] <critical> <important> <suggestion>
-                      [tokens] [seconds]   -- pin the agent for aspects assign never saw
-  cc-review-ab report                -> per-aspect findings and cost by arm
+                      [--agent NAME | --in N --cw N --cr N --out N --think N --seconds S]
+  cc-review-ab report [--totals]     -> per-aspect findings and cost by arm
+
+`record --agent NAME` reads the cost straight off that subagent's transcript
+via `cc-agent-times`, so the numbers are never transcribed by hand. NAME is the
+name the agent was spawned under. The explicit flags override it.
+
+Tokens are logged per billing class, since a cache read and an output token are
+nowhere near the same cost: in, cw (cache write), cr (cache read), out, think.
 """
+import argparse
 import json
 import os
 import pathlib
@@ -24,6 +32,9 @@ ARMS = ["general-purpose", "low-effort"]
 UNKNOWN = "unknown"
 # How logs written before arms stored a bare null spelled "no model pinned".
 LEGACY_ABSENT = "-"
+# Token classes, in report column order. Logs written before the split carry a
+# single "tokens" field, which was output only; report() maps it onto "out".
+TOKEN_COLS = ["in", "cw", "cr", "out", "think"]
 
 
 def append(rec):
@@ -61,10 +72,32 @@ def repo_name():
     return UNKNOWN if toplevel == UNKNOWN else pathlib.Path(toplevel).name
 
 
-def assign(aspects):
+def usage_for(name):
+    """Cost for the subagent spawned as NAME, read off its transcript.
+
+    Exits rather than logging zeros: a silently costless row would read as a
+    free run and skew the arm it lands in.
+    """
+    try:
+        proc = subprocess.run(["cc-agent-times", "--agent", name, "--json"],
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        sys.exit(f"cc-review-ab: cc-agent-times failed for {name}: {exc}")
+    if proc.returncode != 0:
+        sys.exit(f"cc-review-ab: cc-agent-times exited {proc.returncode} for {name}: "
+                 f"{proc.stderr.strip()}")
+    rows = json.loads(proc.stdout)
+    if len(rows) != 1:
+        sys.exit(f"cc-review-ab: {name} matched {len(rows)} subagents, need exactly 1: "
+                 f"{[r['name'] for r in rows]}")
+    row = rows[0]
+    return {c: row.get(c, 0) for c in TOKEN_COLS}, row.get("seconds")
+
+
+def assign(args):
     run = uuid.uuid4().hex[:8]
     picks = {}
-    for spec in aspects:
+    for spec in args.aspects:
         aspect, _, pinned = spec.partition("=")
         if pinned:
             agent, _, model = pinned.partition("/")
@@ -80,35 +113,51 @@ def assign(aspects):
         print(f"{aspect}\t{format_arm(agent, model)}")
 
 
-def record(argv):
-    run, spec = argv[0], argv[1]
-    aspect, _, pinned = spec.partition("=")
-    crit, imp, sug = (int(x) for x in argv[2:5])
-    tokens = int(argv[5]) if len(argv) > 5 else None
-    seconds = float(argv[6]) if len(argv) > 6 else None
-    arm = pinned
+def lookup_arm(run, aspect):
+    try:
+        lines = LOG.read_text().splitlines()
+    except FileNotFoundError:
+        return None
+    for line in lines:
+        rec = json.loads(line)
+        if rec.get("kind") == "assign" and rec["run"] == run:
+            got = rec["arms"].get(aspect)
+            return format_arm(*parse_arm(got)) if got else None
+    return None
+
+
+def record(args):
+    aspect, _, pinned = args.aspect.partition("=")
+    arm = pinned or lookup_arm(args.run, aspect)
     if not arm:
-        try:
-            lines = LOG.read_text().splitlines()
-        except FileNotFoundError:
-            lines = []
-        for line in lines:
-            rec = json.loads(line)
-            if rec.get("kind") == "assign" and rec["run"] == run:
-                got = rec["arms"].get(aspect)
-                if got:
-                    arm = format_arm(*parse_arm(got))
-                break
-    if not arm:
-        sys.exit(f"no arm for run {run} aspect {aspect}; pass {aspect}=<agent[/model]>")
+        sys.exit(f"no arm for run {args.run} aspect {aspect}; pass {aspect}=<agent[/model]>")
+
+    tokens, seconds = ({c: None for c in TOKEN_COLS}, None)
+    if args.agent:
+        tokens, seconds = usage_for(args.agent)
+    for col in TOKEN_COLS:
+        override = getattr(args, col.replace("-", "_"))
+        if override is not None:
+            tokens[col] = override
+    if args.seconds is not None:
+        seconds = args.seconds
+
     append({
-        "kind": "result", "run": run, "ts": time.time(), "aspect": aspect, "arm": arm,
-        "critical": crit, "important": imp, "suggestion": sug,
+        "kind": "result", "run": args.run, "ts": time.time(), "aspect": aspect, "arm": arm,
+        "critical": args.critical, "important": args.important, "suggestion": args.suggestion,
         "tokens": tokens, "seconds": seconds,
     })
 
 
-def report():
+def row_tokens(rec):
+    """Per-class tokens for a result row, mapping pre-split logs onto out."""
+    tokens = rec.get("tokens")
+    if isinstance(tokens, dict):
+        return tokens
+    return {"out": tokens}
+
+
+def report(args):
     if not LOG.exists():
         sys.exit("no log yet")
     agg = defaultdict(lambda: defaultdict(list))
@@ -116,33 +165,59 @@ def report():
         r = json.loads(line)
         if r.get("kind") == "result":
             agg[r["aspect"]][r["arm"]].append(r)
-    def col(rows, key, width, prec):
-        vals = [r[key] for r in rows if r.get(key) is not None]
+    if args.totals:
+        agg = {"ALL": {arm: [r for aspect in agg.values() for r in aspect.get(arm, [])]
+                       for arm in {a for v in agg.values() for a in v}}}
+
+    def cell(rows, get, width, prec):
+        vals = [v for v in (get(r) for r in rows) if v is not None]
         if not vals:
             return f"{'-':>{width}}"
         return f"{sum(vals) / len(vals):>{width}.{prec}f}"
 
-    w = max((len(a) for a in agg), default=6)
+    w = max([len("aspect"), *(len(a) for a in agg)])
     aw = max((len(k) for v in agg.values() for k in v), default=15)
-    print(f"{'aspect':<{w}}  {'arm':<{aw}} {'n':>3} {'crit':>5} {'imp':>5} {'sugg':>5} {'tokens':>8} {'secs':>6}")
+    head = f"{'aspect':<{w}}  {'arm':<{aw}} {'n':>3} {'crit':>5} {'imp':>5} {'sugg':>5}"
+    print(head + "".join(f" {c:>8}" for c in TOKEN_COLS) + f" {'secs':>6}")
     for aspect in sorted(agg):
         for arm in sorted(agg[aspect]):
             rows = agg[aspect][arm]
-            print(f"{aspect:<{w}}  {arm:<{aw}} {len(rows):>3} "
-                  f"{col(rows, 'critical', 5, 1)} {col(rows, 'important', 5, 1)} "
-                  f"{col(rows, 'suggestion', 5, 1)} {col(rows, 'tokens', 8, 0)} "
-                  f"{col(rows, 'seconds', 6, 1)}")
+            counts = "".join(f" {cell(rows, lambda r, k=k: r[k], 5, 1)}"
+                             for k in ("critical", "important", "suggestion"))
+            toks = "".join(f" {cell(rows, lambda r, c=c: row_tokens(r).get(c), 8, 0)}"
+                           for c in TOKEN_COLS)
+            print(f"{aspect:<{w}}  {arm:<{aw}} {len(rows):>3}{counts}{toks}"
+                  f" {cell(rows, lambda r: r.get('seconds'), 6, 1)}")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_assign = sub.add_parser("assign", help="pick an arm per aspect")
+    p_assign.add_argument("aspects", nargs="+")
+    p_assign.set_defaults(func=assign)
+
+    p_record = sub.add_parser("record", help="log one aspect's findings and cost")
+    p_record.add_argument("run")
+    p_record.add_argument("aspect", help="stem, or stem=agent[/model] to pin the arm")
+    p_record.add_argument("critical", type=int)
+    p_record.add_argument("important", type=int)
+    p_record.add_argument("suggestion", type=int)
+    p_record.add_argument("--agent", help="spawned name, to read cost from its transcript")
+    for col in TOKEN_COLS:
+        p_record.add_argument(f"--{col}", type=int, help=f"{col} tokens, overrides --agent")
+    p_record.add_argument("--seconds", type=float, help="wall seconds, overrides --agent")
+    p_record.set_defaults(func=record)
+
+    p_report = sub.add_parser("report", help="findings and cost by arm")
+    p_report.add_argument("--totals", action="store_true", help="collapse aspects into one row per arm")
+    p_report.set_defaults(func=report)
+
+    args = parser.parse_args()
+    args.func(args)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        sys.exit(__doc__)
-    cmd, rest = sys.argv[1], sys.argv[2:]
-    if cmd == "assign" and rest:
-        assign(rest)
-    elif cmd == "record" and len(rest) >= 5:
-        record(rest)
-    elif cmd == "report":
-        report()
-    else:
-        sys.exit(__doc__)
+    main()
