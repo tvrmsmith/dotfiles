@@ -77,8 +77,8 @@ if [ "$event" = "PreToolUse" ]; then
   cat >&2 <<EOF
 Trevor is AFK and will not see this question. Decide, log, park: take the
 reversible option, log it as a decision with its reason, and park the item
-instead when no option is safe to take alone. Format and rules:
-~/.claude/skills/afk/SKILL.md, from "Decide alone" down.
+instead when no option is safe to take alone. Format and rules live in
+~/.claude/skills/afk/SKILL.md.
 EOF
   exit 2
 fi
@@ -129,7 +129,7 @@ until=$(date -r "$expiry" '+%H:%M' 2>/dev/null || date -d "@$expiry" '+%H:%M' 2>
 cat >&2 <<EOF
 Trevor is AFK until $until and cannot answer a question or approve anything,
 including 1Password prompts. Decide, log, park: follow
-~/.claude/skills/afk/SKILL.md from "Decide alone" down, and keep working.
+~/.claude/skills/afk/SKILL.md and keep working.
 End a response with the exact line "AFK: idle" only once every item in that log
 reads done or parked; that is what lets this session stop.
 EOF
