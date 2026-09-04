@@ -1,5 +1,6 @@
 .DS_Store
 settings.local.json
+CLAUDE.local.md
 setup-vertex-credentials.sh
 
 # lavish skill generates throwaway reviewable HTML artifacts here — not dotfiles.
