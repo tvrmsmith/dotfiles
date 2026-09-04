@@ -10,9 +10,29 @@ Trevor has walked away. Nobody will answer a question, approve a plan, or put a 
 1Password prompt until he is back. Every turn until he is: **decide, log, park**. Decide what he
 would have been asked, log what you decided, park what only he can do.
 
-**Two readers reach this file.** Trevor typed `/afk`: arm the flag, wake the parked sessions,
-then run the rest. The guard sent you: the flag is already armed and other sessions are already
-handled, so start at **Decide alone** and leave both alone.
+**Three readers reach this file**, and the argument says which one you are.
+
+- It names a return with no time in it (`back`, `done`, `I am back`). Run **He is back**, then
+  stop. Nothing else in this file applies.
+- It names a duration or a time, or says nothing at all. Arm the flag, wake the parked sessions,
+  then follow the rest for the rest of the session.
+- The guard sent you rather than Trevor. The flag is already armed and the other sessions are
+  already handled, so start at **Decide alone**.
+
+A time makes it an arming, whatever words sit next to it, so `/afk back at 4pm` arms until 16:00
+and only a bare `/afk back` clears.
+
+## He is back
+
+Delete the flag. That is the whole job:
+
+```bash
+rm -f ~/.claude/afk
+```
+
+Leave `~/.claude/afk-sessions` alone. Each marker in there is what tells its own session he is
+back, on the next prompt he types into it, so clearing them silences the notice. Report that AFK
+is off and that sessions still parked will hear it when he reaches them.
 
 ## Arm the flag first
 
@@ -23,10 +43,9 @@ this machine reads:
 echo $(( $(date +%s) + <seconds> )) > ~/.claude/afk
 ```
 
-Duration comes from the argument (`/afk 2h`, `/afk back at 4pm`); default to 8 hours when it
-says nothing. `/afk back`, `/afk done`, or anything else announcing his return deletes the file
-instead: `rm -f ~/.claude/afk`. Then confirm the expiry time in local clock terms and follow the
-rest of this file for the rest of the session.
+Read the seconds off the argument, whether it gives a duration (`/afk 2h`) or a clock time
+(`/afk back at 4pm`). Default to 8 hours when it says nothing. Then confirm the expiry back to
+him in local clock terms.
 
 `hooks/afk-guard.sh` reads that file on every `Stop` and every `AskUserQuestion`, in this
 session and in all the others. It denies the question and blocks the stop, so a session that
@@ -37,7 +56,7 @@ he forgets to clear stops mattering on its own.
 
 Right after arming the flag, walk `WAKING-PARKED-SESSIONS.md` and follow it. A session that
 already stopped fires neither a `Stop` nor a question, so the flag alone never reaches it.
-Skip that file on `/afk back`, and skip it entirely when the guard sent you here.
+Skip that file entirely when the guard sent you here.
 
 ## Decide alone
 
