@@ -1,26 +1,19 @@
 # Silent Failure & Error Handling Review
 
-Zero tolerance for silent failure. Silent failure = error swallowed, hidden, or turned into misleading success. Worse than crash — hide bugs in production.
+Every error path the diff adds, changes, or leaves unhandled.
 
 ## Method
 
-Scan diff for every error path: catch blocks, fallbacks, optional chaining over risky calls, default returns, ignored return values.
+1. Read the "Errors" section of the `coding-standards:coding-standards` skill. Those are the guidelines this aspect enforces.
+2. Scan the diff for every error path: catch blocks, fallbacks, optional chaining over risky calls, default returns, ignored return values.
+3. Match each path against the guidelines.
 
-## Red flags
-
-- **Swallowed exceptions** — empty catch, catch that only debug-logs and continues, catch returning fake-success value.
-- **Fallbacks that mask failure** — return empty/default/cached data when real operation failed, no failure signal.
-- **Vague error messages** — "something went wrong", no context, no identifiers, no original error. Message must say what failed, enough detail to act.
-- **Lost error context** — re-throw without cause, catch broad types that hide unrelated errors.
-- **Unchecked results** — ignored return codes/Result values, unawaited promises/tasks.
-- **Overly broad catches** — `catch (Exception)` around wide block, hides errors not meant to handle.
-
-Use the project's own logger and error-id patterns, not generic ones.
+Done when every error path in the diff has been matched, including the paths the diff leaves implicit by not handling them.
 
 ## Severity
 
-- **Critical** — error fully swallowed; failure invisible in production.
-- **Important** — failure logged too quietly or masked by fallback; hard to detect.
+- **Critical** — error fully swallowed; the failure is invisible in production.
+- **Important** — failure logged too quietly or masked by a fallback; hard to detect.
 - **Suggestion** — weak error message, lost context, broad catch.
 
-Fix each by surfacing the error: throw, propagate a Result, log at the right level, or enrich the message. Errors loud, contextual, propagated — not hidden.
+Every finding names the fix that surfaces the error: throw, propagate a Result, log at the right level, or enrich the message.
