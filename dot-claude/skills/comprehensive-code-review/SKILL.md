@@ -40,9 +40,14 @@ Step 2 is done when every changed file has been matched against the Apply when c
 An aspect naming an agent in its step-2 Agent/model cell uses it. For the rest, run
 `cc-review-ab assign <ids>` once, passing their reference-file stems. Its first line is
 `run<TAB><run id>`; keep that id for step 4. Every line after it is `aspect<TAB>agent`, or
-`aspect<TAB>agent/model` where a model is pinned, in the same notation as the table.
+`aspect<TAB>agent/model` where a model is pinned, in the same notation as the table. Every aspect
+pinned in the table → no call to make, so use the short HEAD sha as the run id instead.
 
-Spawn one agent per aspect, all in **one batched message**. Give each agent the prompt below, substituting only `{ASPECT}`, `{SCOPE}`, `{ASPECT_FILES}`, and `{REQUIRED_SKILLS}`. Copy the rest verbatim.
+Spawn one agent per aspect, all in **one batched message**, naming each one `<stem>-<run id>`.
+Steps 3 and 4 both reach an agent by that name, and they search the whole session rather than this
+run, so a bare stem collides with the same aspect from an earlier review and step 4 fails.
+
+Give each agent the prompt below, substituting only `{ASPECT}`, `{SCOPE}`, `{ASPECT_FILES}`, and `{REQUIRED_SKILLS}`. Copy the rest verbatim.
 
 - `{SCOPE}` — the literal diff commands from step 1, identical for every agent.
 - `{ASPECT_FILES}` — the reference doc in the aspect's step-2 cell, as an absolute path.
@@ -83,9 +88,9 @@ Present **Spec conformance** as its own section, un-merged. Include that section
 Log each aspect:
 `cc-review-ab record <run id> <aspect> <critical> <important> <suggestion> --agent <spawned name>`,
 writing the aspect as `<stem>=<agent/model>` for the ones step 3 never sent to `assign`.
-Count what that agent reported, before deduping against other aspects. `--agent` reads the tokens
-and seconds off that subagent's transcript, so spawn each agent under a name unique within the
-session and pass that same name here.
+Count what that agent reported, before deduping against other aspects. `--agent` takes the step-3
+name and reads the tokens and seconds off that subagent's transcript. It exits without logging when
+the name matches no subagent or several, which means the name was wrong, not that the cost was zero.
 
 Step 4 is done when every aspect selected in step 2 appears in the report and has been logged.
 
