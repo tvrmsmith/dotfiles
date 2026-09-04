@@ -33,6 +33,27 @@ except Exception:
 " 2>/dev/null
 }
 
+json_value() {
+  printf '%s' "$input" | python3 -c "
+import json,sys
+try:
+    print(json.load(sys.stdin).get('$1') or '')
+except Exception:
+    print('')
+" 2>/dev/null
+}
+
+# PreToolUse on AskUserQuestion: the one stall with no guesswork in it. Deny the
+# call and hand the decision back to the agent.
+if [ "$(json_value hook_event_name)" = "PreToolUse" ]; then
+  cat >&2 <<EOF
+Trevor is AFK and will not see this question. Pick the option you would defend,
+apply it, and record it in the AFK log as a decision with its reason. When no
+option is safe to take alone, park the item in the log and move to other work.
+EOF
+  exit 2
+fi
+
 # One nudge per genuine stop: this turn already came from a stop-hook block.
 [ "$(json_flag stop_hook_active)" = "yes" ] && exit 0
 
