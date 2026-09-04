@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""Randomize review aspects between agent arms and log the outcome.
+
+  cc-review-ab assign <aspect>...    -> run id + "aspect<TAB>agent[/model]" per aspect
+                                        bare id randomizes; "id=agent[/model]" pins it
+  cc-review-ab record <run> <aspect>[=agent[/model]] <critical> <important> <suggestion>
+                      [tokens] [seconds]   -- pin the agent for aspects assign never saw
+  cc-review-ab report                -> per-aspect findings and cost by arm
+"""
+import json
+import os
+import pathlib
+import random
+import subprocess
+import sys
+import time
+import uuid
+from collections import defaultdict
+
+LOG = pathlib.Path(os.environ.get("CC_REVIEW_AB_LOG", pathlib.Path.home() / ".claude/review-ab.jsonl"))
+ARMS = ["general-purpose", "low-effort"]
+# Written into "repo"/"head" when git can't answer, so a log line never reads
+# like a real value that happens to be blank.
+UNKNOWN = "unknown"
+# How logs written before arms stored a bare null spelled "no model pinned".
+LEGACY_ABSENT = "-"
+
+
+def append(rec):
+    LOG.parent.mkdir(parents=True, exist_ok=True)
+    with LOG.open("a") as f:
+        f.write(json.dumps(rec) + "\n")
+
+
+def git(*args):
+    """Trimmed stdout of `git <args>`, or UNKNOWN with a reason on stderr."""
+    try:
+        proc = subprocess.run(["git", *args], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"cc-review-ab: git {' '.join(args)} failed: {exc}", file=sys.stderr)
+        return UNKNOWN
+    if proc.returncode != 0:
+        print(f"cc-review-ab: git {' '.join(args)} exited {proc.returncode}: "
+              f"{proc.stderr.strip()}", file=sys.stderr)
+        return UNKNOWN
+    return proc.stdout.strip()
+
+
+def format_arm(agent, model):
+    return f"{agent}/{model}" if model else agent
+
+
+def parse_arm(stored):
+    """(agent, model_or_None) from a logged arms entry, tolerating old logs."""
+    agent, model = stored
+    return agent, (None if model == LEGACY_ABSENT else model)
+
+
+def repo_name():
+    toplevel = git("rev-parse", "--show-toplevel")
+    return UNKNOWN if toplevel == UNKNOWN else pathlib.Path(toplevel).name
+
+
+def assign(aspects):
+    run = uuid.uuid4().hex[:8]
+    picks = {}
+    for spec in aspects:
+        aspect, _, pinned = spec.partition("=")
+        if pinned:
+            agent, _, model = pinned.partition("/")
+            picks[aspect] = (agent, model or None)
+        else:
+            picks[aspect] = (random.choice(ARMS), None)
+    append({
+        "kind": "assign", "run": run, "ts": time.time(),
+        "repo": repo_name(), "head": git("rev-parse", "--short", "HEAD"), "arms": picks,
+    })
+    print(f"run\t{run}")
+    for aspect, (agent, model) in picks.items():
+        print(f"{aspect}\t{format_arm(agent, model)}")
+
+
+def record(argv):
+    run, spec = argv[0], argv[1]
+    aspect, _, pinned = spec.partition("=")
+    crit, imp, sug = (int(x) for x in argv[2:5])
+    tokens = int(argv[5]) if len(argv) > 5 else None
+    seconds = float(argv[6]) if len(argv) > 6 else None
+    arm = pinned
+    if not arm:
+        try:
+            lines = LOG.read_text().splitlines()
+        except FileNotFoundError:
+            lines = []
+        for line in lines:
+            rec = json.loads(line)
+            if rec.get("kind") == "assign" and rec["run"] == run:
+                got = rec["arms"].get(aspect)
+                if got:
+                    arm = format_arm(*parse_arm(got))
+                break
+    if not arm:
+        sys.exit(f"no arm for run {run} aspect {aspect}; pass {aspect}=<agent[/model]>")
+    append({
+        "kind": "result", "run": run, "ts": time.time(), "aspect": aspect, "arm": arm,
+        "critical": crit, "important": imp, "suggestion": sug,
+        "tokens": tokens, "seconds": seconds,
+    })
+
+
+def report():
+    if not LOG.exists():
+        sys.exit("no log yet")
+    agg = defaultdict(lambda: defaultdict(list))
+    for line in LOG.read_text().splitlines():
+        r = json.loads(line)
+        if r.get("kind") == "result":
+            agg[r["aspect"]][r["arm"]].append(r)
+    def col(rows, key, width, prec):
+        vals = [r[key] for r in rows if r.get(key) is not None]
+        if not vals:
+            return f"{'-':>{width}}"
+        return f"{sum(vals) / len(vals):>{width}.{prec}f}"
+
+    w = max((len(a) for a in agg), default=6)
+    aw = max((len(k) for v in agg.values() for k in v), default=15)
+    print(f"{'aspect':<{w}}  {'arm':<{aw}} {'n':>3} {'crit':>5} {'imp':>5} {'sugg':>5} {'tokens':>8} {'secs':>6}")
+    for aspect in sorted(agg):
+        for arm in sorted(agg[aspect]):
+            rows = agg[aspect][arm]
+            print(f"{aspect:<{w}}  {arm:<{aw}} {len(rows):>3} "
+                  f"{col(rows, 'critical', 5, 1)} {col(rows, 'important', 5, 1)} "
+                  f"{col(rows, 'suggestion', 5, 1)} {col(rows, 'tokens', 8, 0)} "
+                  f"{col(rows, 'seconds', 6, 1)}")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        sys.exit(__doc__)
+    cmd, rest = sys.argv[1], sys.argv[2:]
+    if cmd == "assign" and rest:
+        assign(rest)
+    elif cmd == "record" and len(rest) >= 5:
+        record(rest)
+    elif cmd == "report":
+        report()
+    else:
+        sys.exit(__doc__)
