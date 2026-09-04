@@ -97,10 +97,3 @@ AFK: idle
 Write that line, on its own, once every item in the AFK log above it reads done or parked and
 nothing is half-finished. If you cannot point at the log line covering what you were last
 working on, you are not idle. Finish the scope you were given, then write the marker.
-
-## When he comes back
-
-A typed prompt is proof he is at the keyboard, so the guard says so in the session that receives
-it, once. From that notice on, this session is a normal session again: no AFK log, no `AFK: idle`
-line, and decisions he would want a say in go back to him. The flag may still be armed for the
-sessions he has not reached yet, and `/afk back` is what clears it for all of them.
