@@ -7,12 +7,12 @@
                       [--agent NAME | --in N --cw N --cr N --out N --think N --seconds S]
   cc-review-ab report [--totals]     -> per-aspect findings and cost by arm
 
-`record --agent NAME` reads the cost straight off that subagent's transcript
-via `cc-agent-times`, so the numbers are never transcribed by hand. NAME is the
-name the agent was spawned under. The explicit flags override it.
+`record --agent NAME` reads the cost off that subagent's transcript via
+`cc-agent-times`. NAME is the name the agent was spawned under. The explicit
+flags override it.
 
-Tokens are logged per billing class, since a cache read and an output token are
-nowhere near the same cost: in, cw (cache write), cr (cache read), out, think.
+Tokens are logged per billing class: in, cw (cache write), cr (cache read),
+out, think (a subset of out).
 """
 import argparse
 import json
@@ -27,8 +27,7 @@ from collections import defaultdict
 
 LOG = pathlib.Path(os.environ.get("CC_REVIEW_AB_LOG", pathlib.Path.home() / ".claude/review-ab.jsonl"))
 ARMS = ["general-purpose", "low-effort"]
-# Written into "repo"/"head" when git can't answer, so a log line never reads
-# like a real value that happens to be blank.
+# Written into "repo"/"head" when git can't answer, so neither reads as blank-but-real.
 UNKNOWN = "unknown"
 # How logs written before arms stored a bare null spelled "no model pinned".
 LEGACY_ABSENT = "-"
@@ -75,8 +74,7 @@ def repo_name():
 def usage_for(name):
     """Cost for the subagent spawned as NAME, read off its transcript.
 
-    Exits rather than logging zeros: a silently costless row would read as a
-    free run and skew the arm it lands in.
+    Exits rather than logging zeros, which would read as a free run.
     """
     try:
         proc = subprocess.run(["cc-agent-times", "--agent", name, "--json"],

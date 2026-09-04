@@ -44,8 +44,7 @@ An aspect naming an agent in its step-2 Agent/model cell uses it. For the rest, 
 pinned in the table → no call to make, so use the short HEAD sha as the run id instead.
 
 Spawn one agent per aspect, all in **one batched message**, naming each one `<stem>-<run id>`.
-Steps 3 and 4 both reach an agent by that name, and they search the whole session rather than this
-run, so a bare stem collides with the same aspect from an earlier review and step 4 fails.
+Steps 3 and 4 reach an agent by that name, across the whole session rather than this run.
 
 Give each agent the prompt below, substituting only `{ASPECT}`, `{SCOPE}`, `{ASPECT_FILES}`, and `{REQUIRED_SKILLS}`. Copy the rest verbatim.
 
@@ -73,9 +72,8 @@ Label every finding by severity and use this exact format:
 Severity: Critical, Important, or Suggestion, calibrated by the definitions in the reference doc.
 ```
 
-A report that stops mid-sentence, or ends by saying the rest was held back, is truncated, and its
-missing findings also undercount step 4's log. Message that agent by the name you spawned it under
-and ask for only the findings it has yet to deliver.
+A report that stops mid-sentence, or ends by saying the rest was held back, is truncated. Message
+that agent by its step-3 name and ask for only the findings it has yet to deliver.
 
 Step 3 is done when every agent in the batch has returned a report that runs to its end.
 
