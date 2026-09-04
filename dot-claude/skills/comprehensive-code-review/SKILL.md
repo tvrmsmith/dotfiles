@@ -1,76 +1,96 @@
 ---
 name: comprehensive-code-review
-description: Use for a comprehensive, multi-aspect review of a diff, PR, or pre-commit changes — correctness, bugs, tests, error handling, comments, React, type design, spec conformance, and simplification.
+description: Multi-aspect adversarial review of changed code. Use when asked to review a diff, a PR, or work before committing.
 ---
 # Comprehensive Code Review
 
-Adversarial review of changed code across every applicable aspect below, then aggregate. Treat diff as guilty until shown correct — dig for real defects, report only what survives scrutiny (no praise-seeking, no speculation padding).
+Review changed code across every applicable aspect below, then aggregate. Treat the diff as guilty until shown correct. Report only what survives scrutiny.
 
 ## 1. Scope
 
-Default target: unstaged + staged changes (`git diff` and `git diff --cached`). PR exists (`gh pr view`) → use its diff. Honor explicit scope caller gives.
+Default target: unstaged + staged changes (`git diff` and `git diff --cached`). PR exists (`gh pr view`) → use its diff. Honor explicit scope the caller gives.
 
-Neither `git diff` form shows untracked files, so pre-commit review skip brand-new files entirely. Run `git add -N` on anything untracked first, so it land in diff — then `git reset -- <those paths>` once step 4 done, since those intent-to-add entries otherwise linger in caller's index and change how later `git stash` or `git commit` behave.
+Untracked files appear in neither `git diff` form. Run `git add -N` on every untracked path first, and record those paths for step 5.
 
-Resolve scope once, into literal diff command(s) both tracks use — every downstream agent gets those commands verbatim, never prose label like "current changes".
+Resolve scope into literal diff commands. Every agent gets those commands verbatim.
+
+Resolve the **spec source** here too: the originating issue or PRD, as a bead id, JIRA key, or absolute path. Look in commit messages on the branch, then any path the caller passed, then `docs/`, `specs/`, `.scratch/` for a file matching the branch or feature. Found nothing → record "no spec exists".
+
+Step 1 is done when the diff commands, the spec source, and any intent-to-add paths are all written down.
 
 ## 2. Pick applicable aspects
 
-Caller named specific aspects (e.g. "review error handling and tests") → run only those. Else select from changed files what applies:
+Caller named specific aspects (e.g. "review error handling and tests") → run only those. Else select from the changed files:
 
-| Aspect | Reference / owner | Required skills | Apply when |
-|--------|-------------------|-----------------|------------|
-| Correctness & bugs | `references/code-quality.md`, `references/error-handling.md`, `references/comments.md` | — | always |
-| Tests | `references/tests.md` | — | test files or new logic changed |
-| React | — | `coding-standards` | React components or hooks changed — `.jsx`/`.tsx`, or JSX / `use*` in `.js`/`.ts` |
-| Simplification | `references/simplification.md` | — | always — advisory, unless caller asks for edits |
-| Spec conformance & standards | `mattpocock-skills:code-review` | — | always — runs as 3a, **never** as 3b spawn |
+| Aspect | Reference | Required skills | Agent/model | Apply when |
+|--------|-----------|-----------------|-------------|------------|
+| Correctness & defects | `references/correctness.md` | — | — | always |
+| Error handling | `references/error-handling.md` | `coding-standards:coding-standards` | `low-effort` | always |
+| Comments | `references/comments.md` | `coding-standards:coding-standards` | `general-purpose/sonnet` | always |
+| Test coverage | `references/tests-coverage.md` | — | — | test files or new logic changed |
+| Test quality | `references/tests-quality.md` | `coding-standards:test-best-practices` | — | test files added or changed |
+| Standards & type design | `references/standards.md` | `coding-standards:coding-standards` | — | always |
+| Simplification | `references/simplification.md` | — | — | always |
+| Spec conformance | `references/spec-conformance.md` | — | — | spec source resolved in step 1 |
 
-Type design has no in-house aspect — Matt's Standards axis cover it.
-
-Simplification batches with rest in advisory mode, since nothing mutates between steps 3 and 4. Caller asked for edits applied → pull it out of batch, run after step 4 instead, so it edit settled code.
+Step 2 is done when every changed file has been matched against the Apply when column and the selected aspect list is written down.
 
 ## 3. Run reviews
 
-Two tracks. Work 3a's setup **first** — item trailing multi-agent batch is item that gets dropped. Then spawn Matt's two sub-agents and every 3b aspect agent in **one batched message**, so all run concurrently.
+An aspect naming an agent in its step-2 Agent/model cell uses it. For the rest, run
+`cc-review-ab assign <ids>` once, passing their reference-file stems. Its first line is
+`run<TAB><run id>`; keep that id for step 4. Every line after it is `aspect<TAB>agent`, or
+`aspect<TAB>agent/model` where a model is pinned, in the same notation as the table.
 
-### 3a. Delegated track (Matt Pocock)
+Spawn one agent per aspect, all in **one batched message**. Give each agent the prompt below, substituting only `{ASPECT}`, `{SCOPE}`, `{ASPECT_FILES}`, and `{REQUIRED_SKILLS}`. Copy the rest verbatim.
 
-Invoke `mattpocock-skills:code-review` from main thread — it loads instructions you then execute yourself; don't wrap in another agent. Its steps 1–3 are setup you do inline; its step 4 spawns Standards and Spec sub-agents — batch those with 3b's. **Stop after its step 4**: this skill's step 4 replaces its step 5, whose "do not merge or rerank" rule applies only to its own standalone report. Take its two raw axes there.
-
-**Pre-resolve everything it would otherwise stop and ask for.** Each of these blocks unattended run:
-
-- **Diff command** — its step 1 builds `git diff <fixed-point>...HEAD`, which reads committed history only and **cannot see working tree**. Default scope is uncommitted, so `HEAD...HEAD` empty and it aborts on empty diff. Override it: hand its sub-agents diff command(s) resolved in step 1 above, so both tracks review same change set. Committed scope (PR, branch vs base) → its three-dot form already right; pass that.
-- **Spec source** — originating issue/PRD: bead, JIRA key, or spec file. Its step 2 asks when it can't find one. No spec exists → say so explicitly, so it skips Spec sub-agent by design rather than by blocking.
-- **Issue tracker** — its preamble tells agent to run `/setup-matt-pocock-skills` when `docs/agents/issue-tracker.md` missing, which most repos don't have. State up front none configured and it should proceed without one.
-
-### 3b. In-house aspects
-
-Spawn one general-purpose agent per selected in-house aspect — Spec conformance row is 3a's, never spawned here. Give each agent this exact prompt, substituting only `{ASPECT}`, `{SCOPE}`, `{ASPECT_FILES}`, and `{REQUIRED_SKILLS}` — copy rest verbatim so every reviewer runs on same brief.
-
-- `{SCOPE}` — literal diff command(s) resolved in step 1, same ones handed to 3a.
-- `{ASPECT_FILES}` — every reference doc in aspect's step-2 cell, each resolved to **absolute** path (spawned agents run in target repo, where relative `references/…` won't resolve).
+- `{SCOPE}` — the literal diff commands from step 1, identical for every agent.
+- `{ASPECT_FILES}` — the reference doc in the aspect's step-2 cell, as an absolute path.
 - `{REQUIRED_SKILLS}` — that aspect's Required skills cell, comma-separated.
 
-Either cell can be `—`: drop that cell's numbered line and renumber what's left (React drops line 2; every other in-house aspect drops line 1).
+A Required skills cell of `—` drops line 1 and renumbers what's left.
+
+Spec conformance and Correctness each take one extra line after `Scope:` — `Spec: <bead id, JIRA key, or absolute path from step 1>`. Spec conformance checks the diff against it. Correctness uses it only to tell a wrong result from an intended one. Every other aspect works from the diff alone.
 
 ```
-Adversarially review this change for {ASPECT} — treat the diff as guilty until shown correct.
+Adversarially review this change for {ASPECT}. Treat the diff as guilty until shown correct.
 
 Scope: {SCOPE}
-1. Invoke these skills before you start reviewing and follow them — they override generic guidance: {REQUIRED_SKILLS}.
+1. Invoke these skills before you start and follow them over generic guidance: {REQUIRED_SKILLS}.
 2. Read {ASPECT_FILES} and follow them exactly.
 Follow through to any further skill or file the above tells you to load.
-Report findings only — no code edits. Report only what survives scrutiny — no speculation padding.
+Issue independent tool calls in one message.
+Report findings only, leaving the worktree exactly as you found it.
+Report only what survives scrutiny.
+Open with a one-line judgment for the aspect, saying "no findings" explicitly when it ran clean.
 Label every finding by severity and use this exact format:
   `severity — description [file:line] → concrete fix`
-Severity: Critical (must fix before merge — bugs, silent failures, misleading docs, standards violations) · Important (real issue, not a blocker) · Suggestion (optional polish).
+Severity: Critical, Important, or Suggestion, calibrated by the definitions in the reference doc.
 ```
 
-Step 3 done when every agent in batch has returned — 3b aspect agents **and** 3a's Standards and Spec sub-agents. Aspect agents returning is not step 3 finishing.
+A report that stops mid-sentence, or ends by saying the rest was held back, is truncated, and its
+missing findings also undercount step 4's log. Message that agent by the name you spawned it under
+and ask for only the findings it has yet to deliver.
+
+Step 3 is done when every agent in the batch has returned a report that runs to its end.
 
 ## 4. Aggregate
 
-Merge in-house findings and Matt's **Standards** axis into one report, deduped, grouped by severity labels above. Matt's Standards axis has no severity labels — it splits findings into hard violations and judgement calls. Map on way in: hard violation → Critical, judgement call → Suggestion, unless finding plainly worse than its bucket suggests.
+Merge every aspect except Spec conformance into one report, deduped, grouped by the severity labels above.
 
-Present Matt's **Spec** axis as own section, un-merged. That section never absent: if delegated track didn't run, section says so instead of being omitted, so skipped Spec axis can't be mistaken for clean one. Every aspect selected in step 2 appears in report — state "no findings" explicitly where aspect ran clean. Close with recommended action order.
+Present **Spec conformance** as its own section, un-merged. Include that section every time: where no spec existed, the section says so. Every aspect selected in step 2 appears in the report, with "no findings" stated explicitly where it ran clean. Close with a recommended action order.
+
+Log each aspect:
+`cc-review-ab record <run id> <aspect> <critical> <important> <suggestion> <tokens> <seconds>`,
+writing the aspect as `<stem>=<agent/model>` for the ones step 3 never sent to `assign`.
+Count what that agent reported, before deduping against other aspects. Run `cc-agent-times` and find
+the row whose agent id carries the name you spawned that aspect under. Log its `out tok` as
+`<tokens>` and its `secs` as `<seconds>`.
+
+Step 4 is done when every aspect selected in step 2 appears in the report and has been logged.
+
+## 5. Restore scope
+
+Recorded intent-to-add paths in step 1 → run `git reset -- <those paths>`.
+
+Step 5 is done when the index is back to how step 1 found it.
