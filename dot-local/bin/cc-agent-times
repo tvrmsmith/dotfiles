@@ -1,15 +1,28 @@
 #!/usr/bin/env python3
-"""Report how long each Claude Code subagent ran in a session.
+"""Report how long each Claude Code subagent ran in a session, and what it spent.
 
 Subagent transcripts live at
   ~/.claude/projects/<slug>/<session-id>/subagents/agent-*.jsonl
 so a subagent's wall time is its first-to-last entry timestamp.
+
+Tokens are reported per billing class, because they do not cost the same: a
+cache read is an order of magnitude cheaper than fresh input, and output is
+the dearest of all. Thinking tokens are a subset of output, broken out so a
+reasoning-effort comparison can see the dial move.
+
+  in     fresh input, uncached
+  cw     cache writes (input_tokens the run paid to cache)
+  cr     cache reads (input served from cache)
+  out    output, thinking included
+  think  the thinking subset of out
 
 Usage:
   cc-agent-times                 # newest session under the cwd's project slug
   cc-agent-times <session-id>    # a specific session, searched across projects
   cc-agent-times <path.jsonl>    # a specific session transcript
   cc-agent-times --grep TEXT     # newest session whose transcript contains TEXT
+  cc-agent-times --agent NAME    # only subagents whose id contains NAME
+  cc-agent-times --json          # machine-readable rows, for cc-review-ab
 """
 
 import argparse
@@ -85,6 +98,38 @@ def first_prompt(entries) -> str:
     return ""
 
 
+# Keys are our short column names, values the usage field each one sums.
+TOKEN_FIELDS = {
+    "in": "input_tokens",
+    "cw": "cache_creation_input_tokens",
+    "cr": "cache_read_input_tokens",
+    "out": "output_tokens",
+}
+
+
+def tally_tokens(entries) -> dict:
+    """Per-class token totals across every assistant turn in a transcript."""
+    totals = {name: 0 for name in TOKEN_FIELDS}
+    totals["think"] = 0
+    for entry in entries:
+        if entry.get("type") != "assistant":
+            continue
+        usage = entry.get("message", {}).get("usage", {})
+        for name, field in TOKEN_FIELDS.items():
+            totals[name] += usage.get(field, 0)
+        totals["think"] += usage.get("output_tokens_details", {}).get("thinking_tokens", 0)
+    return totals
+
+
+def human(count: int) -> str:
+    """Token counts run to six digits, which is too wide to scan in a column."""
+    if count < 1000:
+        return str(count)
+    if count < 1_000_000:
+        return f"{count / 1000:.1f}k"
+    return f"{count / 1_000_000:.2f}M"
+
+
 def short_model(model: str) -> str:
     """"claude-opus-5-20260101" -> "opus". Ids without a hyphen stay whole:
     <synthetic>, and the bare opus/sonnet/inherit a transcript can carry."""
@@ -104,9 +149,6 @@ def summarize(path: Path, skips: "Counter"):
     tools = sum(1 for e in entries if e.get("type") == "assistant"
                 for b in e.get("message", {}).get("content", [])
                 if isinstance(b, dict) and b.get("type") == "tool_use")
-    out_tokens = sum(e.get("message", {}).get("usage", {}).get("output_tokens", 0)
-                     for e in entries if e.get("type") == "assistant")
-
     label = " ".join(first_prompt(entries).split())[:70]
     return {
         "name": path.stem.removeprefix("agent-"),
@@ -115,7 +157,7 @@ def summarize(path: Path, skips: "Counter"):
         "seconds": (max(stamps) - min(stamps)).total_seconds(),
         "model": "+".join(sorted(short_model(m) for m in models)) or "?",
         "tools": tools,
-        "out_tokens": out_tokens,
+        "tokens": tally_tokens(entries),
         "label": label,
     }
 
@@ -125,6 +167,8 @@ def main():
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("target", nargs="?", help="session id or transcript path")
     parser.add_argument("--grep", help="pick newest session whose transcript contains TEXT")
+    parser.add_argument("--agent", help="only subagents whose id contains NAME")
+    parser.add_argument("--json", action="store_true", help="emit rows as JSON")
     # Project slugs start with "-", which argparse would read as a flag.
     argv = sys.argv[1:]
     if argv and argv[0].startswith("-") and Path(argv[0]).exists():
@@ -133,7 +177,8 @@ def main():
 
     session = find_session(args)
     subagent_dir = session.with_suffix("") / "subagents"
-    print(f"session: {session}")
+    if not args.json:
+        print(f"session: {session}")
 
     if not subagent_dir.is_dir():
         sys.exit("no subagents recorded for this session")
@@ -147,20 +192,38 @@ def main():
     if skips["transcripts"]:
         print(f"warning: skipped {skips['transcripts']} transcript(s) with no timestamps",
               file=sys.stderr)
+    if args.agent:
+        rows = [r for r in rows if args.agent in r["name"]]
     if not rows:
-        sys.exit("no subagent entries with timestamps")
+        sys.exit(f"no subagent matches {args.agent!r}" if args.agent
+                 else "no subagent entries with timestamps")
 
     rows.sort(key=lambda r: r["seconds"], reverse=True)
     t0 = min(r["start"] for r in rows)
     span = (max(r["end"] for r in rows) - t0).total_seconds()
 
+    if args.json:
+        print(json.dumps([{
+            "name": r["name"], "seconds": round(r["seconds"], 1),
+            "model": r["model"], "tools": r["tools"], **r["tokens"],
+        } for r in rows], indent=2))
+        return
+
+    cols = ["in", "cw", "cr", "out", "think"]
     width = max(len(r["name"]) for r in rows)
     print(f"{len(rows)} subagents, {span:.0f}s wall from first start to last finish\n")
-    print(f"{'agent'.ljust(width)}  {'secs':>6}  {'+start':>6}  {'model':<8} {'tools':>5}  {'out tok':>8}  prompt")
+    header = f"{'agent'.ljust(width)}  {'secs':>6}  {'+start':>6}  {'model':<8} {'tools':>5}"
+    print(header + "".join(f"  {c:>7}" for c in cols) + "  prompt")
     for row in rows:
         offset = (row["start"] - t0).total_seconds()
+        cells = "".join(f"  {human(row['tokens'][c]):>7}" for c in cols)
         print(f"{row['name'].ljust(width)}  {row['seconds']:6.0f}  {offset:6.0f}  "
-              f"{row['model']:<8} {row['tools']:5d}  {row['out_tokens']:8d}  {row['label']}")
+              f"{row['model']:<8} {row['tools']:5d}{cells}  {row['label'][:40]}")
+
+    totals = {c: sum(r["tokens"][c] for r in rows) for c in cols}
+    print(f"{'total'.ljust(width)}  {sum(r['seconds'] for r in rows):6.0f}  {'':6}  "
+          f"{'':<8} {sum(r['tools'] for r in rows):5d}"
+          + "".join(f"  {human(totals[c]):>7}" for c in cols))
 
     slowest = rows[0]
     # span is 0 when every subagent failed at the same instant.
