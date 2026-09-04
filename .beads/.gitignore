@@ -64,6 +64,12 @@ backup/
 # verbatim, including work infrastructure detail. Keep it local.
 interactions.jsonl
 
+# Prime override. A machine-local symlink to ~/.config/beads/PRIME.md, which is
+# stowed from the dotfiles repo. Committing it would ship a broken absolute link
+# to anyone else who clones. Recreate with:
+#   ln -sfn "$HOME/.config/beads/PRIME.md" .beads/PRIME.md
+PRIME.md
+
 # Per-project environment file (Dolt connection config, GH#2520)
 .env
 
