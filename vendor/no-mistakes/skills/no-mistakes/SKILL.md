@@ -1,6 +1,6 @@
 ---
 name: no-mistakes
-description: Validate code changes through the no-mistakes pipeline - code review, tests, lint, docs, push, PR, and CI - before they reach the push target. Use when the user asks to run no-mistakes, gate or validate changes before pushing, asks you to do a task and then validate it, or invokes /no-mistakes.
+description: Run code changes through the no-mistakes pipeline before they reach the remote. Use when the user asks to validate or push existing committed work through no-mistakes, or names no-mistakes on a task to do and then validate.
 user-invocable: true
 ---
 
@@ -146,7 +146,9 @@ Because that background monitor stays live, a PR that falls behind the default b
 hits a merge conflict after checks pass - commonly because another PR merged
 first - needs **no command from you**: leave it to the live monitor and
 never hand-rebase it yourself. When the CI monitor sees an actual conflict it
-**rebases onto the base, resolves it, and re-pushes the branch itself**; a PR
+**rebases onto the base, resolves it, revalidates from Review because
+rebasing cannot prove continuity with the reviewed head, and re-pushes the
+branch through Push**; a PR
 that is merely behind but still clean needs nothing either, since the platform
 merges it. The one
 exception is when that monitor is no longer running - the PR was closed, the run
@@ -155,8 +157,8 @@ exhausted - in which case recover with `no-mistakes rerun`, which cancels the
 stale monitor and re-runs the full pipeline including a deterministic rebase
 step. If the dead run left auto-fix or CI-rebase commits your clone lacks, take
 them with the offered `branch_sync` `sync` action **before the rerun,
-not after**: the rerun creates a pending run with no push binding
-(`legacy_unbound`), and `no-mistakes axi sync` then refuses.
+not after**: the rerun's own pending run carries no push binding, so it owns
+the branch (`pipeline_owned`) and `no-mistakes axi sync` then refuses.
 `no-mistakes rerun` only *starts* that run:
 it returns immediately without driving, so something still has to answer the
 recovered run's gates.
