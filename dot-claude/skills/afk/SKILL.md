@@ -21,7 +21,7 @@ instead, this file is all of it.
 
 Every prompt it raises hangs, so `git push`, `gh`, the SSH agent, and the `GITHUB_TOKEN` plugin
 are off the table. Commit locally with `git -c commit.gpgsign=false commit ...` (same for
-`tag.gpgsign`) and park each push, PR, and review with the command he should run. Anything that
+`tag.gpgsign`) and park each push, PR, and review. Anything that
 does hang, or fails a network call twice, gets interrupted and parked rather than retried.
 
 ## Still his call
@@ -42,5 +42,5 @@ AFK log
 - done: <what landed> | <commit sha / path>
 - decided: <choice> | <reason>
 - assumed: <assumption it was built on>
-- parked: <item> | <command he should run, or decision he owes>
+- parked: <item> | <what it is waiting on>
 ```
