@@ -129,6 +129,27 @@ install_tuicr() {
 	fi
 }
 
+# Files that live-writers replace instead of updating in place. Each is stowed
+# like everything else, but a writer that saves atomically (temp file + rename)
+# swaps our symlink for a regular file, and stow then refuses to place anything
+# at all:
+#
+#   dot-claude/settings.json     `claude doctor` and Claude Code's own writes
+#                                (plugin toggles, effortLevel, marketplace
+#                                entries)
+#   dot-config/gh/hosts.yml      `gh auth switch` / `gh auth login`
+#   dot-config/1Password/telemetry-enabled   the 1Password desktop app
+LIVE_WRITER_FILES=(
+	dot-claude/settings.json
+	dot-config/gh/hosts.yml
+	dot-config/1Password/telemetry-enabled
+)
+
+live_target() {
+	# The $HOME path stow places a dot- prefixed repo path at.
+	printf '%s\n' "$HOME/.${1#dot-}"
+}
+
 setup_dotfiles() {
 	# ~/.warp must exist as a real directory before stow runs: Warp writes
 	# runtime data into it (worktrees/, typescript-language-server/, generated
@@ -153,47 +174,50 @@ setup_dotfiles() {
 	# other end.
 	mkdir -p "$HOME/.config"
 
-	# dot-claude/settings.json is stowed like everything else. It used to be
-	# excluded and regenerated per machine, because it carried work-only config
-	# (Vertex creds, WellSky OTEL endpoint) that breaks Claude Code on personal
-	# machines, and Claude Code has no include mechanism to vary one file by
-	# machine. Those keys now live in ~/.zshenv.local (untracked, sourced from
-	# .zshenv), leaving the tracked file machine-neutral. Symlinking it also
-	# means Claude Code's own writes — plugin toggles, effortLevel, marketplace
-	# entries — land in the repo instead of silently drifting from it.
-	#
-	# That link does not hold on its own: writers that save the file atomically
-	# (temp file + rename) replace it with a regular file, and `claude doctor`
-	# is one of them. dot-claude/hooks/relink-settings.sh runs at SessionStart
-	# and restores the link, adopting whatever the live file accumulated first.
-	#
-	# Stow only owns links written relative to the package, so a link restored
-	# any other way reads as a foreign target and aborts the whole install
-	# before anything is placed. Drop any link that already points at our own
-	# copy and let stow lay it down again.
-	claude_settings="$HOME/.claude/settings.json"
-	dropped_claude_settings=0
-	if [ -L "$claude_settings" ] &&
-		[ "$(readlink -f "$claude_settings")" = "$(readlink -f "$SCRIPT_DIR/dot-claude/settings.json")" ]; then
-		rm -f "$claude_settings"
-		dropped_claude_settings=1
-	fi
+	# Reconcile the live-writer files (see LIVE_WRITER_FILES) before stow: drop
+	# the live copy when it's already a link to our file, or a regular file
+	# byte-identical to it. Anything with real drift is left alone so stow
+	# reports the conflict and a human decides.
+	reconciled=()
+	for rel in "${LIVE_WRITER_FILES[@]}"; do
+		src="$SCRIPT_DIR/$rel"
+		target=$(live_target "$rel")
+		[ -e "$src" ] || continue
+		# Stow folds an absent ~/.claude into one symlink to dot-claude/, so on
+		# the next run $target reaches $src itself through that folded parent.
+		# It then reads as a regular file, byte-identical to itself, and the rm
+		# below would delete the repo's own copy. -ef compares device and inode.
+		[ "$target" -ef "$src" ] && continue
+		if [ -L "$target" ]; then
+			[ "$(readlink -f "$target")" = "$(readlink -f "$src")" ] || continue
+		elif [ -f "$target" ]; then
+			cmp -s "$target" "$src" || continue
+		else
+			continue
+		fi
+		rm -f "$target"
+		reconciled+=("$rel")
+	done
 
-	# An aborted stow places nothing, so the link dropped just above stays gone.
-	# Claude Code then writes settings.json fresh as a regular file and the
-	# SessionStart relink hook adopts that stub over the tracked copy. Put the
-	# link back and stop, rather than leaving the window open.
+	# An aborted stow places nothing, so every target dropped just above stays
+	# gone and its writer recreates a fresh stub — e.g. Claude Code writes
+	# settings.json anew and the SessionStart relink hook adopts that stub over
+	# the tracked copy. Put the links back and stop, rather than leaving the
+	# window open. Content was identical, so a link is the same file either way.
 	if ! stow --dotfiles -d "$SCRIPT_DIR" -t "$HOME" .; then
-		if [ "$dropped_claude_settings" = 1 ]; then
-			restore_link="$SCRIPT_DIR/dot-claude/settings.json"
+		for rel in "${reconciled[@]}"; do
+			src="$SCRIPT_DIR/$rel"
+			target=$(live_target "$rel")
+			restore_link="$src"
 			if command -v python3 >/dev/null 2>&1; then
 				# Stow only recognises links spelled relative to the package.
 				restore_link=$(python3 -c \
 					'import os,sys; print(os.path.relpath(sys.argv[1], os.path.dirname(sys.argv[2])))' \
-					"$restore_link" "$claude_settings") || restore_link="$SCRIPT_DIR/dot-claude/settings.json"
+					"$src" "$target") || restore_link="$src"
 			fi
-			ln -sfn "$restore_link" "$claude_settings"
-		fi
+			ln -sfn "$restore_link" "$target" ||
+				echo "install.sh: could not restore $target -> $restore_link; recreate it by hand before the writer does." >&2
+		done
 		echo "install.sh: stow aborted; resolve the conflicts above and re-run." >&2
 		exit 1
 	fi
@@ -203,12 +227,20 @@ setup_dotfiles() {
 	ln -sfn "$SCRIPT_DIR/dot-claude/skills" "$HOME/.agents/skills"
 }
 
-export_corporate_ca
-install_gnu_stow
-init_submodules
-update_vendored_skills
-install_pinned_npm_tools
-install_no_mistakes
-install_tuicr
-setup_dotfiles
-echo "Dot files installed."
+main() {
+	export_corporate_ca
+	install_gnu_stow
+	init_submodules
+	update_vendored_skills
+	install_pinned_npm_tools
+	install_no_mistakes
+	install_tuicr
+	setup_dotfiles
+	echo "Dot files installed."
+}
+
+# Sourcing this file defines the functions without installing anything, so the
+# bats suite can drive setup_dotfiles against a scratch SCRIPT_DIR and HOME.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+	main
+fi
