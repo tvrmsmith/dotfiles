@@ -334,6 +334,25 @@ export default function (pi): void {
     })
   })
 
+  pi.on('tool_approval_requested', (event, ctx) => {
+    updateRuntimeOmpSessionMetadata(ctx)
+    if (!isOmpRuntime()) return
+    post('tool_approval_requested', {
+      tool_name: event.toolName,
+      reason: event.reason,
+      approval_mode: event.approvalMode,
+    })
+  })
+
+  pi.on('tool_approval_resolved', (event, ctx) => {
+    updateRuntimeOmpSessionMetadata(ctx)
+    if (!isOmpRuntime()) return
+    post('tool_approval_resolved', {
+      tool_name: event.toolName,
+      approved: event.approved,
+    })
+  })
+
   // Why: capture the assistant's final text on each completed message
   // so the dashboard preview reflects the most recent reply even before
   // agent_end fires. message_end is the right hook because pi guarantees
@@ -347,7 +366,9 @@ export default function (pi): void {
   })
 
   // Why: modern Pi stays non-idle across retry/compaction/follow-up work,
-  // while legacy Pi/OMP becomes idle after its final agent_end handlers.
+  // while legacy Pi becomes idle after its final agent_end handlers.
+  // OMP instead marks non-terminal agent_end events with willContinue, so it
+  // returns before the recheck timer is ever armed.
   const AGENT_END_IDLE_RECHECK_MS = 25
   const AGENT_END_IDLE_RECHECK_MAX_MS = 250
   let agentSettledSupported = false
@@ -399,8 +420,16 @@ export default function (pi): void {
     postAgentEndOnce()
   })
 
-  pi.on('agent_end', (_event, ctx) => {
+  pi.on('agent_end', (event, ctx) => {
     updateRuntimeOmpSessionMetadata(ctx)
+    if (event?.willContinue === true) {
+      clearPendingAgentEndCheck()
+      return
+    }
+    if (isOmpRuntime()) {
+      postAgentEndOnce()
+      return
+    }
     if (agentSettledSupported) return
     if (!ctx || typeof ctx.isIdle !== 'function') {
       postAgentEndOnce()
