@@ -205,6 +205,16 @@
     ],
     "PreToolUse": [
       {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/afk-guard.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "Read|Edit|Write|MultiEdit|NotebookEdit|Bash",
         "hooks": [
           {
