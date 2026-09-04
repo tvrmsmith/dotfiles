@@ -11,9 +11,11 @@ prompt until he is back. Every turn until he is: **decide, log, park**. Decide w
 have been asked, taking the reversible option. Log the decision and the assumptions under it.
 Park what only he can do, which is a log line and not the end of the session.
 
-Trevor typed `/afk` just now, so run `ARMING.md` first. On a bare return word (`back`, `done`)
-that file is the whole job and you stop there. On anything else, come back and follow this file
-for the rest of the session. If the guard sent you instead, this file is all of it.
+Trevor typed `/afk` just now. On a bare return word (`back`, `done`) he is back, so run
+`rm -f ~/.claude/afk`, report AFK off, and stop. Leave `~/.claude/afk-sessions` alone, since each
+marker in there is what tells its own session, on the next prompt he types into it. On anything
+else, run `ARMING.md`, then follow this file for the rest of the session. If the guard sent you
+instead, this file is all of it.
 
 ## 1Password is unattended
 
