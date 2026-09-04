@@ -62,13 +62,19 @@ questions`) and hands the turn back to the agent:
 ORCA terminal send --terminal <handle> --text $'\033'
 ```
 
-`--interrupt` sends Ctrl-C, which a question selector ignores; ESC is what dismisses it. That
-alone is usually enough: the agent's turn ends, `Stop` fires, and the armed guard turns it
-around. Read once more to confirm the dialog cleared.
+`--interrupt` sends Ctrl-C, which a question selector ignores; ESC is what dismisses it. Read
+once more to confirm the dialog cleared, then treat the session as an ordinary prompt and type
+at it below. Clearing the dialog restarts nothing on its own: cancelling the question ends the
+tool call inside a turn that was already over, so no `Stop` fires and the guard never sees it.
+The typed line is what wakes it.
 
-For a session at an ordinary prompt, type one line, no newlines and no apostrophes so the
-quoting survives. Send the text and the Enter as **two** calls, since one combined call does not
-land:
+**Check the composer before typing.** The confirming read shows the prompt line, and a session
+whose human was mid-sentence when he walked away holds an unsent draft there (`❯ adr can not be
+fixed in the p`). Typing appends to that draft and Enter submits the pair as one garbled
+message. Leave those alone and name them in the report as needing a keystroke from Trevor.
+
+For a session at an empty prompt, type one line, no newlines and no apostrophes so the quoting
+survives. Send the text and the Enter as **two** calls, since one combined call does not land:
 
 ```text
 ORCA terminal send --terminal <handle> --text 'Trevor is AFK until <HH:MM> and cannot answer. If your last turn ended in a question or an approval request, pick the option you would defend and carry on under ~/.claude/skills/afk/SKILL.md. Otherwise ignore this.'
