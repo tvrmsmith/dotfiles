@@ -31,13 +31,12 @@ human at a terminal.
 
 ## Bucket
 
-`orca-sessions.sh` sets `bucket` where the answer is mechanical, `WORKING` off the spinner line and
-`ERRORED` off an error in the tail. It leaves everything else `?`, which is the judgment this skill
-brings. Read the `recap` and `call` of each `?` row and split it three ways:
+`orca-sessions.sh` sets `WORKING`, `DECIDE`, and `ERRORED` from Orca's own record of each agent's
+state, so those three are already settled. It leaves the stopped ones `?`, which is the judgment
+this skill brings. Read the `recap` and `call` of each `?` row and split it two ways:
 
 | bucket | evidence | then |
 | --- | --- | --- |
-| `DECIDE` | ends on a question, an approval, or an `Enter to select` dialog | hand the question to Trevor |
 | `GO` | names a next step it can take alone | send the line |
 | `DONE` | says its work is finished | report it as finished |
 
@@ -73,3 +72,18 @@ DONE    | -      | Custom lint rules beads status | merged, pushed, bead closed
 Spell out each `DECIDE` question in full under the board, since answering them is the actual work
 left. Close with the count per bucket and the sessions Orca does not manage, which this never
 reached.
+
+## Offer the jump
+
+A `DECIDE` session wants Trevor's own keyboard, so end by offering to put him there. Ask through
+`AskUserQuestion` with up to three `DECIDE` sessions as the options, titled by `title` and described
+by the question each is holding, plus `Stay here` as the last one. Skip this whole section when
+nothing bucketed `DECIDE`.
+
+```text
+ORCA terminal switch --terminal <handle> --json
+```
+
+Offer one jump. The switch moves Trevor's focus to that tab and leaves this session running in the
+background, where a second question would sit unread, so name the runners-up in your closing line
+and let him come back for them.
