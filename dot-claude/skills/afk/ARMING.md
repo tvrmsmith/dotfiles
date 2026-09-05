@@ -18,8 +18,9 @@ until 16:00 and only a bare `back` clears. Confirm the expiry in local clock ter
 The flag reaches a session at its next stop or its next question. One that **already** stopped
 fires neither, so it sits parked until something tells it otherwise. Message those once, now.
 
-Run the fan-out in `~/.claude/docs/terminal-fanout.md`, with the clock time read off the flag, and
-this as the line:
+`~/.claude/bin/orca-sessions.sh` lists them with their state; take the rows whose `bucket` is not
+`WORKING`, since a session mid-turn will see the flag at its own next stop. Send to each per
+`~/.claude/docs/terminal-fanout.md`, with the clock time read off the flag, and this as the line:
 
 ```text
 Trevor is AFK until <HH:MM> and cannot answer. If your last turn ended in a question or an approval request, take the reversible option and carry on under ~/.claude/skills/afk/SKILL.md. Otherwise ignore this.
