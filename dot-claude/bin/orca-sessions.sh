@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
 # Report every live Claude session Orca manages, one JSON object per line.
 #
-# Reads each session's state out of its own terminal scrollback, so it needs no
-# network: Orca is local IPC and the evidence is already on screen. Buckets what
-# can be decided mechanically and leaves the rest to the caller's judgment.
+# Needs no network: Orca is local IPC. `worktree ps` reports each agent's state
+# directly, and the scrollback carries the prose Orca does not model.
 #
-#   bucket  WORKING  a spinner line is up, so the session is mid-turn
+#   bucket  WORKING  mid-turn
+#           DECIDE   blocked on a question or a permission prompt
 #           ERRORED  an API or 1Password error ended the last turn
-#           ?        stopped; the caller reads `recap` to tell GO from DECIDE
-#                    from DONE
+#           ?        stopped; the caller reads `recap` to tell GO from DONE
 #
-# Fields: handle title cwd idle_min turn error call recap bucket
+# Fields: handle title cwd idle_min state tool turn error call recap bucket
 set -euo pipefail
 
 LIMIT=80
@@ -27,7 +26,8 @@ Usage: orca-sessions.sh [--limit N] [--self HANDLE] [--max-idle MIN] [--table]
   --limit N       tail lines to read per session (default: 80)
   --self HANDLE   this session's handle, whose tab is skipped
                   (default: $ORCA_TERMINAL_HANDLE)
-  --max-idle MIN  skip sessions idle longer than this (default: 360)
+  --max-idle MIN  skip stopped sessions idle longer than this (default: 360);
+                  a working or waiting session is always reported
   --table         human-readable board instead of JSONL
 EOF
 }
@@ -50,10 +50,11 @@ done
 # Error text confirmed present in this machine's own transcripts.
 ERR='API Error|fetch failed|Connection error|reach the API server|session expired|agent refused operation|Permission denied \(publickey\)|error: 1Password:'
 
-# Claude's spinner carries the current turn's elapsed clock: "Undulating… (43m 24s · …)".
 # A ⏺ or $ line is the last tool call, minus the tips that share the ⎿ marker.
 # Errors match in the last 12 lines only: a session that has been *discussing*
 # "API Error" is not one that suffered it, and a real error is always at the bottom.
+# The spinner's own clock stands in when `worktree ps` has no row for the pane,
+# which is how a session outside a git worktree still buckets as WORKING.
 read -r -d '' SCRAPE <<'JQ' || true
 [ .result.terminal.tail[] | gsub("^\\s+|\\s+$"; "") | select(length > 0) ] as $l
 | ([ $l[] | capture("\\w+…\\s*\\((?:(?<m>\\d+)m\\s*)?(?<s>\\d+)s") ] | first) as $spin
@@ -62,14 +63,21 @@ read -r -d '' SCRAPE <<'JQ' || true
     title: $title,
     cwd: $cwd,
     idle_min: $idle,
-    turn: (if $spin then (($spin.m // "0") + "m" + $spin.s + "s") else "" end),
+    state: $state,
+    tool: $tool,
+    turn: (if $turn != "" then $turn
+           elif $spin then (($spin.m // "0") + "m" + $spin.s + "s")
+           else "" end),
     error: ([ $l[-12:][] | match($err).string ] | unique | join(";")),
     call: ([ $l[]
              | capture("^(?:⏺\\s*|(?:⎿\\s*)?\\$\\s*)(?<c>.+)").c
              | select(startswith("Tip:") | not) ] | last // ""),
     recap: ([ $l[] | select(test("recap:")) ] | last // "")
   }
-| .bucket = (if .turn != "" then "WORKING" elif .error != "" then "ERRORED" else "?" end)
+| .bucket = (if   $state == "working" or ($state == "" and $spin) then "WORKING"
+             elif $state == "waiting" then "DECIDE"
+             elif .error != ""        then "ERRORED"
+             else "?" end)
 | .call  |= (gsub("\\s+"; " ") | .[0:70])
 | .recap |= (gsub("\\s+"; " ") | .[0:220])
 JQ
@@ -82,25 +90,48 @@ fi
 
 now=$(( $(date +%s) * 1000 ))
 
+# `worktree ps` keys its agents by paneKey, which is exactly "<tabId>:<leafId>"
+# from `terminal list`. That join is what carries state onto a handle.
+panes=$(orca worktree ps --json 2>/dev/null | jq -c '
+  [ .result.worktrees[] | .agents[]?
+    | select(.agentType == "claude")
+    | { key: .paneKey,
+        value: { state: .state, tool: (.toolName // ""), since: .stateStartedAt } } ]
+  | from_entries') || panes='{}'
+
 # One tab hands out several handle aliases, so keep one row per tab. A null
-# lastOutputAt is no evidence the session was ever alive.
-orca terminal list --json | jq -r --arg own "$own_tab" '
+# lastOutputAt is no evidence the session was ever alive. `done` carries no
+# clock, since the state it started is the absence of work.
+orca terminal list --json | jq -r --arg own "$own_tab" --argjson panes "$panes" --argjson now "$now" '
   .result.terminals
   | map(select(.connected and (.orphaned | not)
                and .agentIdentity == "claude" and .lastOutputAt))
   | unique_by(.tabId)
   | map(select(.tabId != $own))
-  | .[] | [.handle, (.title // ""), (.worktreePath // ""), .lastOutputAt] | @tsv
-' | while IFS=$'\t' read -r handle title cwd lastout; do
+  | .[]
+  | ($panes[.tabId + ":" + .leafId] // {}) as $p
+  | [ .handle, (.title // ""), (.worktreePath // ""), .lastOutputAt,
+      ($p.state // ""), ($p.tool // ""),
+      (if ($p.since // null) == null or $p.state == "done" then ""
+       else (($now - $p.since) / 1000 | floor)
+            | (. / 60 | floor | tostring) + "m" + (. % 60 | tostring) + "s" end) ]
+  | @tsv
+' | while IFS=$'\t' read -r handle title cwd lastout state tool turn; do
       idle=$(( (now - lastout) / 60000 ))
-      if [ "$idle" -lt 0 ] || [ "$idle" -gt "$MAX_IDLE" ]; then continue; fi
+      # Age only retires a stopped session. One still working or still holding a
+      # question is live however long it has sat, and the stalest question is the
+      # one most worth surfacing.
+      if [ "$state" = "done" ] || [ -z "$state" ]; then
+        if [ "$idle" -lt 0 ] || [ "$idle" -gt "$MAX_IDLE" ]; then continue; fi
+      fi
       orca terminal read --terminal "$handle" --limit "$LIMIT" --json 2>/dev/null \
         | jq -c --arg handle "$handle" --arg title "${title:0:40}" --arg cwd "$cwd" \
-               --argjson idle "$idle" --arg err "$ERR" "$SCRAPE" \
+               --argjson idle "$idle" --arg err "$ERR" \
+               --arg state "$state" --arg tool "$tool" --arg turn "$turn" "$SCRAPE" \
         || echo "skipped $handle" >&2
     done \
   | jq -s -r --argjson table "$TABLE" '
-      sort_by(.bucket == "WORKING", .idle_min)
+      sort_by(.bucket != "DECIDE", .bucket == "WORKING", .idle_min)
       | if $table | not then .[] | tojson
         else
           "BUCKET  |    turn |  idle | title                                    | detail",
