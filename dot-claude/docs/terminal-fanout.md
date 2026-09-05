@@ -4,9 +4,9 @@ Reference for a skill that has to reach every other Claude session on this machi
 `/resume-work`. The caller brings **the line**, one sentence the receiving session reads. This file
 is the mechanics of getting it typed and confirmed.
 
-Reach for `terminal send` rather than a `SendMessage` cross-session message. An inbound peer
-message lands in a held-for-approval queue a human has to release, so it never arrives while that
-human is away from the keyboard. Typed terminal input has no such gate.
+Deliver the line with `terminal send`. Typed terminal input reaches a session directly, while a
+`SendMessage` peer message lands in a held-for-approval queue a human has to release, which is the
+one thing missing while that human is away from the keyboard.
 
 ## Pick the targets
 

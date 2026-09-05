@@ -7,15 +7,15 @@ disable-model-invocation: true
 # Resume work
 
 Trevor has been away and a couple of dozen sessions have been sitting. Checking each one by hand is
-the problem this solves. Nothing has to be armed before he leaves: every session's state is already
-in its own terminal scrollback, and `sweep.sh` reads it.
+the problem this solves. It runs entirely on return: every session's state is already in its own
+terminal scrollback, and `sweep.sh` reads it.
 
 Trevor typed `/resume-work` just now. Sweep, bucket, print the board, then branch on the argument:
 
 | argument | do |
 | --- | --- |
 | nothing | send, below |
-| `status`, `board`, `who` | stop at the board, send nothing |
+| `status`, `board`, `who` | print the board and stop |
 
 ## Sweep
 
@@ -26,8 +26,8 @@ Trevor typed `/resume-work` just now. Sweep, bucket, print the board, then branc
 `--help` carries the fields and the flags. It needs no network, since Orca is local IPC and the
 evidence is already on screen.
 
-Read the JSONL, not `--table`. That flag is for a human running the script by hand, and its bucket
-column still reads `?` for every stopped session, which is the column this skill exists to fill in.
+Read the JSONL, which carries the `?` rows this skill resolves. `--table` is the by-hand view for a
+human at a terminal.
 
 ## Bucket
 
@@ -35,15 +35,14 @@ column still reads `?` for every stopped session, which is the column this skill
 `ERRORED` off an error in the tail. It leaves everything else `?`, which is the judgment this skill
 brings. Read the `recap` and `call` of each `?` row and split it three ways:
 
-| bucket | evidence | send |
+| bucket | evidence | then |
 | --- | --- | --- |
-| `DECIDE` | ends on a question, an approval, or an `Enter to select` dialog | nothing, it wants Trevor |
-| `GO` | names a next step it can take alone | the resume line |
-| `DONE` | says nothing is pending | nothing |
+| `DECIDE` | ends on a question, an approval, or an `Enter to select` dialog | hand the question to Trevor |
+| `GO` | names a next step it can take alone | send the line |
+| `DONE` | says its work is finished | report it as finished |
 
 A long `turn` on a `WORKING` row is usually honest work. Every one measured so far was a deliberate
-`sleep 560` CI wait, so report `turn` and `call` and let Trevor read the anomaly himself rather than
-guessing at a hang.
+`sleep 560` CI wait, so put `turn` and `call` on the board and let Trevor read the anomaly himself.
 
 ## Send
 
@@ -51,11 +50,11 @@ guessing at a hang.
 no outage killed. Type this at each, per `~/.claude/docs/terminal-fanout.md`:
 
 ```text
-Trevor is back at the keyboard. Pick up where you left off and carry on.
+Continue
 ```
 
-An `ERRORED` session lost its turn to a failed API call, which lands between tool calls rather than
-inside one, so its files are consistent and the same line is all it needs.
+An `ERRORED` session lost its turn to a failed API call, which lands between tool calls, so its
+files are consistent and the same line is all it needs.
 
 ## Report
 
