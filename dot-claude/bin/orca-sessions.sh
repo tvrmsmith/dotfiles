@@ -22,7 +22,7 @@ usage() {
   awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
   cat <<'EOF'
 
-Usage: sweep.sh [--limit N] [--self HANDLE] [--max-idle MIN] [--table]
+Usage: orca-sessions.sh [--limit N] [--self HANDLE] [--max-idle MIN] [--table]
 
   --limit N       tail lines to read per session (default: 80)
   --self HANDLE   this session's handle, whose tab is skipped

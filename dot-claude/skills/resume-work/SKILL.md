@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Trevor has been away and a couple of dozen sessions have been sitting. Checking each one by hand is
 the problem this solves. It runs entirely on return: every session's state is already in its own
-terminal scrollback, and `sweep.sh` reads it.
+terminal scrollback, and `orca-sessions.sh` reads it.
 
 Trevor typed `/resume-work` just now. Sweep, bucket, print the board, then branch on the argument:
 
@@ -20,7 +20,7 @@ Trevor typed `/resume-work` just now. Sweep, bucket, print the board, then branc
 ## Sweep
 
 ```bash
-~/.claude/skills/resume-work/sweep.sh
+~/.claude/bin/orca-sessions.sh
 ```
 
 `--help` carries the fields and the flags. It needs no network, since Orca is local IPC and the
@@ -31,7 +31,7 @@ human at a terminal.
 
 ## Bucket
 
-`sweep.sh` sets `bucket` where the answer is mechanical, `WORKING` off the spinner line and
+`orca-sessions.sh` sets `bucket` where the answer is mechanical, `WORKING` off the spinner line and
 `ERRORED` off an error in the tail. It leaves everything else `?`, which is the judgment this skill
 brings. Read the `recap` and `call` of each `?` row and split it three ways:
 
