@@ -20,12 +20,14 @@ Trevor typed `/resume-work` just now. Sweep, bucket, print the board, then branc
 ## Sweep
 
 ```bash
-~/.claude/skills/resume-work/sweep.sh            # JSONL, one object per session
-~/.claude/skills/resume-work/sweep.sh --table    # same rows, readable board
+~/.claude/skills/resume-work/sweep.sh
 ```
 
 `--help` carries the fields and the flags. It needs no network, since Orca is local IPC and the
 evidence is already on screen.
+
+Read the JSONL, not `--table`. That flag is for a human running the script by hand, and its bucket
+column still reads `?` for every stopped session, which is the column this skill exists to fill in.
 
 ## Bucket
 
@@ -57,14 +59,15 @@ inside one, so its files are consistent and the same line is all it needs.
 
 ## Report
 
-One row per session, `DECIDE` first, since those are the only ones Trevor has to act on:
+Render the board from the JSONL with the buckets resolved, one row per session, `DECIDE` first,
+since those are the only ones Trevor has to act on:
 
 ```text
 BUCKET  | turn   | title                          | what it is waiting on
 DECIDE  | -      | Approval of prior work         | discard emr-be6mp.7 or rewrite it down to the header remnant
 DECIDE  | -      | Bead emr-9zt0b.31 contract     | 1Password locked mid-way, gh pr never finished
 GO      | -      | no-mistakes-archon gap review  | sent, next is comparing extractor output against the Go run
-WORKING | 29m 7s | restart.exempt_paths           | sleep 560, waiting on a CI rerun
+WORKING | 29m7s  | restart.exempt_paths           | sleep 560, waiting on a CI rerun
 DONE    | -      | Custom lint rules beads status | merged, pushed, bead closed
 ```
 
