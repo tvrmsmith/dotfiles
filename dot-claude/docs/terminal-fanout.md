@@ -33,6 +33,17 @@ ORCA terminal send --terminal <handle> --text $'\033'
 Reach for ESC specifically: `--interrupt` sends Ctrl-C, which a question selector ignores. Clearing
 the dialog wakes nothing on its own, so send the line after, once a re-read shows an empty composer.
 
+## Send the text and the Enter as two calls
+
+```text
+ORCA terminal send --terminal <handle> --text "<line>"
+ORCA terminal send --terminal <handle> --enter
+```
+
+A combined `--text ... --enter` does land on a session that has been typed at all along, but after
+an ESC it drops the submit: the text reaches the composer and sits there unsent. Splitting the two
+worked in every state measured, including that one, so pay the extra call and stay in one shape.
+
 ## Confirm by re-reading
 
 `bytesWritten` only proves the bytes reached the pty. Re-read the target and look for the line in

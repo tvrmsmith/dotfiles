@@ -132,7 +132,7 @@ orca terminal list --json | jq -r --arg own "$own_tab" --argjson panes "$panes" 
     done \
   | jq -s -r --argjson table "$TABLE" '
       sort_by(.bucket != "DECIDE", .bucket == "WORKING", .idle_min)
-      | if $table | not then .[] | tojson
+      | if $table == 0 then .[] | tojson
         else
           "BUCKET  |    turn |  idle | title                                    | detail",
           (.[] | "\(.bucket | . + " " * (7 - length))"
