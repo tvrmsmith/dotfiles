@@ -1,8 +1,8 @@
 # Typing one line at every live Claude session
 
 Reference for a skill that has to reach every other Claude session on this machine: `/afk` arming,
-`/park`, `/park back`. The caller brings **the line**, a single sentence naming a file for the
-receiving session to read. This file is the mechanics of getting it typed and confirmed.
+`/resume-work`. The caller brings **the line**, one sentence the receiving session reads. This file
+is the mechanics of getting it typed and confirmed.
 
 Reach for `terminal send` rather than a `SendMessage` cross-session message. An inbound peer
 message lands in a held-for-approval queue a human has to release, so it never arrives while that
@@ -41,12 +41,8 @@ The read decides what the target is, and only one of the four cases gets typed a
 | Claude's `❯` prompt and status bar, composer empty | parked and safe | type the line |
 | a dialog footer such as `Enter to select` | a question owns the keyboard | ESC, re-read, then type |
 | `❯` with text after it | an unsent draft of Trevor's | leave it, report it |
-| a spinner or `esc to interrupt` | working; typed input queues and lands when the turn ends | the caller's call, see below |
+| a spinner or `esc to interrupt` | working; typed input queues and lands when the turn ends | leave it, a working session needs no telling |
 | a shell prompt, not Claude's composer | Enter runs the line as a shell command | leave it |
-
-A busy session is where the two callers diverge, so the caller decides. `/afk` leaves it alone,
-since a working session needs no telling. `/park` types at it on purpose, because the queued line
-is what stops it before the wire goes.
 
 Clear a dialog with an ESC byte, which answers nothing (Claude records `User declined to answer
 questions`):
