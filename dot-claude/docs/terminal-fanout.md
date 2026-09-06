@@ -33,6 +33,20 @@ ORCA terminal send --terminal <handle> --text $'\033'
 Reach for ESC specifically: `--interrupt` sends Ctrl-C, which a question selector ignores. Clearing
 the dialog wakes nothing on its own, so send the line after, once a re-read shows an empty composer.
 
+### `tui-idle` cannot stand in for the read
+
+```text
+ORCA terminal wait --terminal <handle> --for tui-idle --timeout-ms 1 --json
+```
+
+It answers one question cheaply and well: a session mid-turn gives `null`, one at rest gives `true`,
+either way in about 200ms, so the timeout is a deadline rather than a sleep. What it will not do is
+separate rows two and three of the table above. **A session sitting on a live `AskUserQuestion`
+selector reports `true`.** Only the read sees the dialog.
+
+Read `.result.wait.satisfied`. The shorter `.result.satisfied` silently yields `null`, which reads
+exactly like a busy session.
+
 ## Send the text and the Enter as two calls
 
 ```text
@@ -40,9 +54,12 @@ ORCA terminal send --terminal <handle> --text "<line>"
 ORCA terminal send --terminal <handle> --enter
 ```
 
-A combined `--text ... --enter` does land on a session that has been typed at all along, but after
-an ESC it drops the submit: the text reaches the composer and sits there unsent. Splitting the two
-worked in every state measured, including that one, so pay the extra call and stay in one shape.
+A combined `--text ... --enter` usually lands, and it survived every state deliberately tested:
+idle, mid-turn, and just after an ESC. It has still been observed dropping twice in a row, with the
+text never reaching the composer, in a run that no later attempt reproduced. The two-call form has
+never been seen to fail, so pay the extra call.
+
+Then confirm, below. A send that reports `ok` and vanishes is the failure this guards.
 
 ## Confirm by re-reading
 
