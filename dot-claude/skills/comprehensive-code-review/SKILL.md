@@ -24,12 +24,12 @@ Caller named specific aspects (e.g. "review error handling and tests") → run o
 
 | Aspect | Reference | Required skills | Agent/model | Apply when |
 |--------|-----------|-----------------|-------------|------------|
-| Correctness & defects | `references/correctness.md` | — | — | always |
+| Correctness & defects | `references/correctness.md` | — | `general-purpose` | always |
 | Error handling | `references/error-handling.md` | `coding-standards:coding-standards` | `low-effort` | always |
 | Comments | `references/comments.md` | `coding-standards:coding-standards` | `general-purpose/sonnet` | always |
 | Test coverage | `references/tests-coverage.md` | — | — | test files or new logic changed |
 | Test quality | `references/tests-quality.md` | `coding-standards:test-best-practices` | — | test files added or changed |
-| Standards & type design | `references/standards.md` | `coding-standards:coding-standards` | — | always |
+| Standards & type design | `references/standards.md` | `coding-standards:coding-standards` | `general-purpose` | always |
 | Simplification | `references/simplification.md` | — | — | always |
 | Spec conformance | `references/spec-conformance.md` | — | — | spec source resolved in step 1 |
 
@@ -37,8 +37,9 @@ Step 2 is done when every changed file has been matched against the Apply when c
 
 ## 3. Run reviews
 
-An aspect naming an agent in its step-2 Agent/model cell uses it. For the rest, run
-`cc-review-ab assign <ids>` once, passing their reference-file stems. Its first line is
+An aspect naming an agent in its step-2 Agent/model cell uses it. Pass `cc-review-ab assign <ids>`
+only the aspects whose cell is `—`, once, using their reference-file stems. It randomizes whatever
+it is handed, so a pinned aspect sent there logs an arm that never ran. Its first line is
 `run<TAB><run id>`; keep that id for step 4. Every line after it is `aspect<TAB>agent`, or
 `aspect<TAB>agent/model` where a model is pinned, in the same notation as the table. Every aspect
 pinned in the table → no call to make, so use the short HEAD sha as the run id instead.
