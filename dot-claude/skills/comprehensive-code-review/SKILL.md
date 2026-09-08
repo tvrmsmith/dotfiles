@@ -24,12 +24,12 @@ Caller named specific aspects (e.g. "review error handling and tests") → run o
 
 | Aspect | Reference | Required skills | Agent/model | Apply when |
 |--------|-----------|-----------------|-------------|------------|
-| Correctness & defects | `references/correctness.md` | — | `general-purpose` | always |
+| Correctness & defects | `references/correctness.md` | — | — | always |
 | Error handling | `references/error-handling.md` | `coding-standards:coding-standards` | `low-effort` | always |
 | Comments | `references/comments.md` | `coding-standards:coding-standards` | `general-purpose/sonnet` | always |
 | Test coverage | `references/tests-coverage.md` | — | — | test files or new logic changed |
 | Test quality | `references/tests-quality.md` | `coding-standards:test-best-practices` | — | test files added or changed |
-| Standards & type design | `references/standards.md` | `coding-standards:coding-standards` | `general-purpose` | always |
+| Standards & type design | `references/standards.md` | `coding-standards:coding-standards` | — | always |
 | Simplification | `references/simplification.md` | — | — | always |
 | Spec conformance | `references/spec-conformance.md` | — | — | spec source resolved in step 1 |
 
