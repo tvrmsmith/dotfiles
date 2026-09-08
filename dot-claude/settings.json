@@ -297,6 +297,15 @@
         ]
       },
       {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v bd >/dev/null 2>&1 && bd prime --mcp || true"
+          }
+        ]
+      },
+      {
         "hooks": [
           {
             "type": "command",

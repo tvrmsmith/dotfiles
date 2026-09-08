@@ -1,15 +1,4 @@
 {
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "command": "bd prime --mcp --hook-json",
-            "type": "command"
-          }
-        ],
-        "matcher": ""
-      }
-    ]
-  }
+  "_comment": "bd init writes a SessionStart 'bd prime --hook-json' hook here. It is deliberately absent: the global hook in ~/.claude/settings.json runs 'bd prime --mcp' for every repo, and most beads repos on this machine have no project hook at all. Two hooks means two copies of the prime output per session. If a full-length beads block reappears at session start, bd re-added it here.",
+  "hooks": {}
 }
