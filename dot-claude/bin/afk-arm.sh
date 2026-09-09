@@ -137,9 +137,20 @@ fi
 
 # ------------------------------------------------------------------- fan out
 
+# The composer pads with U+00A0, which is not whitespace to a trim and would
+# read as a draft. Fold it to a space before trimming.
 tail_of() {
   orca terminal read --terminal "$1" --limit 200 --json 2>/dev/null \
-    | jq -r '[ .result.terminal.tail[] | gsub("^\\s+|\\s+$"; "") | select(length > 0) ] | join("\n")'
+    | jq -r '[ .result.terminal.tail[]
+               | gsub(" "; " ")
+               | gsub("^\\s+|\\s+$"; "")
+               | select(length > 0) ] | join("\n")'
+}
+
+# The last `❯` line with the glyph stripped: the live composer's contents, empty
+# when it is parked.
+composer_of() {
+  printf '%s\n' "$1" | grep '❯' | tail -1 | sed 's/^❯[[:space:]]*//' || true
 }
 
 # The four states of a stopped session, per docs/terminal-fanout.md. Only SEND
@@ -150,16 +161,12 @@ tail_of() {
 # also collapse to a single status line on a narrow pane, which is why "no ❯
 # found" is not by itself a reason to skip.
 classify() {
-  local t="$1" last
+  local t="$1"
   case "$t" in
     *"Enter to select"*|*"esc to cancel"*|*"Do you want to"*) echo DIALOG; return ;;
   esac
-  last=$(printf '%s\n' "$t" | grep '❯' | tail -1 || true)
-  if [ -n "$last" ]; then
-    case "$last" in
-      "❯") echo SEND ;;
-      *)   echo DRAFT ;;
-    esac
+  if printf '%s\n' "$t" | grep -q '❯'; then
+    if [ -z "$(composer_of "$t")" ]; then echo SEND; else echo DRAFT; fi
     return
   fi
   if printf '%s' "$t" | grep -qE '(INSERT|NORMAL|VISUAL|bypass permission|shift\+tab)'; then echo SEND; return; fi
@@ -181,6 +188,7 @@ restore_insert() {
 }
 
 sent=0; skipped=0; failed=0
+left=""
 while IFS=$'\t' read -r handle bucket title; do
   [ -n "$handle" ] || continue
   if [ "$bucket" = "WORKING" ]; then
@@ -215,11 +223,27 @@ while IFS=$'\t' read -r handle bucket title; do
   orca terminal send --terminal "$handle" --enter >/dev/null 2>&1
   sleep 2
 
-  # bytesWritten only proves the pty took it. A session that started working is
-  # equally good evidence: it read the line and the tail has already scrolled.
+  # An empty composer is the only proof Enter landed. Finding the line anywhere
+  # in the tail is not: the composer is *in* the tail, so a half-typed line the
+  # Enter never submitted matches too, and the send reports success while the
+  # session sits there holding it. Retry the Enter once, then say so.
   after=$(tail_of "$handle")
-  if printf '%s' "$after" | grep -q 'Trevor is AFK until' \
-     || printf '%s' "$after" | grep -qE '(esc to interrupt|✻|✳|◐|◑)'; then
+  left=$(composer_of "$after")
+  if [ -n "$left" ]; then
+    orca terminal send --terminal "$handle" --enter >/dev/null 2>&1
+    sleep 2
+    after=$(tail_of "$handle")
+    left=$(composer_of "$after")
+  fi
+
+  if [ -n "$left" ]; then
+    printf 'FAILED  %s  %s (composer still holds %q)\n' "$handle" "$title" "${left:0:40}"
+    failed=$((failed + 1))
+  elif printf '%s' "$after" | grep -q 'Trevor is AFK until' \
+       || printf '%s' "$after" | grep -qE '(esc to interrupt|✻|✳|◐|◑)'; then
+    # Empty composer plus either the line in the transcript or a turn now
+    # running. A busy session scrolls the line away inside a second, so the
+    # spinner stands in for it.
     printf 'sent    %s  %s\n' "$handle" "$title"
     sent=$((sent + 1))
   else

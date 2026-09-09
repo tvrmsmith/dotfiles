@@ -55,6 +55,12 @@ ERR='API Error|fetch failed|Connection error|reach the API server|session expire
 # "API Error" is not one that suffered it, and a real error is always at the bottom.
 # The spinner's own clock stands in when `worktree ps` has no row for the pane,
 # which is how a session outside a git worktree still buckets as WORKING.
+#
+# The spinner also outranks `worktree ps` on the question it answers. That state
+# goes stale: a session killed mid-turn by an API error is still `working` there
+# hours later, and buckets WORKING every sweep, so nothing ever restarts it. A
+# turn in progress paints a spinner, so its absence beside a fresh error is the
+# session telling you what Orca's record no longer knows.
 read -r -d '' SCRAPE <<'JQ' || true
 [ .result.terminal.tail[] | gsub("^\\s+|\\s+$"; "") | select(length > 0) ] as $l
 | ([ $l[] | capture("\\w+…\\s*\\((?:(?<m>\\d+)m\\s*)?(?<s>\\d+)s") ] | first) as $spin
@@ -74,9 +80,10 @@ read -r -d '' SCRAPE <<'JQ' || true
              | select(startswith("Tip:") | not) ] | last // ""),
     recap: ([ $l[] | select(test("recap:")) ] | last // "")
   }
-| .bucket = (if   $state == "working" or ($state == "" and $spin) then "WORKING"
-             elif $state == "waiting" then "DECIDE"
+| .bucket = (if   $state == "waiting" then "DECIDE"
+             elif $spin               then "WORKING"
              elif .error != ""        then "ERRORED"
+             elif $state == "working" then "WORKING"
              else "?" end)
 | .call  |= (gsub("\\s+"; " ") | .[0:70])
 | .recap |= (gsub("\\s+"; " ") | .[0:220])
