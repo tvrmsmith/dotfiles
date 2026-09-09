@@ -47,19 +47,25 @@ Stored artifact *is* the contract — usable — not fingerprint of it. For code
 Record shape identical in both — one JSON object:
 
 ```json
-{"identity":"orders-api POST /orders","format":"openapi","contract":"<yaml text>","approvedAt":"2026-07-10","issue":"<id>"}
+{"identity":"orders-api POST /orders","format":"openapi","contract":"<yaml text>","approver":"<who said yes>","approvedIn":"<their approving words, quoted>","approvedAt":"2026-07-10","issue":"<id>"}
 ```
 
 `format` is `openapi` or `json-schema`. `contract` is YAML artifact as JSON string (newlines escaped). Recording your first contract → see `EXAMPLE.md` for a fully filled record.
 
-**Primary: `bd`** (where repo has beads) — syncs via git refs so teammates and other machines see it, worktree-safe. Store JSON record as decision body:
+`approver` and `approvedIn` are what make the record auditable months later, when the only surviving artifact is the record itself. Both are required; see §Who can approve.
+
+**Primary: `bd`** (where repo has beads) — syncs via git refs so teammates and other machines see it, worktree-safe. Store the JSON record as a comment under a searchable header:
 
 ```bash
 # look up
-bd search "orders-api POST /orders"     # then parse the decision body with jq
+bd search "orders-api POST /orders"     # then parse the record out of the comment with jq
 # record on the current issue
-bd decision add --issue <issue-id> '<json record>'
+bd comment <issue-id> "CONTRACT-APPROVAL orders-api POST /orders
+
+<json record>"
 ```
+
+Some `bd` builds also carry `bd decision add`; where `bd decision --help` errors, the comment form above is the one that works everywhere.
 
 **Fallback: local JSONL** (where repo has no bd) — store in git **common dir** so shared across all worktrees of repo, branch-independent:
 
@@ -80,6 +86,20 @@ Fallback ledger local-only (not committed/pushed).
    - **Found** → **drift check**: derive current contract's YAML and diff against stored `contract`. Equal → proceed. Different → built contract drifted from what approved; show diff and re-surface for approval.
    - **Not found** → gate: present contract, get approval, record it, then proceed.
 3. **Modifying** already-approved contract → re-approve.
+
+## Who can approve
+
+Approval comes from a human turn, and the record quotes it. Fill `approver` with who said yes and `approvedIn` with their words, so a later reader can weigh the approval instead of taking the record's word for it. A record you cannot fill both fields on is not one you can write yet.
+
+The failure this prevents is a **self-signed** record: well-formed, correctly stored, and worth nothing, because the agent that wanted the contract is also the party that attested to it. Self-signed records are worse than no record at all. They read as cleared to the next session and to code review, and in a repo carrying an audit obligation they put a false attestation in the trail.
+
+Three things that look like approval and are not. Each gets you a **PENDING** record, or no record, plus a line to the human saying what you are waiting on:
+
+- Your own recommendation, however well reasoned, and however clearly the human would have agreed.
+- The human approving something adjacent: the plan that contains the contract, the commit, the push, the ticket.
+- Silence, an unattended session, or a deadline. An unreachable human is an unapproved contract; build up to the gate, write up what you need, and stop there.
+
+Approval of a **plan or spec** that displayed the contract does count, since the human saw the contract itself. Quote the turn and name what was displayed.
 
 ## Presenting the contract for approval
 
@@ -103,3 +123,5 @@ Markdown example:
 ```
 
 On approval, store full YAML artifact in record (above), and — where project keeps canonical spec file — write it there too so artifact lives with code.
+
+Cite the record wherever the change surfaces (commit body, PR description) by identity and issue, so a reader can find it: `Contract approved by <approver>, recorded on <issue> as "<identity>"`.
