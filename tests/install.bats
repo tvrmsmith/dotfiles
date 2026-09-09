@@ -49,6 +49,56 @@ teardown() { _install_test_teardown; }
   [ -d "$target/somedir" ]
 }
 
+@test "setup_dotfiles unfolds the two ~/.config dirs their own tools write into" {
+  seed_config_dirs
+
+  run_setup_dotfiles
+  [ "$status" -eq 0 ]
+  local d
+  for d in gh 1Password; do
+    [ -d "$FAKE_HOME/.config/$d" ]
+    [ ! -L "$FAKE_HOME/.config/$d" ]
+  done
+}
+
+@test "stow links gh's config.yml but never the hosts.yml gh rewrites" {
+  seed_config_dirs
+
+  run_setup_dotfiles
+  [ "$status" -eq 0 ]
+  [ -L "$FAKE_HOME/.config/gh/config.yml" ]
+  [ ! -e "$FAKE_HOME/.config/gh/hosts.yml" ]
+}
+
+@test "stow links 1Password's ssh config but never its telemetry marker" {
+  seed_config_dirs
+
+  run_setup_dotfiles
+  [ "$status" -eq 0 ]
+  [ -e "$FAKE_HOME/.config/1Password/ssh/agent.toml" ]
+  [ ! -e "$FAKE_HOME/.config/1Password/telemetry-enabled" ]
+}
+
+@test "the runtime ignores are inert unless install.sh pre-creates the dirs" {
+  # The discriminator for the mkdir in setup_dotfiles: run the same stow
+  # WITHOUT it and ~/.config becomes one folded symlink, so stow never descends,
+  # neither nested pattern is consulted, and hosts.yml arrives after all.
+  seed_config_dirs
+
+  run env HOME="$FAKE_HOME" stow --dotfiles -d "$FAKE_REPO" -t "$FAKE_HOME" .
+  [ "$status" -eq 0 ]
+  [ -L "$FAKE_HOME/.config" ]
+  [ -e "$FAKE_HOME/.config/gh/hosts.yml" ]
+}
+
+@test "gh's hosts.yml is not tracked, and is ignored so it cannot come back" {
+  # gh rewrote it through the fold for 12 commits before this was noticed.
+  run git -C "$REPO_ROOT" ls-files --error-unmatch dot-config/gh/hosts.yml
+  [ "$status" -ne 0 ]
+  run git -C "$REPO_ROOT" check-ignore -q dot-config/gh/hosts.yml
+  [ "$status" -eq 0 ]
+}
+
 @test "aborted stow restores every reconciled target as a relative link" {
   unfold_parents
   local rel target

@@ -17,6 +17,7 @@ Files/dirs prefixed `dot-` are symlinked into `$HOME` with the prefix replaced b
 - Shell configs source `$CONSOLO_DOCKER_DEV_DIR/.helpers/{compose,git,system}.sh` — work-machine path, may not exist elsewhere; guard new sources similarly
 - `NVIM_APPNAME` (set in `dot-zshenv`) selects the active neovim config: `nvim-LazyVim` (default), `nvim` (kickstart), or `nvim-Lazyman`. `nvims` command (Lazyman) switches interactively
 - Agent sandboxing (`mysbx`, `mysbx-*`, `nono-*`, files under `extras/agent-sandboxing/` + `dot-local/bin/mysbx`): see the repo-scoped `agent-sandboxing` skill at `.claude/skills/agent-sandboxing/SKILL.md`.
+- A `~/.config` subdirectory whose own tool writes into it (`gh` rewrites `hosts.yml`, 1Password drops `telemetry-enabled`) needs BOTH a `mkdir -p` in `install.sh` and the runtime name in `.stow-local-ignore`. The mkdir is load-bearing, not belt-and-braces. With the target absent, stow folds the parent into one symlink and never descends, so a nested ignore pattern is never consulted.
 
 ## Issue tracker
 
