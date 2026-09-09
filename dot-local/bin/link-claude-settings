@@ -30,12 +30,31 @@
 #
 # Usage:
 #   - Run as a Superset post-create setup script, or
-#   - Run manually inside any worktree: ./scripts/link-claude-settings.sh
+#   - Run manually inside any worktree: link-claude-settings
+#   - Or from anywhere, naming the worktree: link-claude-settings <worktree-dir>
 #
 # Safe to run repeatedly. In the main worktree it only applies the compressed
 # CLAUDE.md (no symlinks to create there).
 
 set -euo pipefail
+
+# An argument names the worktree to operate on. Without this the script read
+# $PWD and ignored the path it was handed, so calling it right after
+# `git worktree add` from the main checkout reported "in main worktree, nothing
+# to link" and linked nothing - the failure a fresh worktree shows up as later
+# is a missing mise.local.toml, so pnpm falls back to mise's global node pin.
+if [ "$#" -gt 1 ]; then
+  echo "link-claude-settings: usage: link-claude-settings [worktree-dir]" >&2
+  exit 2
+fi
+
+if [ "$#" -eq 1 ]; then
+  if [ ! -d "$1" ]; then
+    echo "link-claude-settings: $1 is not a directory." >&2
+    exit 1
+  fi
+  cd "$1"
+fi
 
 # Paths (relative to repo root) to mirror from the main worktree.
 LINK_PATHS=(
