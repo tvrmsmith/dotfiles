@@ -13,6 +13,14 @@
 #                                     gitignored; skipped until present)
 #   - mise.local.toml               (personal, gitignored mise repo config;
 #     .mise.local.toml                both spellings, whichever the repo uses)
+#   - .beads/PRIME.md               (bd prime override; see below)
+#
+# .beads/PRIME.md is the odd one out: not per-repo personal config but one
+# shared file, mirrored here because a worktree needs it for the same reason.
+# bd prints PRIME.md INSTEAD of its generated prime output, which is what keeps
+# bd's memory list out of every session's context. A worktree without the link
+# gets the generated output instead, silently, with the memories back - bd
+# treats a missing or dangling PRIME.md as "no override" and reports nothing.
 #
 # It also symlinks the tracked CLAUDE.md to the personal compressed copy
 # (docs/agents/CLAUDE.compressed.md, git-excluded) when that copy exists, and
@@ -37,6 +45,7 @@ LINK_PATHS=(
   "CONTEXT-MAP.md"
   "mise.local.toml"
   ".mise.local.toml"
+  ".beads/PRIME.md"
 )
 
 # Must be inside a git repo.
