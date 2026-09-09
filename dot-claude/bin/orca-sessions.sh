@@ -122,24 +122,36 @@ panes=$(orca worktree ps --json 2>/dev/null | jq -c '
         value: { state: .state, tool: (.toolName // ""), since: .stateStartedAt } } ]
   | from_entries') || panes='{}'
 
-# One tab hands out several handle aliases, so keep one row per tab. A null
-# lastOutputAt is no evidence the session was ever alive. `done` carries no
-# clock, since the state it started is the absence of work.
-orca terminal list --json | jq -r --arg own "$own_tab" --argjson panes "$panes" --argjson now "$now" '
+# Orca forgets `lastOutputAt` across a restart and reports it null on every
+# pane, so the worktree's own `lastActivityAt` stands in as the idle clock.
+acts=$(orca worktree ps --json 2>/dev/null | jq -c '
+  [ .result.worktrees[]
+    | { key: .worktreeId, value: (.lastActivityAt // null) } ]
+  | from_entries') || acts='{}'
+
+# One tab hands out several handle aliases, so keep one row per tab. The
+# paneKey join is the identity test: `agentIdentity` is null on a pane Orca
+# reconnected after a restart, while `worktree ps` still knows it is Claude.
+orca terminal list --json | jq -r --arg own "$own_tab" --argjson panes "$panes" --argjson acts "$acts" --argjson now "$now" '
   .result.terminals
   | map(select(.connected and (.orphaned | not)
-               and .agentIdentity == "claude" and .lastOutputAt))
+               and (.agentIdentity == "claude"
+                    or ($panes[.tabId + ":" + .leafId] != null))))
   | unique_by(.tabId)
   | map(select(.tabId != $own))
   | .[]
   | ($panes[.tabId + ":" + .leafId] // {}) as $p
-  | [ .handle, (.title // ""), (.worktreePath // ""), .lastOutputAt,
+  | [ .handle,
+      (if (.title // "") == "" then ((.worktreePath // "") | split("/") | last // "untitled")
+       else .title end),
+      (.worktreePath // ""),
+      (.lastOutputAt // $acts[.worktreeId] // $now),
       ($p.state // ""), ($p.tool // ""),
       (if ($p.since // null) == null or $p.state == "done" then ""
        else (($now - $p.since) / 1000 | floor)
             | (. / 60 | floor | tostring) + "m" + (. % 60 | tostring) + "s" end) ]
-  | @tsv
-' | while IFS=$'\t' read -r handle title cwd lastout state tool turn; do
+  | map(tostring) | join("\u001f")
+' | while IFS=$'\x1f' read -r handle title cwd lastout state tool turn; do
       idle=$(( (now - lastout) / 60000 ))
       # Age only retires a stopped session. One still working or still holding a
       # question is live however long it has sat, and the stalest question is the
