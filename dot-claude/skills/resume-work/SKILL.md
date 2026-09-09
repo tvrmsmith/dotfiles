@@ -47,6 +47,8 @@ this skill brings. Read the `recap` and `call` of each `?` row and split it two 
 | `DECIDE` | parked its remaining work for Trevor | queue it, below |
 | `DONE` | says its work is finished | report it as finished |
 
+Age then overrides `GO`, and `ERRORED` with it: see Stale rows, under Send.
+
 A session that ran under `/afk` ends its last turn with an `AFK log`, and the `parked:` lines in
 that log are the whole bucket test. Every item parked and nothing it can take alone is `DECIDE`,
 which was all six stopped rows the day this was written. Read the log, not the summary above it.
@@ -87,6 +89,19 @@ Continue
 An `ERRORED` session lost its turn to a failed API call, which lands between tool calls, so its
 files are consistent and the same line is all it needs.
 
+### Stale rows are Trevor's to restart
+
+**A row that would be sent, over `1440m` idle, is reported instead.** Sweeping wide and sending
+wide are different
+jobs: the sweep exists so nothing hides from him, and this is the other half of that trade. A day
+is long enough for the world under a session to have moved — its branch merged, its bead closed,
+its question answered in another tab — and `Continue` on that context is a confident agent acting
+on a stale premise, which is worse than a row he restarts himself.
+
+Bucket them `STALE`, put them on the board with their `idle` and their own `recap`, and let him
+say which deserve a turn. An overnight `/afk` runs about ten hours, so the cutoff clears a normal
+return untouched and only bites the sessions he has genuinely left behind.
+
 ## Report
 
 Render the board from the JSONL with the buckets resolved, one row per session, `DECIDE` first,
@@ -97,6 +112,7 @@ BUCKET  | turn   | idle | title                          | what it is waiting on
 DECIDE  | -      |  38m | Approval of prior work         | discard emr-be6mp.7 or rewrite it down to the header remnant
 DECIDE  | -      | 497m | Bead emr-9zt0b.31 contract     | 1Password locked mid-way, gh pr never finished
 GO      | -      |  12m | no-mistakes-archon gap review  | sent, next is comparing extractor output against the Go run
+STALE   | -      | 2914m| Scored select formulas #3566   | says it can continue, but two days cold — your call
 WORKING | 29m7s  |   0m | restart.exempt_paths           | sleep 560, waiting on a CI rerun
 DONE    | -      | 210m | Custom lint rules beads status | merged, pushed, bead closed
 ```
