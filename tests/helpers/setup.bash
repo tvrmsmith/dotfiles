@@ -38,6 +38,18 @@ unfold_parents() {
   mkdir -p "$FAKE_HOME/.claude" "$FAKE_HOME/.config/gh" "$FAKE_HOME/.config/1Password"
 }
 
+# Give the fake repo THIS repo's real .stow-local-ignore, plus the config half
+# of each mixed config/runtime ~/.config directory (the runtime halves,
+# REL_HOSTS and REL_TELEMETRY, are already seeded). Copying the real file
+# rather than writing patterns inline is deliberate: the tests then fail when
+# the shipped ignore file drifts, which is the thing worth pinning.
+seed_config_dirs() {
+  cp "$REPO_ROOT/.stow-local-ignore" "$FAKE_REPO/.stow-local-ignore"
+  mkdir -p "$FAKE_REPO/dot-config/1Password/ssh"
+  printf 'version: 1\n' > "$FAKE_REPO/dot-config/gh/config.yml"
+  printf 'agent config\n' > "$FAKE_REPO/dot-config/1Password/ssh/agent.toml"
+}
+
 # Put a `stow` on PATH that fails, so the restore loop runs.
 stub_failing_stow() {
   cat > "$STUB_BIN/stow" <<'SH'
