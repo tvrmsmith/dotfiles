@@ -3,25 +3,40 @@
 Reached from `SKILL.md`, run once, in the session where Trevor typed `/afk`. Clearing the flag
 is not here; `SKILL.md` handles that inline.
 
-## Arm the flag
+## One command
 
 ```bash
-echo $(( $(date +%s) + <seconds> )) > ~/.claude/afk
+~/.claude/bin/afk-arm.sh "<the argument, verbatim>"
 ```
 
-Seconds come from the argument, either a duration (`2h`) or a clock time (`back at 4pm`), and
-default to 8 hours when it says nothing. A time always means arming, so `/afk back at 4pm` arms
-until 16:00 and only a bare `back` clears. Confirm the expiry in local clock terms.
+It resolves the return time, writes `~/.claude/afk`, and types the AFK line into every session
+that has already stopped, since one that stopped fires neither a stop nor a question and would
+sit parked until told otherwise. A session Orca reports as WORKING is left alone; it meets the
+flag at its own next stop.
 
-## Then wake the sessions that already stopped
+Pass the argument as it was typed. The script reads a duration (`2h`, `90m`, `1h30m`) or a clock
+time (`4pm`, `16:00`, `9am`) out of surrounding prose, honours `tomorrow`, and defaults to 8
+hours when the argument says nothing. A time always means arming, so `/afk back at 4pm` arms
+until 16:00 and only a bare `back` clears.
 
-The flag reaches a session at its next stop or its next question. One that **already** stopped
-fires neither, so it sits parked until something tells it otherwise. Message those once, now.
+Read its report and pass on to Trevor what it says: the expiry in local clock terms, and any
+session it skipped or failed. Then continue with `SKILL.md`.
 
-`~/.claude/bin/orca-sessions.sh` lists them with their state; take the rows whose `bucket` is not
-`WORKING`, since a session mid-turn will see the flag at its own next stop. Send to each per
-`~/.claude/docs/terminal-fanout.md`, with the clock time read off the flag, and this as the line:
+## When it exits 2
 
-```text
-Trevor is AFK until <HH:MM> and cannot answer. If your last turn ended in a question or an approval request, take the reversible option and carry on under ~/.claude/skills/afk/SKILL.md. Otherwise ignore this.
-```
+It could not find a time in the argument and wrote nothing. Decide the clock time yourself, then
+re-run with a bare `4pm` or `2h`.
+
+## When it reports a skip
+
+Each skip is a session that did not get the line, so treat it as one more thing Trevor is away
+from:
+
+- `unsent draft in composer` — Trevor's own typing is sitting there. Leave it, and report it.
+- `no Claude composer found` — the pane render was too collapsed to classify. Leave it.
+- `working` — expected, and fine.
+
+## When it reports FAILED
+
+The line reached the pty and never appeared. Re-run the script; it is safe to run twice, and a
+session that already got the line reads a duplicate as a no-op.

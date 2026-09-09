@@ -4,6 +4,9 @@ What the `orca-cli` guide leaves out about `terminal send`. Load that skill for 
 and the CLI resolution; this is only the local knowledge on top, for `/afk` arming and
 `/resume-work`.
 
+`~/.claude/bin/afk-arm.sh` already implements every rule below for the `/afk` fan-out. Read this
+when you are typing a line by hand, or when changing that script.
+
 ## Read before you type
 
 The guide says to read before sending unless the next input is obvious. With a Claude TUI on the
@@ -23,6 +26,10 @@ The read sorts the target into one of four states, and one of them takes the lin
 | `❯` with text after it | an unsent draft of Trevor's | leave it, report it |
 | a shell prompt rather than Claude's composer | Enter runs the line as a shell command | leave it |
 
+Read the **last** `❯` line, not any `❯` line. The transcript prefixes every past user message with
+the same glyph, so a scrollback full of them reads as row three and skips a session that is
+actually parked and safe.
+
 Dismiss a dialog with an ESC byte, which answers nothing (Claude records `User declined to answer
 questions`):
 
@@ -32,6 +39,20 @@ ORCA terminal send --terminal <handle> --text $'\033'
 
 Reach for ESC specifically: `--interrupt` sends Ctrl-C, which a question selector ignores. Clearing
 the dialog wakes nothing on its own, so send the line after, once a re-read shows an empty composer.
+
+### ESC lands in vim NORMAL
+
+With vim mode on, the same ESC that dismisses a dialog also leaves the composer in NORMAL, where
+the line you send next is read as commands rather than text. The status bar says which mode it is
+in. Return to INSERT and clear whatever the dialog left before sending:
+
+```text
+ORCA terminal send --terminal <handle> --text 'i'        # NORMAL or VISUAL → INSERT
+ORCA terminal send --terminal <handle> --text $'\025'    # ctrl-U, clears the composer
+```
+
+Send `i` only when the bar shows `-- NORMAL --` or `-- VISUAL --`. In INSERT it types a literal
+`i`.
 
 ### `tui-idle` cannot stand in for the read
 
