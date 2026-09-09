@@ -1,3 +1,5 @@
+load helpers/assert
+
 HOOK="${BATS_TEST_DIRNAME}/../dot-claude/hooks/adr-guard.sh"
 
 setup() {
@@ -21,37 +23,44 @@ decision_of() { printf '%s' "$1" | jq -r '.hookSpecificOutput.permissionDecision
 
 @test "an interactive write gets the amend/supersede guidance, no deny" {
   out="$(hook_out Write "$ADR_DIR/0001-x.md")"
-  [[ "$(context_of "$out")" == *'amended for corrections and superseded'* ]]
-  [ -z "$(decision_of "$out")" ]
+  contains "$(context_of "$out")" "Amend it"
+  contains "$(context_of "$out")" "Supersede it"
+  is_empty "$(decision_of "$out")"
+}
+
+@test "the write guidance cites no repo's ADR README" {
+  out="$(hook_out Write "$ADR_DIR/0001-x.md")"
+  lacks "$(context_of "$out")" "README.md"
 }
 
 @test "a read gets the constraint guidance, no deny" {
   out="$(hook_out Read "$ADR_DIR/0001-x.md")"
-  [[ "$(context_of "$out")" == *'decision already made'* ]]
-  [ -z "$(decision_of "$out")" ]
+  contains "$(context_of "$out")" "decision already made"
+  is_empty "$(decision_of "$out")"
 }
 
-@test "NM_GATE denies a write" {
+@test "NM_GATE denies a write, citing no repo's ADR README" {
   out="$(NM_GATE=1 hook_out Write "$ADR_DIR/0001-x.md")"
-  [ "$(decision_of "$out")" = "deny" ]
+  equals "$(decision_of "$out")" "deny"
+  lacks "$out" "README.md"
 }
 
 @test "NM_GATE leaves a read alone" {
   out="$(NM_GATE=1 hook_out Read "$ADR_DIR/0001-x.md")"
-  [ -z "$(decision_of "$out")" ]
+  is_empty "$(decision_of "$out")"
 }
 
 @test "a mutating Bash command against an ADR is a write under NM_GATE" {
   out="$(NM_GATE=1 hook_out Bash "rm docs/adr/0001-x.md")"
-  [ "$(decision_of "$out")" = "deny" ]
+  equals "$(decision_of "$out")" "deny"
 }
 
 @test "an inspecting Bash command against an ADR stays a read" {
   out="$(NM_GATE=1 hook_out Bash "git log docs/adr/0001-x.md")"
-  [ -z "$(decision_of "$out")" ]
+  is_empty "$(decision_of "$out")"
 }
 
 @test "a write outside docs/adr is untouched" {
   out="$(hook_out Write "$TMP/not-adr/README.md")"
-  [ -z "$out" ]
+  is_empty "$out"
 }
