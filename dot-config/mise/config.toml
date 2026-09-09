@@ -10,6 +10,9 @@ uv = "latest"
 java = "21"
 postgres = "latest"
 "npm:lavish-axi" = "0.1.50"
+"npm:typescript-language-server" = "latest"
+"npm:typescript" = "latest"
+"gem:ruby-lsp" = "0.26.11"
 
 [settings]
 
