@@ -2,14 +2,24 @@
 # Stop hook: while Trevor is AFK, keep a session working instead of letting it
 # stop to ask a question nobody is there to answer.
 #
-# Flag file: $HOME/.claude/afk, containing an expiry epoch (seconds).
+# Flag file: $HOME/.claude/afk, whose first line is an expiry epoch (seconds).
 #   Present and unexpired -> AFK is on.
 #   Expired               -> removed here, AFK is off.
 #   Absent                -> hook is a silent no-op.
+# Any further lines are notes: carve-outs Trevor left when he armed AFK, echoed
+# to the agent alongside every block below.
 #
 # Exit 0 lets the stop through and shows the agent nothing. Exit 2 blocks the
 # stop; stderr becomes the reason the agent reads before continuing.
 set -uo pipefail
+
+# A headless `claude -p` run has no Trevor to be away from, and blocking its stop
+# makes it answer the AFK protocol instead of its caller. Tools that shell out to
+# Claude Code for structured output then get prose back and fail to parse it, once
+# per billed run. The CLI sets this to "cli" when a person is driving a terminal
+# and "sdk-cli" under -p, so name the headless case rather than trusting a
+# whitelist of interactive spellings.
+[ "${CLAUDE_CODE_ENTRYPOINT:-}" = "sdk-cli" ] && exit 0
 
 FLAG="$HOME/.claude/afk"
 MARKS="$HOME/.claude/afk-sessions"
@@ -66,6 +76,8 @@ if [ -z "$expiry" ] || [ "$now" -ge "$expiry" ]; then
   exit 0
 fi
 
+notes=$(tail -n +2 "$FLAG" | sed '/^[[:space:]]*$/d')
+
 # This session is running under AFK, so it earns a return notice later. Markers
 # clear themselves on that notice; sweep the ones whose sessions never came back.
 mkdir -p "$MARKS" 2>/dev/null && : > "$mark"
@@ -80,6 +92,7 @@ reversible option, log it as a decision with its reason, and park the item
 instead when no option is safe to take alone. Format and rules live in
 ~/.claude/skills/afk/SKILL.md.
 EOF
+  [ -n "$notes" ] && printf '%s\n' "$notes" >&2
   exit 2
 fi
 
@@ -133,4 +146,5 @@ including 1Password prompts. Decide, log, park: follow
 End a response with the exact line "AFK: idle" only once every item in that log
 reads done or parked; that is what lets this session stop.
 EOF
+[ -n "$notes" ] && printf '%s\n' "$notes" >&2
 exit 2
