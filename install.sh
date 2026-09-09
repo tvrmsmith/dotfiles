@@ -228,21 +228,29 @@ setup_dotfiles() {
 }
 
 # bd reads .beads/PRIME.md and prints it INSTEAD of its generated prime output,
-# which is how this machine keeps memories out of every session's context. The
-# file is shared from ~/.config/beads/PRIME.md (stowed above) and linked into
-# each beads repo. Neither the link nor the exclude survives a fresh clone, so
-# recreate both here. Other beads repos need the same two lines by hand.
+# which is how this machine keeps bd's memory list out of every session. A
+# DANGLING link is the dangerous state: bd reports no error, silently falls back
+# to the generated output, and the memories reappear. So point straight at the
+# repo file rather than at the stowed ~/.config/beads/PRIME.md copy, keeping
+# stow (which aborts wholesale on any conflict) out of the chain, and shout if
+# the target is missing. Worktrees get theirs from link-claude-settings.
 link_beads_prime() {
 	[ -d "$SCRIPT_DIR/.beads" ] || return 0
 
-	ln -sfn "$HOME/.config/beads/PRIME.md" "$SCRIPT_DIR/.beads/PRIME.md"
+	prime_src="$SCRIPT_DIR/dot-config/beads/PRIME.md"
+	if [ ! -f "$prime_src" ]; then
+		echo "install.sh: $prime_src missing; bd will inject its memory list." >&2
+		return 0
+	fi
+	ln -sfn "$prime_src" "$SCRIPT_DIR/.beads/PRIME.md"
 
 	# Machine-local, so .git/info/exclude rather than the tracked .gitignore:
-	# a clone on another machine has no ~/.config/beads to point at.
+	# the link is an absolute path into this checkout. Leading slash matches
+	# the form link-claude-settings writes, so the two never double up.
 	exclude="$(git -C "$SCRIPT_DIR" rev-parse --path-format=absolute --git-common-dir)/info/exclude"
 	mkdir -p "$(dirname "$exclude")"
-	if ! grep -qx '\.beads/PRIME\.md' "$exclude" 2>/dev/null; then
-		printf '\n# Machine-local beads prime override (symlink to ~/.config/beads/PRIME.md)\n.beads/PRIME.md\n' >>"$exclude"
+	if ! grep -qxF '/.beads/PRIME.md' "$exclude" 2>/dev/null; then
+		printf '\n# Machine-local beads prime override\n/.beads/PRIME.md\n' >>"$exclude"
 	fi
 }
 
