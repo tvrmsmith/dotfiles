@@ -1,11 +1,28 @@
 #!/bin/sh
-# Idempotent ADC refresh for Claude Code's `gcpAuthRefresh` setting.
+# Idempotent ADC refresh. Run it by hand when something needs Application
+# Default Credentials and they have gone stale.
 #
-# Claude Code runs gcpAuthRefresh whenever it decides GCP credentials are
-# "expired or cannot be loaded", then retries the request. That detection
-# false-positives at session start even when ADC is perfectly healthy, so
-# pointing the setting straight at `gcloud auth application-default login`
-# throws a browser window at every new session.
+# Nothing invokes this automatically, and nothing should. It was written for
+# Claude Code's `gcpAuthRefresh` setting, which the Claude Gateway cutover on
+# 2026-08-06 made inert: the provider resolves to the gateway, so none of the
+# three call sites behind that setting fire. The key left dot-claude/settings.json
+# on 2026-08-08 and is not coming back while the MDM gateway policy stands.
+#
+# The one consumer that would bring ADC demand back is OMP, which dot-zshenv
+# still points at a Vertex model. It is invoked by hand, so a stale-ADC failure
+# there already has a human in front of it, and this script is what that human
+# runs. Wiring it to a session-start hook instead would re-create the browser
+# stampede described below for a credential nothing is currently using.
+#
+# The browser is unavoidable, not a shortcoming of the escalation below: the
+# reauth window is a Workspace policy, so no refresh_token grant defeats it.
+# The only question any design here answers is *when* the human gets asked.
+#
+# Why it probes before escalating, which matters whenever it does run:
+# a caller that decides credentials are "expired or cannot be loaded" can
+# false-positive even when ADC is perfectly healthy, so going straight to
+# `gcloud auth application-default login` throws a browser window at a session
+# that did not need one.
 #
 # So probe first. `print-access-token` refreshes and returns a token from the
 # stored refresh_token without any user interaction, and is a no-op costing
@@ -15,14 +32,14 @@
 # Absolute gcloud path on purpose: .zprofile only adds the SDK to PATH in login
 # shells, and a GUI-launched Claude Code doesn't get one.
 #
-# The login flow must be the default browser-launching one. Claude Code shows
-# this script's output but cannot send it stdin, so --no-browser and
-# --no-launch-browser would block on a pasted code until the 3-minute timeout.
+# The login flow stays the default browser-launching one. --no-browser and
+# --no-launch-browser block on a pasted code, which needs stdin, and this
+# script has to keep working from a caller that only shows its output.
 #
-# Several Claude Code sessions can hit an expired-credential error at the same
-# moment and each run this script, so the login is single-flighted behind a
-# lock: exactly one process opens a browser, the rest wait for it to finish and
-# then re-probe. `mkdir` is the atomic primitive here because macOS has no
+# Two callers can hit an expired-credential error at the same moment and each
+# run this script, so the login is single-flighted behind a lock: exactly one
+# process opens a browser, the rest wait for it to finish and then re-probe.
+# `mkdir` is the atomic primitive here because macOS has no
 # flock(1); the lock records its owner PID so a crashed run doesn't wedge every
 # later one.
 
@@ -33,7 +50,8 @@ GCLOUD=/opt/homebrew/share/google-cloud-sdk/bin/gcloud
 }
 
 LOCK_DIR="${TMPDIR:-/tmp}/gcp-auth-refresh.lock"
-# Well under Claude Code's 3-minute hook timeout, leaving room for the probes.
+# Long enough for a browser login someone is actually completing, short enough
+# that a wedged one still returns an error instead of hanging.
 WAIT_SECONDS=150
 
 probe() {
