@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# adr-guard.sh — PreToolUse guard for ADR directories.
+# adr-guard.sh. PreToolUse guard for ADR directories.
 #
 # ADRs record decisions that were already made. Rewriting one is a decision
 # change, not a code fix, so it is never something an automated review pass
@@ -97,9 +97,9 @@ guide() {
 
 READ_GUIDANCE='ADR directory. An ADR is a decision already made, not a draft. Read it as a constraint on the change under review: code that contradicts it is the finding, the ADR is not. If the ADR itself looks wrong, that is a decision to escalate to the user, not an edit to make.'
 
-WRITE_GUIDANCE='ADR directory. Per docs/adr/README.md an accepted ADR is amended for corrections and superseded by a new numbered ADR when the decision changes — it is not rewritten in place, and never reworded for style. Confirm with the user which of those two this is before writing.'
+WRITE_GUIDANCE='ADR directory. An accepted ADR changes two ways. Amend it, with a dated paragraph placed next to the text it corrects, when the decision stands and the text is wrong. Supersede it, with a new numbered ADR stating the rule in one pass, when the decision itself changes. The existing text stays as written either way. Confirm with the user which of the two this is before writing.'
 
-GATE_DENY='Blocked: no-mistakes gate agents do not write ADRs. An ADR is a decision the user already made; changing it is the user'"'"'s call, not a review fix. Per docs/adr/README.md the paths are amend (correction) or supersede with a new numbered ADR (decision changed) — both human-initiated. If the diff genuinely contradicts an accepted ADR, report that as a finding against the CODE and let it reach the user. Do not edit, reword, restructure, or renumber anything under docs/adr/.'
+GATE_DENY='Blocked: no-mistakes gate agents do not write ADRs. An ADR is a decision the user already made; changing it is the user'"'"'s call, not a review fix. Both paths are human-initiated: amend for a correction, supersede with a new numbered ADR when the decision changes. If the diff genuinely contradicts an accepted ADR, report that as a finding against the CODE and let it reach the user. Leave every file under docs/adr/ exactly as it stands.'
 
 if [ "$access" = "write" ] && [ "${NM_GATE:-}" = 1 ]; then
   deny "$GATE_DENY"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# adr-size.sh — PreToolUse size lint for ADRs, in any repo.
+# adr-size.sh. PreToolUse size lint for ADRs, in any repo.
 #
 # An ADR grows quietly, one amendment at a time, until the decision is buried in
 # its own changelog. This reports the counts at the moment of the write.
@@ -67,9 +67,9 @@ printf '%s' "$file" | grep -Eq '(^|/)docs/adr/' || exit 0
 # Best-effort reconstruction of the file the checks apply to, from a PreToolUse
 # payload that has not landed yet. Write carries the whole content already.
 # Edit/MultiEdit carry a diff against the file on disk, so each edit is replayed
-# with a literal (not glob or regex) substitution. Anything this cannot resolve
-# — a MultiEdit against a file that does not yet exist, an old_string absent
-# from the file — prints nothing, and the caller treats empty as "skip".
+# with a literal (not glob or regex) substitution. Anything this cannot resolve,
+# such as a MultiEdit against a file that does not yet exist or an old_string
+# absent from the file, prints nothing, and the caller treats empty as "skip".
 resulting_content() {
   local tool="$1" payload="$2"
   case "$tool" in
