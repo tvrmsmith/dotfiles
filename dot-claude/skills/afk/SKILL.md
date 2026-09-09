@@ -26,7 +26,9 @@ does hang, or fails a network call twice, gets interrupted and parked rather tha
 
 ## Still his call
 
-Reversible local work is yours. These wait for Trevor: rewriting or discarding history
+Reversible local work is yours. Orchestration is not: fanning work out to other agents or
+sessions, and working a wayfinder map, both wait for Trevor whole. Park the thread and spend the
+turn on self-contained work instead. These wait for him too: rewriting or discarding history
 (force-push, `reset --hard`, dropping commits or stashes), deleting branches or files he has not
 agreed to delete, merging to `main`, releasing, deploying, anything outward-facing, and anything
 touching money, secrets, or credentials.
