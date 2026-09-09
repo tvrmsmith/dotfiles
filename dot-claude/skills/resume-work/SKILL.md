@@ -58,8 +58,11 @@ which was all six stopped rows the day this was written. Read the log, not the s
 in the tab. A `waiting` session owns its keyboard, so ESC it before anything else lands; a parked
 one is already at an empty composer.
 
-A long `turn` on a `WORKING` row is usually honest work. Every one measured so far was a deliberate
-`sleep 560` CI wait, so put `turn` and `call` on the board and let Trevor read the anomaly himself.
+A long `turn` on a `WORKING` row is usually honest work, a deliberate `sleep 560` CI wait, so put
+`turn` and `call` on the board and let Trevor read the anomaly himself. It is also the tell for a
+session killed mid-turn: Orca's record of a pane goes stale and still says `working` hours after
+an API error ended it. `orca-sessions.sh` now settles that from the scrollback rather than the
+record, so those bucket `ERRORED` and get their `Continue` like any other. Trust its bucket.
 
 ## Clear the guard first
 
