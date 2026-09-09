@@ -89,6 +89,22 @@ read -r -d '' SCRAPE <<'JQ' || true
 | .recap |= (gsub("\\s+"; " ") | .[0:220])
 JQ
 
+# A pane caught mid-repaint answers `read` with its whole screen smashed into a
+# line or two, and every field below then scrapes empty: no error, no spinner,
+# so a dead session buckets `?` and a live one buckets stopped. A real Claude
+# pane always carries at least its rule, composer, rule, and status bar, so a
+# shorter tail is a bad read rather than a quiet session. Take the second one.
+read_tail() {
+  local out n
+  for _ in 1 2; do
+    out=$(orca terminal read --terminal "$1" --limit "$LIMIT" --json 2>/dev/null) || out=""
+    n=$(printf '%s' "$out" | jq -r '[ .result.terminal.tail[] | select(test("\\S")) ] | length' 2>/dev/null) || n=0
+    [ "${n:-0}" -ge 4 ] && { printf '%s' "$out"; return 0; }
+    sleep 1
+  done
+  printf '%s' "$out"
+}
+
 own_tab=""
 if [ -n "$SELF" ]; then
   own_tab=$(orca terminal show --terminal "$SELF" --json 2>/dev/null \
@@ -131,7 +147,7 @@ orca terminal list --json | jq -r --arg own "$own_tab" --argjson panes "$panes" 
       if [ "$state" = "done" ] || [ -z "$state" ]; then
         if [ "$idle" -lt 0 ] || [ "$idle" -gt "$MAX_IDLE" ]; then continue; fi
       fi
-      orca terminal read --terminal "$handle" --limit "$LIMIT" --json 2>/dev/null \
+      read_tail "$handle" \
         | jq -c --arg handle "$handle" --arg title "${title:0:40}" --arg cwd "$cwd" \
                --argjson idle "$idle" --arg err "$ERR" \
                --arg state "$state" --arg tool "$tool" --arg turn "$turn" "$SCRAPE" \
