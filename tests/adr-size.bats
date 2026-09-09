@@ -1,3 +1,5 @@
+load helpers/assert
+
 HOOK="${BATS_TEST_DIRNAME}/../dot-claude/hooks/adr-size.sh"
 
 setup() {
@@ -27,7 +29,7 @@ words() { printf 'word %.0s' $(seq 1 "$1"); }
   result="$(write_context "$ADR_DIR/0001-x.md" "# Title
 
 Body with no heading of that name.")"
-  [[ "$result" == *'No `## Current rule` or `## Decision` block'* ]]
+  contains "$result" 'No `## Current rule` or `## Decision` block'
 }
 
 @test "a Current rule block satisfies the decision-block check" {
@@ -36,7 +38,7 @@ Body with no heading of that name.")"
 ## Current rule
 
 Short and fine.")"
-  [ -z "$result" ]
+  is_empty "$result"
 }
 
 @test "a Decision block satisfies the decision-block check" {
@@ -53,7 +55,7 @@ Short and fine.
 ## Consequences
 
 stuff")"
-  [ -z "$result" ]
+  is_empty "$result"
 }
 
 @test "a Current rule block over the limit is nudged with the count" {
@@ -66,7 +68,7 @@ $(words 500)
 ## Considered options
 
 stuff")"
-  [[ "$result" == *'runs 500 words against a 400 limit'* ]]
+  contains "$result" 'runs 500 words against a 400 limit'
 }
 
 @test "a Decision block over the limit is nudged, later sections excluded from the count" {
@@ -79,7 +81,7 @@ $(words 500)
 ## Consequences
 
 $(words 300)")"
-  [[ "$result" == *'runs 500 words against a 400 limit'* ]]
+  contains "$result" 'runs 500 words against a 400 limit'
 }
 
 @test "a block under the limit is not nudged for length" {
@@ -88,7 +90,7 @@ $(words 300)")"
 ## Decision
 
 $(words 399)")"
-  [ -z "$result" ]
+  is_empty "$result"
 }
 
 @test "a file over the word limit is nudged, block under the limit" {
@@ -101,7 +103,7 @@ $(words 100)
 ## Consequences
 
 $(words 2500)")"
-  [[ "$result" == *'consider superseding'* ]]
+  contains "$result" 'consider superseding'
 }
 
 @test "a file under the word limit with a short block stays silent" {
@@ -114,14 +116,14 @@ $(words 100)
 ## Consequences
 
 $(words 1000)")"
-  [ -z "$result" ]
+  is_empty "$result"
 }
 
 @test "editing an old-style ADR that never had a decision block is not nudged for lacking one" {
   old_file="$ADR_DIR/0005-old.md"
   printf '# Old ADR\n\nSome reasoning with no decision heading.\n\nTail text.\n' > "$old_file"
   result="$(edit_context "$old_file" "Tail text." "Tail text, corrected.")"
-  [ -z "$result" ]
+  is_empty "$result"
 }
 
 @test "an edit that deletes an existing decision block is nudged" {
@@ -130,7 +132,7 @@ $(words 1000)")"
   result="$(edit_context "$live_file" "## Decision
 
 The rule text." "Just some prose, no heading.")"
-  [[ "$result" == *'No `## Current rule` or `## Decision` block'* ]]
+  contains "$result" 'No `## Current rule` or `## Decision` block'
 }
 
 @test "five Amended paragraphs trip the consolidation nudge under the word limit" {
@@ -143,7 +145,7 @@ The rule text." "Just some prose, no heading.")"
 "
   done
   result="$(edit_context "$live_file" "Tail sentence." "${entries}Tail sentence.")"
-  [[ "$result" == *'5 dated entries'* ]]
+  contains "$result" '5 dated entries'
 }
 
 @test "five dated Changelog bullets trip the same nudge" {
@@ -151,11 +153,11 @@ The rule text." "Just some prose, no heading.")"
   printf '# Live ADR\n\n## Decision\n\nThe rule text.\n\n## Changelog\n\nTail sentence.\n' > "$live_file"
   entries=""
   for i in 1 2 3 4 5; do
-    entries="${entries}- **2026-08-0${i}** — Note ${i}.
+    entries="${entries}- **2026-08-0${i}** Note ${i}.
 "
   done
   result="$(edit_context "$live_file" "Tail sentence." "$entries")"
-  [[ "$result" == *'5 dated entries'* ]]
+  contains "$result" '5 dated entries'
 }
 
 @test "four dated entries under the word limit do not trip the nudge" {
@@ -168,7 +170,7 @@ The rule text." "Just some prose, no heading.")"
 "
   done
   result="$(edit_context "$live_file" "Tail sentence." "${entries}Tail sentence.")"
-  [ -z "$result" ]
+  is_empty "$result"
 }
 
 @test "an ADR marked superseded by a paragraph is frozen, never linted" {
@@ -179,7 +181,7 @@ The rule text." "Just some prose, no heading.")"
 ## Decision
 
 $(words 3000)")"
-  [ -z "$result" ]
+  is_empty "$result"
 }
 
 @test "an ADR marked superseded by a Status line is frozen, never linted" {
@@ -190,7 +192,7 @@ $(words 3000)")"
 ## Decision
 
 $(words 3000)")"
-  [ -z "$result" ]
+  is_empty "$result"
 }
 
 @test "prose arguing something was superseded does not freeze a live ADR" {
@@ -202,14 +204,14 @@ The header approach is
   superseded. A client-supplied header is spoofable.
 
 $(words 3000)")"
-  [[ "$result" == *'consider superseding'* ]]
+  contains "$result" 'consider superseding'
 }
 
 @test "the ADR directory README is an index, never linted" {
   result="$(write_context "$ADR_DIR/README.md" "# Architecture Decision Records
 
 An index with no decision block and $(words 3000)")"
-  [ -z "$result" ]
+  is_empty "$result"
 }
 
 @test "an ADR under a nested service directory is linted" {
@@ -218,7 +220,7 @@ An index with no decision block and $(words 3000)")"
   result="$(write_context "$nested/0001-x.md" "# Title
 
 Body with no heading of that name.")"
-  [[ "$result" == *'No `## Current rule` or `## Decision` block'* ]]
+  contains "$result" 'No `## Current rule` or `## Decision` block'
 }
 
 @test "ADR_BLOCK_WORDS tightens the block limit" {
@@ -228,7 +230,7 @@ Body with no heading of that name.")"
 ## Decision
 
 $(words 200)")"
-  [[ "$result" == *'runs 200 words against a 100 limit'* ]]
+  contains "$result" 'runs 200 words against a 100 limit'
 }
 
 @test "NM_GATE silences the hook, adr-guard already denied that write" {
@@ -236,10 +238,10 @@ $(words 200)")"
   result="$(write_context "$ADR_DIR/0001-x.md" "# Title
 
 Body with no heading of that name.")"
-  [ -z "$result" ]
+  is_empty "$result"
 }
 
 @test "a write outside docs/adr is untouched" {
   result="$(write_context "$TMP/not-adr/README.md" "no decision block here at all")"
-  [ -z "$result" ]
+  is_empty "$result"
 }
