@@ -84,9 +84,19 @@ Then confirm, below. A send that reports `ok` and vanishes is the failure this g
 
 ## Confirm by re-reading
 
-`bytesWritten` only proves the bytes reached the pty. Re-read the target and look for the line in
-the tail. Pass `--limit 200`, since the default returns about 16 lines and a busy session's own
-output scrolls the line away inside a second.
+`bytesWritten` only proves the bytes reached the pty. Re-read the target with `--limit 200`, since
+the default returns about 16 lines and a busy session's own output scrolls the line away inside a
+second.
+
+**Confirm on an empty composer, not on finding the line.** The composer is part of the tail, so a
+line the Enter never submitted matches a search for itself, and the send reports success while the
+session sits holding it. This is not hypothetical: a `/resume-work` sweep left `❯ cont` parked in
+a worktree for hours, counted as delivered. Read the last `❯` line; empty is the proof. Then look
+for the line in the transcript, or for a spinner, since a session that took the line and got busy
+has already scrolled it away.
+
+The composer pads with U+00A0, not a space. A trim that only knows ASCII whitespace leaves it
+behind and reads an empty composer as a draft.
 
 ## Prefer typed input for this
 
