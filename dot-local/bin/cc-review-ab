@@ -26,6 +26,9 @@ import uuid
 from collections import defaultdict
 
 LOG = pathlib.Path(os.environ.get("CC_REVIEW_AB_LOG", pathlib.Path.home() / ".claude/review-ab.jsonl"))
+SKILL = pathlib.Path(os.environ.get(
+    "CC_REVIEW_AB_SKILL",
+    pathlib.Path.home() / ".claude/skills/comprehensive-code-review/SKILL.md"))
 ARMS = ["general-purpose", "low-effort"]
 # Written into "repo"/"head" when git can't answer, so neither reads as blank-but-real.
 UNKNOWN = "unknown"
@@ -34,6 +37,27 @@ LEGACY_ABSENT = "-"
 # Token classes, in report column order. Logs written before the split carry a
 # single "tokens" field, which was output only; report() maps it onto "out".
 TOKEN_COLS = ["in", "cw", "cr", "out", "think"]
+
+
+def pinned_arms():
+    """Stem -> arm for every aspect the skill's step-2 table pins.
+
+    Empty when the table cannot be read, so a missing skill disables the checks
+    below rather than blocking every log write.
+    """
+    try:
+        text = SKILL.read_text()
+    except OSError:
+        return {}
+    pins = {}
+    for line in text.splitlines():
+        cells = [c.strip().strip("`") for c in line.split("|")]
+        if len(cells) < 6 or not cells[2].startswith("references/"):
+            continue
+        arm = cells[4]
+        if arm and arm != "—":
+            pins[cells[2].removeprefix("references/").removesuffix(".md")] = arm
+    return pins
 
 
 def append(rec):
@@ -94,9 +118,13 @@ def usage_for(name):
 
 def assign(args):
     run = uuid.uuid4().hex[:8]
+    pins = pinned_arms()
     picks = {}
     for spec in args.aspects:
         aspect, _, pinned = spec.partition("=")
+        if aspect in pins and not pinned:
+            sys.exit(f"cc-review-ab: {aspect} is pinned to {pins[aspect]} in the skill table; "
+                     f"randomizing it would log an arm that never ran")
         if pinned:
             agent, _, model = pinned.partition("/")
             picks[aspect] = (agent, model or None)
@@ -126,7 +154,13 @@ def lookup_arm(run, aspect):
 
 def record(args):
     aspect, _, pinned = args.aspect.partition("=")
-    arm = pinned or lookup_arm(args.run, aspect)
+    pins = pinned_arms()
+    # The table is authoritative for a pinned aspect, so a hand-typed arm that
+    # disagrees with it is a typo, not an override.
+    if pinned and aspect in pins and pinned != pins[aspect]:
+        sys.exit(f"cc-review-ab: {aspect} is pinned to {pins[aspect]} in the skill table, "
+                 f"got {pinned}")
+    arm = pinned or lookup_arm(args.run, aspect) or pins.get(aspect)
     if not arm:
         sys.exit(f"no arm for run {args.run} aspect {aspect}; pass {aspect}=<agent[/model]>")
 

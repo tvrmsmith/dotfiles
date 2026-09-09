@@ -86,7 +86,7 @@ Present **Spec conformance** as its own section, un-merged. Include that section
 
 Log each aspect:
 `cc-review-ab record <run id> <aspect> <critical> <important> <suggestion> --agent <spawned name>`,
-writing the aspect as `<stem>=<agent/model>` for the ones step 3 never sent to `assign`.
+passing the bare stem. It reads a pinned aspect's arm off the step-2 table itself.
 Count what that agent reported, before deduping against other aspects. `--agent` takes the step-3
 name and reads the tokens and seconds off that subagent's transcript. It exits without logging when
 the name matches no subagent or several, which means the name was wrong, not that the cost was zero.
