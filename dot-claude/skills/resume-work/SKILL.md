@@ -20,11 +20,17 @@ Trevor typed `/resume-work` just now. Sweep, bucket, print the board, then branc
 ## Sweep
 
 ```bash
-~/.claude/bin/orca-sessions.sh
+~/.claude/bin/orca-sessions.sh --max-idle 100000
 ```
 
 `--help` carries the fields and the flags. It needs no network, since Orca is local IPC and the
 evidence is already on screen.
+
+The `--max-idle` is the whole reason this runs wide. The script defaults to retiring a stopped
+session after 6 hours, which is a sane default for a mid-day glance and wrong here: an overnight
+`/afk` is ten, so the default drops every session that parked before about 3am, and a parked
+session is precisely what this skill exists to surface. Age is not evidence a decision was
+answered. Let the board's `idle` column carry staleness instead.
 
 Read the JSONL, which carries the `?` rows this skill resolves. `--table` is the by-hand view for a
 human at a terminal.
@@ -87,12 +93,12 @@ Render the board from the JSONL with the buckets resolved, one row per session, 
 since those are the only ones Trevor has to act on:
 
 ```text
-BUCKET  | turn   | title                          | what it is waiting on
-DECIDE  | -      | Approval of prior work         | discard emr-be6mp.7 or rewrite it down to the header remnant
-DECIDE  | -      | Bead emr-9zt0b.31 contract     | 1Password locked mid-way, gh pr never finished
-GO      | -      | no-mistakes-archon gap review  | sent, next is comparing extractor output against the Go run
-WORKING | 29m7s  | restart.exempt_paths           | sleep 560, waiting on a CI rerun
-DONE    | -      | Custom lint rules beads status | merged, pushed, bead closed
+BUCKET  | turn   | idle | title                          | what it is waiting on
+DECIDE  | -      |  38m | Approval of prior work         | discard emr-be6mp.7 or rewrite it down to the header remnant
+DECIDE  | -      | 497m | Bead emr-9zt0b.31 contract     | 1Password locked mid-way, gh pr never finished
+GO      | -      |  12m | no-mistakes-archon gap review  | sent, next is comparing extractor output against the Go run
+WORKING | 29m7s  |   0m | restart.exempt_paths           | sleep 560, waiting on a CI rerun
+DONE    | -      | 210m | Custom lint rules beads status | merged, pushed, bead closed
 ```
 
 Spell out each `DECIDE` question in full under the board, since answering them is the actual work
@@ -101,13 +107,19 @@ reached.
 
 ## Walk the queue
 
-Every `DECIDE` session gets visited. None is a runner-up, so do not ask Trevor to pick one; he
-answered that question with "they all need to be visited". Order them by the cost of waiting and
-jump to the head:
+Every `DECIDE` session gets visited, so the queue's order is yours to work out rather than his. He
+settled that with "they all need to be visited". Rank by the cost of waiting:
 
 1. A worker is still moving and could commit the parked decision itself. Ratifying it alone is the
    damage, and every minute raises the odds.
 2. Everything else, heaviest first.
+
+Then ask one `AskUserQuestion`, whether to go now, never which one:
+
+| option | |
+| --- | --- |
+| `Jump to <title>` | the head of the queue, described by the question it holds |
+| `Stay here` | keep working in this session |
 
 ```text
 ORCA terminal switch --terminal <handle> --json
