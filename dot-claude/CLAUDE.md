@@ -36,6 +36,11 @@
   - **opus**. Rare, only when the exploration itself requires hard reasoning, not just finding.
   - Under-exploration is the silent failure (incomplete answer that looks complete). When unsure between two tiers, pick the higher.
 
+## Code Navigation
+
+- Language servers run for TypeScript/JavaScript, Ruby, and C#. In those files, answer symbol questions with the LSP tool, which reads the compiler's symbol table: `goToDefinition`, `findReferences`, `goToImplementation`, `hover` for a type, `workspaceSymbol` to locate a name, `incomingCalls`/`outgoingCalls` to trace a call chain.
+- Grep is for text that is not a symbol: string literals, config keys, comments, log messages, and any language with no server running.
+
 ## Engineering Standards
 
 - ALWAYS load the `engineering-principles` skill when planning, implementing, or verifying a change, and follow it.
