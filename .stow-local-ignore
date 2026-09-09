@@ -72,5 +72,15 @@ settings\.local\.json
 # above are spelled ^/\.beads etc, and dot-* packages would be spelled dot-*.
 ^/\.agents/skills$
 
+# Runtime state inside otherwise-config ~/.config subdirectories: the tool that
+# reads the directory also writes to it. gh rewrites hosts.yml on every
+# `gh auth login` / `gh auth switch` (this repo's workflow switches account per
+# directory, and several commits in the history are that write leaking back
+# into the index); 1Password drops an empty telemetry-enabled marker. Patterns
+# are the *translated* paths because they are nested, and install.sh's mkdir of
+# both parent directories is what keeps them unfolded so these apply at all.
+^/\.config/gh/hosts\.yml$
+^/\.config/1Password/telemetry-enabled$
+
 # Stow-related
 ^/\.stow-.*

@@ -174,6 +174,22 @@ setup_dotfiles() {
 	# other end.
 	mkdir -p "$HOME/.config"
 
+	# Two ~/.config subdirectories are written by the tool that reads them, so
+	# folding either one routes that churn into this repo:
+	#   - gh rewrites hosts.yml on every `gh auth login`/`gh auth switch`, and
+	#     this repo's workflow switches account per directory. Folded, that made
+	#     a TRACKED file change under the user's feet; commits in this history
+	#     are nothing but "gh: switch default user". config.yml is real config
+	#     and stays linked. hosts.yml is per-machine account state, and the
+	#     tokens live in the login keychain, so a copied one names accounts a
+	#     fresh machine cannot authenticate as anyway.
+	#   - 1Password writes an empty telemetry-enabled marker next to its config.
+	# Both runtime names are in .stow-local-ignore, and a nested ignore pattern
+	# is only consulted once its parent exists as a real directory: absent, stow
+	# links the parent wholesale and never descends. These mkdirs are what make
+	# those two patterns do anything at all. See dotfiles-2ft.
+	mkdir -p "$HOME/.config/gh" "$HOME/.config/1Password"
+
 	# Reconcile the live-writer files (see LIVE_WRITER_FILES) before stow: drop
 	# the live copy when it's already a link to our file, or a regular file
 	# byte-identical to it. Anything with real drift is left alone so stow

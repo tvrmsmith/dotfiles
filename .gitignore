@@ -23,6 +23,12 @@ dot-warp/typescript-language-server/
 # 1Password writes this empty marker itself; machine-local state, not config.
 dot-config/1Password/telemetry-enabled
 
+# gh rewrites hosts.yml itself on every `gh auth login` / `gh auth switch`, and
+# it is per-machine account state: the tokens live in the login keychain, so the
+# file only ever names accounts another machine cannot authenticate as. Tracked
+# until dotfiles-2ft, and churned by account switching the whole time.
+dot-config/gh/hosts.yml
+
 # Generated trust bundle (corporate-ca-bundle). Only ever appears here if stow
 # folded ~/.config into dot-config/, which would route the write into the repo.
 # Machine-specific, derived from the keychain, and this repo is public — the
