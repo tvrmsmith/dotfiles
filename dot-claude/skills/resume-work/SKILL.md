@@ -14,8 +14,8 @@ Trevor typed `/resume-work` just now. Sweep, bucket, print the board, then branc
 
 | argument | do |
 | --- | --- |
-| nothing | send, below |
-| `status`, `board`, `who` | print the board and stop |
+| nothing | clear the guard, then send, below |
+| `status`, `board`, `who` | print the board and stop, leaving the guard armed |
 
 ## Sweep
 
@@ -38,10 +38,36 @@ this skill brings. Read the `recap` and `call` of each `?` row and split it two 
 | bucket | evidence | then |
 | --- | --- | --- |
 | `GO` | names a next step it can take alone | send the line |
+| `DECIDE` | parked its remaining work for Trevor | queue it, below |
 | `DONE` | says its work is finished | report it as finished |
+
+A session that ran under `/afk` ends its last turn with an `AFK log`, and the `parked:` lines in
+that log are the whole bucket test. Every item parked and nothing it can take alone is `DECIDE`,
+which was all six stopped rows the day this was written. Read the log, not the summary above it.
+
+`DECIDE` now has two entries: the script's, a live selector or permission prompt Orca reports as
+`waiting`, and this one, stopped with everything parked. They read the same on the board and differ
+in the tab. A `waiting` session owns its keyboard, so ESC it before anything else lands; a parked
+one is already at an empty composer.
 
 A long `turn` on a `WORKING` row is usually honest work. Every one measured so far was a deliberate
 `sleep 560` CI wait, so put `turn` and `call` on the board and let Trevor read the anomaly himself.
+
+## Clear the guard first
+
+`/resume-work` is a return, so it ends AFK for every session, exactly as `/afk back` does:
+
+```bash
+[ -f ~/.claude/afk ] && rm -f ~/.claude/afk && echo "AFK off"
+```
+
+Leave `~/.claude/afk-sessions` alone. Each marker in there is what tells its own session, on the
+next prompt Trevor types into it, that he is back.
+
+Do this before Send. While `~/.claude/afk` stands, `~/.claude/hooks/afk-guard.sh` denies
+`AskUserQuestion` and blocks the stop, so a session restarted under a live flag parks its next
+decision instead of asking him for it. Report whether the flag was there, since its absence means
+some other session already cleared it.
 
 ## Send
 
@@ -73,17 +99,20 @@ Spell out each `DECIDE` question in full under the board, since answering them i
 left. Close with the count per bucket and the sessions Orca does not manage, which this never
 reached.
 
-## Offer the jump
+## Walk the queue
 
-A `DECIDE` session wants Trevor's own keyboard, so end by offering to put him there. Ask through
-`AskUserQuestion` with up to three `DECIDE` sessions as the options, titled by `title` and described
-by the question each is holding, plus `Stay here` as the last one. Skip this whole section when
-nothing bucketed `DECIDE`.
+Every `DECIDE` session gets visited. None is a runner-up, so do not ask Trevor to pick one; he
+answered that question with "they all need to be visited". Order them by the cost of waiting and
+jump to the head:
+
+1. A worker is still moving and could commit the parked decision itself. Ratifying it alone is the
+   damage, and every minute raises the odds.
+2. Everything else, heaviest first.
 
 ```text
 ORCA terminal switch --terminal <handle> --json
 ```
 
-Offer one jump. The switch moves Trevor's focus to that tab and leaves this session running in the
-background, where a second question would sit unread, so name the runners-up in your closing line
-and let him come back for them.
+The switch moves Trevor's focus to that tab and leaves this session in the background, so one jump
+per run is all that lands. Close by naming the rest of the queue in order, so he knows what typing
+`/resume-work` again returns him to. Skip this whole section when nothing bucketed `DECIDE`.
