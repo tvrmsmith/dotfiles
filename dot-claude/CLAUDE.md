@@ -14,10 +14,9 @@
 - Write concise commit messages, keep them under 150 words
 - `~/.gitconfig` uses `includeIf "gitdir:~/dev/personal/"` to auto-load `~/.gitconfig-personal`, sets personal `user.name`, `user.email` (`tvrmsmith@gmail.com`), personal SSH signing key
 - Repos cloned under `~/dev/personal/` auto-get personal identity, no per-repo `git config` needed
-- `GITHUB_TOKEN` from 1Password CLI plugin. Directory-aware:
-  - **Outside `~/dev/personal/`**: auth as work account (`TrevorSmith-Wellsky`). Use `github.com` direct for remotes and `gh` commands
-  - **Inside `~/dev/personal/`**: auth as personal account (`tvrmsmith`). Use `github-personal` SSH host alias for remotes, `gh auth switch --user tvrmsmith` before `gh` commands (PRs, issues, etc.)
-- `gh` commands against work repos from inside `~/dev/personal/` → `cd` to non-personal directory first (e.g. `cd ~/dev && gh repo view ...`)
+- Remotes: personal repos use the `github-personal` SSH host alias, work repos use `github.com` direct
+- `gh` routes its own credential per command. Reads are silent; writes block on Trevor approving them in 1Password. Run `gh` where the repo is, or pass `-R owner/repo`. No `gh auth switch`, no `cd` first
+- A 403 from `gh` means the command needs Trevor's approval. Say so and stop; another endpoint or flag hits the same wall
 - Merging a feature branch → prefer squash merge
 
 ## Planning
