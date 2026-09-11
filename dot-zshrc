@@ -172,8 +172,13 @@ clcwf() { (export CLAUDE_CODE_DISABLE_WORKFLOWS=0; claude-launcher --dangerously
 [ -f "$DEV_PERSONAL/dotfiles/extras/agent-sandboxing/init.zsh" ] && \
   source "$DEV_PERSONAL/dotfiles/extras/agent-sandboxing/init.zsh"
 
-# 1Password CLI shell plugins (gh, etc.)
-[ -f "$HOME/.config/op/plugins.sh" ] && source "$HOME/.config/op/plugins.sh"
+# 1Password CLI shell plugins, deliberately NOT sourced. That file is generated
+# by `op plugin init` and its only content is `alias gh="op plugin run -- gh"`,
+# which sends every gh call — reads included — through a biometric approval, and
+# the alias reaches agent shells too. dot-local/bin/gh replaces it: reads use a
+# read-only keychain token, writes still go through the plugin and still prompt.
+# Re-sourcing this would shadow the shim, since an alias beats PATH. See
+# dotfiles-7wt.
 
 # bun completions
 [ -s "/Users/trevor.smith/.bun/_bun" ] && source "/Users/trevor.smith/.bun/_bun"
