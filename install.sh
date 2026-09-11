@@ -165,6 +165,15 @@ setup_dotfiles() {
 	# dot-agents/.agents and aborting the entire install.
 	mkdir -p "$HOME/.agents"
 
+	# ~/.ssh holds far more runtime state than config — known_hosts, agent
+	# sockets, the ControlMaster sockets dot-ssh/config points at — so it must
+	# never fold into a link to dot-ssh/. Creating the sockets subdir forces the
+	# parent to exist as a real directory and gives ssh the ControlPath dir it
+	# refuses to create itself. 700 because ssh ignores a group- or
+	# world-writable socket directory.
+	mkdir -p "$HOME/.ssh/sockets"
+	chmod 700 "$HOME/.ssh" "$HOME/.ssh/sockets"
+
 	# ~/.config for the same reason, and this one has teeth: corporate-ca-bundle
 	# writes the trust bundle to $XDG_CONFIG_HOME/corporate-ca.crt. Folded, that
 	# write lands in dot-config/ — the machine's corporate CAs committed into a
