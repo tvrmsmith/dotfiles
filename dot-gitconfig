@@ -67,6 +67,15 @@
 [includeIf "hasconfig:remote.*.url:git@github.com:tvrmsmith/**"]
 	path = ~/.gitconfig.sandbox-personal
 
+# Same rule for the github-personal SSH host alias. Personal remotes are
+# written that way, and the no-mistakes daemon clones its gate repos to
+# ~/.no-mistakes/repos/<hash>.git, outside every gitdir rule above, so without
+# this the daemon's pipeline commits are authored as the work identity.
+[includeIf "hasconfig:remote.*.url:git@github-personal:tvrmsmith/**"]
+	path = ~/.gitconfig-personal
+[includeIf "hasconfig:remote.*.url:git@github-personal:tvrmsmith/**"]
+	path = ~/.gitconfig.sandbox-personal
+
 # Machine-local identity override — e.g. on a personal-only machine, set
 # [user] here to make the personal identity the default everywhere instead
 # of relying on the includeIf rules above. No-op if file doesn't exist.
