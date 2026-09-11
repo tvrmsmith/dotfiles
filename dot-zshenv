@@ -7,6 +7,14 @@ export EZA_CONFIG_DIR="$XDG_DATA_HOME/eza"
 export DEV_PERSONAL="$HOME/dev/personal"
 
 export GIT_TOKEN="op://Employee/GitHub Personal Access Token/token"
+# Keep PATH free of duplicates. brew shellenv, the gcloud line and the bun block
+# all prepend unconditionally, so every nested shell used to add another copy of
+# the same dirs, which buries the order that decides which binary wins. -U keeps
+# the first occurrence, so precedence is unchanged.
+# Both names: the flag has to be set on PATH as well as the tied path array, or
+# a later `export PATH="new:$PATH"` re-adds a dir that is already there.
+typeset -U path PATH
+
 # bin-claude-shim precedes .local/bin so its `claude` shim shadows the managed
 # symlink and routes terminal-started sessions through claude-launcher.
 export PATH="$HOME/.local/bin-claude-shim:$HOME/.local/bin:$HOME/.dotnet/tools:$DEV_PERSONAL/ralph/scripts:$PATH"
