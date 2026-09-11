@@ -1,2 +1,9 @@
+# Local signing keys (current). Private halves live at ~/.ssh/git-sign-*,
+# generated per machine and never committed.
+trevor.smith@wellsky.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAP3yIsvNyRrIqfbimTAD0S00B+CVBhEIiBaHIq2YGLt
+tvrmsmith@gmail.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFjwy4qvCQ5uw+kIwr/EjTT/vRd69OIDlggufEdxcqaV
+
+# 1Password-held signing keys, retired as the signing path in dotfiles-udc.
+# Kept so commits signed before the switch still verify locally.
 trevor.smith@wellsky.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDCVsIviMhYuKXaXPDnU47cBmR3h2eiKq59GmS+uFvPe
 tvrmsmith@gmail.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILhJlZVTQvLdOY0x6OMACXXkYHEUDkReEB/F9QquTFGC
