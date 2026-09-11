@@ -25,6 +25,10 @@
 - **Vertical slice**: an item of work cutting a narrow but COMPLETE path through every layer (UI → API → domain → data, plus tests) that independently works end-to-end. Not a horizontal layer ("all the endpoints") nor a partial stub.
 - Reach for Matt Pocock's skills (e.g. `mattpocock-skills:wayfinder`, `mattpocock-skills:grill-with-docs`) before implementation
 
+## Talking to me
+
+- **Name before number.** Write "the diff-scope test PR (#76)", not "#76". Bare identifiers (issue, PR, commit sha, run id) point at things I have not memorised, and an issue number and a PR number look identical to me.
+
 ## Working with Agents
 
 - **Agent-facing docs**: ALWAYS load the `mattpocock-skills:writing-for-agents` skill before writing, editing, or reviewing any document an agent consumes, and follow it. Covers a `SKILL.md`, `AGENTS.md`/`CLAUDE.md`, a subagent prompt, a hook's injected text, a doc reached by a pointer from one of those. Same rule when a skill isn't firing and you're diagnosing why.
