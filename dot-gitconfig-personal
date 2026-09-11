@@ -1,4 +1,6 @@
 [user]
 	name = Trevor Smith
 	email = tvrmsmith@gmail.com
-	signingkey = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILhJlZVTQvLdOY0x6OMACXXkYHEUDkReEB/F9QquTFGC
+	# Local signing key file, same rationale as dot-gitconfig's work key: no
+	# 1Password agent round trip, so no approval prompt per commit.
+	signingkey = ~/.ssh/git-sign-personal

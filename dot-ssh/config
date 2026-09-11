@@ -1,8 +1,31 @@
+# Connection reuse for GitHub (both identities). Without it, every `git
+# push`/`git fetch` opens its own connection, and every connection is a fresh
+# 1Password SSH agent authorization: the agent binds a remembered approval to
+# the requesting *process*, so the app's "remember key approval for 4 hours"
+# never applies to an agent's short-lived, terminal-less git invocations. One
+# approval now covers the whole hour. See dotfiles-udc.
+#
+# The two hosts MUST NOT share a ControlPath. %C hashes (localhost, HostName,
+# port, user), and github-personal resolves to exactly the same github.com/git
+# pair as the work host — sharing the path silently routes personal pushes over
+# the work-authenticated master, which then authenticates as the work account.
+# The literal prefix per block is what keeps them apart; %C alone cannot.
+# ~/.ssh/sockets/ must already exist, ssh will not create it (install.sh), and
+# %C keeps the socket path clear of the 104-byte sun_path limit.
+
 Host github-personal
 	HostName github.com
 	User git
 	IdentityFile ~/.ssh/github-personal.pub
 	IdentitiesOnly yes
+	ControlMaster auto
+	ControlPath ~/.ssh/sockets/personal-%C
+	ControlPersist 1h
+
+Host github.com
+	ControlMaster auto
+	ControlPath ~/.ssh/sockets/work-%C
+	ControlPersist 1h
 
 Match host * exec "test $(uname) = Darwin"
 	IdentityAgent "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"

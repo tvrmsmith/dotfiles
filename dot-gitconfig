@@ -1,17 +1,23 @@
 [gpg]
 	format = ssh
 [gpg "ssh"]
-	# Resolved off PATH (~/.local/bin, stowed from dot-local/bin), not pinned to
-	# an absolute path: the wrapper already picks the right 1Password binary per
-	# platform, and any absolute prefix makes every commit on another machine die
-	# with "cannot exec". git does a PATH lookup for a bare name here but does
-	# NOT expand ~, so a bare command name is the only portable spelling.
-	program = op-ssh-sign
+	# No `program` line on purpose: git falls back to plain ssh-keygen off PATH.
+	# This used to be the op-ssh-sign wrapper, which made every single commit a
+	# round trip to the 1Password SSH agent, and every round trip a desktop
+	# approval — the agent binds a remembered approval to the requesting
+	# process, so an agent's short-lived `git commit` never reuses one, and the
+	# no-mistakes daemon could not sign at all. Signing now uses a local key
+	# file (see user.signingkey). See dotfiles-udc.
 	allowedSignersFile = ~/.ssh/allowed_signers
 [commit]
 	gpgsign = true
 [user]
-	signingkey = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDCVsIviMhYuKXaXPDnU47cBmR3h2eiKq59GmS+uFvPe
+	# Path to the private key, not the literal public key: ssh-keygen signs from
+	# the file with no agent involved. git DOES expand a leading ~ here (unlike
+	# gpg.ssh.program above), so this stays portable across machines. The key is
+	# generated per machine and never committed — this repo is public, and
+	# ~/.ssh/allowed_signers carries the public half.
+	signingkey = ~/.ssh/git-sign-work
 	name = Trevor Smith
 	email = trevor.smith@wellsky.com
 [alias]
