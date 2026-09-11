@@ -8,10 +8,14 @@
 # identical prompts a day, none of which named the command, which trains
 # dismissal rather than scrutiny.
 #
-# The shim is a signpost, not the enforcement. The read token cannot mutate, so
-# calling the real binary directly to dodge this file still yields 403. Both
-# misclassifications are safe: a write treated as a read gets 403, a read
-# treated as a write costs one needless prompt. See dotfiles-7wt.
+# Both misclassifications are safe: a write treated as a read gets 403, a read
+# treated as a write costs one needless prompt.
+#
+# The scoping only holds for callers that come through here. `gh auth login`
+# leaves a write-scoped token in gh's own keyring, and the real binary reads it
+# without asking, so anything invoking gh by absolute path escapes the whole
+# design. Keeping the raw binary logged out is what makes the shim enforcement
+# rather than a signpost. See dotfiles-7wt.
 set -euo pipefail
 
 # Follow a symlink chain to the file itself. BSD readlink has no -f, and a link
