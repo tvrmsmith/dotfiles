@@ -9,6 +9,8 @@ let warnedBadEndpoint = false
 // Orca receiver from building an unbounded queue of obsolete snapshots.
 const HOOK_POST_TIMEOUT_MS = 1000
 let activePost = false
+let piUiPromptDepth = 0
+let piTurnInFlight = false
 let pendingPost: { hookEventName: string; extra: Record<string, unknown>; metadata: Record<string, unknown>; ompRuntime: boolean } | null = null
 let sessionMetadata: Record<string, unknown> = {}
 let runtimeOmpSessionMetadata: Record<string, unknown> = {}
@@ -138,7 +140,7 @@ function post(hookEventName: string, extra: Record<string, unknown> = {}): void 
   const ompRuntime = isOmpRuntime()
   pendingPost = {
     hookEventName,
-    extra,
+    extra: { ...extra, ...(!ompRuntime && piUiPromptDepth > 0 ? { ui_prompt_active: true } : {}) },
     metadata: getPostSessionMetadata(ompRuntime),
     ompRuntime,
   }
@@ -322,6 +324,7 @@ export default function (pi): void {
   process.env.ORCA_PI_STATUS_OWNED = selfPid
   pi.on('session_start', (event, ctx) => {
     updateSessionMetadata(ctx)
+    piUiPromptDepth = 0
     // Why: /reload re-registers the active session, but it is not a
     // turn boundary and must not clear the visible status or unread state.
     if (event.reason === 'reload') return
@@ -337,6 +340,8 @@ export default function (pi): void {
     updateRuntimeOmpSessionMetadata(ctx)
     clearPendingAgentEndCheck()
     agentEndReported = false
+    piUiPromptDepth = 0
+    piTurnInFlight = true
     post('agent_start')
   })
 
@@ -382,6 +387,39 @@ export default function (pi): void {
     })
   })
 
+  pi.on('ui_prompt_start', () => {
+    if (isOmpRuntime()) return
+    piUiPromptDepth++
+    if (piUiPromptDepth > 1) return
+    post('ui_prompt_start')
+  })
+
+  pi.on('ui_prompt_end', (_event, ctx) => {
+    if (isOmpRuntime() || piUiPromptDepth === 0) return
+    piUiPromptDepth--
+    if (piUiPromptDepth > 0) return
+    // Why: ctx.isIdle throws outright once a session-switching modal invalidates the
+    // runner (it calls assertActive), so local turn state is the floor, not a fallback:
+    // with no turn in flight, no later event is coming to correct a working verdict, so
+    // only consult ctx when this process believes work is running.
+    let isIdle = !piTurnInFlight
+    try {
+      if (!isIdle && typeof ctx?.isIdle === 'function') isIdle = ctx.isIdle() === true
+    } catch {
+      // Why: a runner this very modal invalidated cannot answer; keep the local verdict.
+    }
+    post('ui_prompt_end', { is_idle: isIdle })
+  })
+
+  pi.on('session_shutdown', () => {
+    if (isOmpRuntime()) return
+    // Why: pi tears an open dialog down through resetExtensionUI without resolving its
+    // promise, so a replaced session never emits the matching ui_prompt_end and the wait
+    // would stick forever. Reset without posting: shutdown is not a turn boundary, and
+    // the session_start that follows republishes the corrected state.
+    piUiPromptDepth = 0
+  })
+
   // Why: capture the assistant's final text on each completed message
   // so the dashboard preview reflects the most recent reply even before
   // agent_end fires. message_end is the right hook because pi guarantees
@@ -417,6 +455,7 @@ export default function (pi): void {
   function postAgentEndOnce(): void {
     if (agentEndReported) return
     agentEndReported = true
+    piTurnInFlight = false
     post('agent_end')
   }
 
