@@ -13,16 +13,53 @@ const BRAILLE_FRAMES = [
 ]
 
 const FRAME_INTERVAL_MS = 80
+// Why: pi repaints the title from its own writers (session_info_changed, the win32
+// update-check restore) with no event we observe, so the marker has to be re-asserted
+// even when no spinner frame is due. Coarse on purpose: it only rewrites one string.
+const MARKER_REASSERT_MS = 1000
 const AGENT_END_IDLE_RECHECK_MS = 25
 const AGENT_END_IDLE_RECHECK_MAX_MS = 250
 // Why: a failed idle compaction can end without auto_compaction_end, and no agent turn will
 // close a maintenance spinner — cap it so idle maintenance cannot strand a working title.
 const IDLE_COMPACTION_MAX_FRAMES = Math.ceil(300000 / FRAME_INTERVAL_MS)
 
-function getBaseTitle(pi) {
+// Why: `-` is the plain separator; `!` is the state marker Orca reads as needs-input
+// (src/shared/pi-state-title-marker.ts), so mobile and the CLI see the wait too.
+function getMarkedTitle(pi, marker) {
   const cwd = process.cwd().split(/[\\/]/).filter(Boolean).at(-1) || process.cwd()
   const session = pi.getSessionName()
-  return session ? `\u03c0 - ${session} - ${cwd}` : `\u03c0 - ${cwd}`
+  return session
+    ? `\u03c0 ${marker} ${session} - ${cwd}`
+    : `\u03c0 ${marker} ${cwd}`
+}
+
+function getBaseTitle(pi) {
+  return getMarkedTitle(pi, '-')
+}
+
+// Why: the ctx.ui pi passes is a getter that calls assertActive() and throws once a
+// session-replacing dialog invalidates the runner; optional chaining cannot screen
+// that out. Read it behind a try and never mutate state before a paint has succeeded.
+function resolvePainter(ctx) {
+  try {
+    return typeof ctx?.ui?.setTitle === 'function' ? ctx : null
+  } catch {
+    return null
+  }
+}
+
+// Why: buildTitle runs inside the try because it is not safe either — getSessionName()
+// calls assertActive() and process.cwd() throws ENOENT once the worktree is deleted.
+// Most call sites are timer callbacks, where an escape is an uncaught exception and pi
+// exits(1) through its own uncaughtException handler.
+function paintTitle(ctx, buildTitle) {
+  if (!ctx) return false
+  try {
+    ctx.ui.setTitle(buildTitle())
+    return true
+  } catch {
+    return false
+  }
 }
 
 export default function (pi) {
@@ -33,14 +70,41 @@ export default function (pi) {
   // inside an agent turn, whose spinner must outlive it, and any newer start clears the
   // marker so a late idle completion cannot stop current work (#16470).
   let idleCompactionOwnsSpinner = false
+  // Why: pi already collapses nested prompts into one start/end pair, so this counter
+  // guards a close that never arrives, not nesting. A new turn cannot start under a
+  // dialog holding input focus, so agent_start doubles as recovery.
+  let promptDepth = 0
+  let markerPainted = false
+  let promptCtx = null
+  // Why: a separate handle from `timer`, which clearAnimation() nulls — the marker must
+  // survive a turn settling, a shutdown of the spinner, and the idle-maintenance cap.
+  let markerTimer = null
   let pendingAgentEndCheck = null
   let pendingAgentEndContext = null
   let agentEndIdleRecheckMs = AGENT_END_IDLE_RECHECK_MS
+
+  function resetPromptState() {
+    stopMarkerReassert()
+    promptDepth = 0
+    markerPainted = false
+    promptCtx = null
+  }
 
   function clearPendingAgentEndCheck() {
     if (pendingAgentEndCheck !== null) clearTimeout(pendingAgentEndCheck)
     pendingAgentEndCheck = null
     pendingAgentEndContext = null
+  }
+
+  function stopMarkerReassert() {
+    if (markerTimer) clearInterval(markerTimer)
+    markerTimer = null
+  }
+
+  function startMarkerReassert(ctx) {
+    stopMarkerReassert()
+    markerTimer = setInterval(() => paintTitle(ctx, () => getMarkedTitle(pi, '!')), MARKER_REASSERT_MS)
+    if (typeof markerTimer.unref === 'function') markerTimer.unref()
   }
 
   function clearAnimation() {
@@ -55,19 +119,35 @@ export default function (pi) {
   function stopAnimation(ctx) {
     clearPendingAgentEndCheck()
     clearAnimation()
-    ctx.ui.setTitle(getBaseTitle(pi))
+    // Why: settling under an open dialog still leaves the pane waiting on the user, so
+    // the idle title must not retire the marker the dialog is holding.
+    paintTitle(ctx, () => (markerPainted ? getMarkedTitle(pi, '!') : getBaseTitle(pi)))
   }
 
   function renderFrame(ctx) {
+    // Why: the maintenance cap runs before the dialog guard so a dialog left open
+    // cannot suspend it; stopAnimation keeps the marker while a dialog is open.
     if (idleCompactionOwnsSpinner && frameIndex >= IDLE_COMPACTION_MAX_FRAMES) {
       stopAnimation(ctx)
       return
     }
-      const frame = BRAILLE_FRAMES[frameIndex % BRAILLE_FRAMES.length]
-      const cwd = process.cwd().split(/[\\/]/).filter(Boolean).at(-1) || process.cwd()
-      const session = pi.getSessionName()
-      const title = session ? `${frame} \u03c0 - ${session} - ${cwd}` : `${frame} \u03c0 - ${cwd}`
-      ctx.ui.setTitle(title)
+    // Why: an 80ms working frame would repaint over the needs-input marker within one
+    // tick, so a mid-turn dialog would still look busy everywhere the title is the
+    // only evidence. Re-assert rather than skip: pi repaints the title on its own
+    // (session_info_changed, resetExtensionUI, rebindCurrentSession) and would
+    // otherwise wipe the marker with nothing to restore it. The frame still counts,
+    // so the cap above keeps accruing in wall-clock.
+    if (markerPainted) {
+      paintTitle(ctx, () => getMarkedTitle(pi, '!'))
+      frameIndex++
+      return
+    }
+      paintTitle(ctx, () => {
+        const frame = BRAILLE_FRAMES[frameIndex % BRAILLE_FRAMES.length]
+        const cwd = process.cwd().split(/[\\/]/).filter(Boolean).at(-1) || process.cwd()
+        const session = pi.getSessionName()
+        return session ? `${frame} \u03c0 - ${session} - ${cwd}` : `${frame} \u03c0 - ${cwd}`
+      })
       frameIndex++
   }
 
@@ -98,7 +178,15 @@ export default function (pi) {
   }
 
   pi.on('agent_start', async (_event, ctx) => {
+    resetPromptState()
     startAnimation(ctx)
+  })
+
+  // Why: pi drops an open dialog through resetExtensionUI without resolving its promise,
+  // so a replaced or reloaded session never sends the matching close. Both boundaries
+  // prove no dialog from the old session is still on screen.
+  pi.on('session_start', async () => {
+    resetPromptState()
   })
 
   // Why: modern Pi/OMP emit agent_end mid-run and only settle later, so settlement is the
@@ -139,6 +227,7 @@ export default function (pi) {
   })
 
   pi.on('session_shutdown', async (_event, ctx) => {
+    resetPromptState()
     stopAnimation(ctx)
   })
 }
