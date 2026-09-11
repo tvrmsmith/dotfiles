@@ -87,9 +87,10 @@
 # of relying on the includeIf rules above. No-op if file doesn't exist.
 [include]
 	path = ~/.gitconfig.local
-[credential "https://github.com"]
-	helper = 
-	helper = !gh auth git-credential
-[credential "https://gist.github.com"]
-	helper = 
-	helper = !gh auth git-credential
+# No gh credential helper on purpose. `gh auth login` used to leave a
+# write-scoped token in gh's keyring, which the helper handed to git, and which
+# also let anything calling the real gh binary write to GitHub with no
+# 1Password approval. The account is logged out now so ~/.local/bin/gh is the
+# only path to a credential, which leaves `gh auth git-credential` with nothing
+# to return. Every remote here is ssh, so nothing asked for it anyway. See
+# dotfiles-7wt.
