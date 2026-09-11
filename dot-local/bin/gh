@@ -1,0 +1,247 @@
+#!/usr/bin/env bash
+# gh — pick the credential from what the command does, not from who is asking.
+#
+# Reads run against a read-only token held in the login keychain and stay
+# silent. Everything else re-execs through `op plugin run -- gh`, which fires a
+# 1Password approval. The point is to spend approvals only on operations that
+# can change something: routing every read through 1Password produced dozens of
+# identical prompts a day, none of which named the command, which trains
+# dismissal rather than scrutiny.
+#
+# The shim is a signpost, not the enforcement. The read token cannot mutate, so
+# calling the real binary directly to dodge this file still yields 403. Both
+# misclassifications are safe: a write treated as a read gets 403, a read
+# treated as a write costs one needless prompt. See dotfiles-7wt.
+set -euo pipefail
+
+# Follow a symlink chain to the file itself. BSD readlink has no -f, and a link
+# body is relative to the link's own directory, not to $PWD — this file is
+# reached through ~/.local/bin/gh -> ../../dev/personal/dotfiles/....
+canon() {
+	local src="$1" dir
+	while [ -h "$src" ]; do
+		dir="$(cd -P "$(dirname "$src")" && pwd)"
+		src="$(readlink "$src")"
+		[ "${src#/}" = "$src" ] && src="$dir/$src"
+	done
+	printf '%s/%s\n' "$(cd -P "$(dirname "$src")" && pwd)" "$(basename "$src")"
+}
+
+self="$(canon "${BASH_SOURCE[0]}")"
+
+# The directory this shim was found in, unresolved: that is the entry to drop
+# from PATH later, not the repo path the symlink points at.
+shim_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# The next `gh` on PATH that is not this script. Scanned rather than hardcoding
+# /opt/homebrew/bin/gh, which differs on Linux and on Intel.
+real_gh=""
+while IFS= read -r candidate; do
+	[ -x "$candidate" ] || continue
+	[ "$(canon "$candidate")" = "$self" ] && continue
+	real_gh="$candidate"
+	break
+done < <(type -aP gh)
+
+if [ -z "$real_gh" ]; then
+	echo "gh shim: no real gh binary found on PATH" >&2
+	exit 127
+fi
+
+# An explicitly exported token is a deliberate override (CI, a one-off `GH_TOKEN=...
+# gh ...`), so honour it and get out of the way.
+if [ -n "${GH_TOKEN:-}" ] || [ -n "${GITHUB_TOKEN:-}" ]; then
+	exec "$real_gh" "$@"
+fi
+
+# `gh api` defaults to GET, but any of these turn it into a write. -f/-F/--raw-field
+# add a body, which makes gh switch to POST on its own.
+api_is_read() {
+	local prev=""
+	for arg in "$@"; do
+		case "$arg" in
+			-f|-F|--field|--raw-field|--input) return 1 ;;
+			--method=GET|--method=HEAD|-XGET|-XHEAD) ;;
+			--method=*|-X*) return 1 ;;
+		esac
+		case "$prev" in
+			-X|--method) [ "$arg" = GET ] || [ "$arg" = HEAD ] || return 1 ;;
+		esac
+		prev="$arg"
+	done
+	return 0
+}
+
+# Default deny: anything not listed here, including an unrecognised subcommand
+# and a gh version that grew new verbs, takes the prompting path.
+is_read() {
+	case "${1:-}" in
+		"" | --version | -v | --help | -h | help | status | search | browse | completion)
+			return 0 ;;
+		api)
+			shift
+			api_is_read "$@"
+			return $? ;;
+	esac
+
+	case "$1 ${2:-}" in
+		"pr view" | "pr list" | "pr diff" | "pr checks" | "pr status") return 0 ;;
+		"issue view" | "issue list" | "issue status") return 0 ;;
+		"repo view" | "repo list" | "repo clone") return 0 ;;
+		"run view" | "run list" | "run watch" | "run download") return 0 ;;
+		"release view" | "release list" | "release download") return 0 ;;
+		"workflow view" | "workflow list") return 0 ;;
+		"cache list" | "label list" | "variable list" | "secret list") return 0 ;;
+		"gist view" | "gist list") return 0 ;;
+		"ssh-key list" | "gpg-key list") return 0 ;;
+		"auth status" | "auth token") return 0 ;;
+		"org list" | "project list" | "project view") return 0 ;;
+	esac
+	return 1
+}
+
+# Tokens are keyed by GitHub resource owner, not by account. A fine-grained PAT
+# has exactly one owner, so the work user and the work org need separate tokens
+# even though one person signs in to both. Owner is also what an explicit
+# `-R owner/repo` names, which no account-level view could see.
+#
+# Resolved per invocation and passed as GH_TOKEN. Never `gh auth switch`: that
+# rewrites a shared hosts.yml, and several agents run here in parallel.
+# The owner segment of a GitHub remote URL, or failure for anything else. The
+# host check is what keeps a filesystem remote (`git clone /path/to/repo.git`,
+# the no-mistakes gate repos) from yielding "Users" as an owner.
+owner_from_url() {
+	local url="${1%.git}" host
+	url="${url#*://}"                       # https://github.com/owner/repo
+	url="${url#*@}"                         # git@github.com:owner/repo
+	host="${url%%[:/]*}"
+	case "$host" in
+		github.com | github-*) ;;
+		*) return 1 ;;
+	esac
+	url="${url#"$host"}"
+	url="${url#[:/]}"
+	case "$url" in
+		*/*) printf '%s\n' "${url%%/*}" ;;
+		*) return 1 ;;
+	esac
+}
+
+gh_owner() {
+	local prev="" arg spec
+	for arg in "$@"; do
+		case "$prev" in
+			-R|--repo) spec="$arg" ;;
+		esac
+		case "$arg" in
+			-R?*) spec="${arg#-R}" ;;
+			--repo=*) spec="${arg#--repo=}" ;;
+		esac
+		prev="$arg"
+	done
+	if [ -n "${spec:-}" ]; then
+		# host/owner/repo is also legal in -R.
+		spec="${spec#*://}"
+		case "$spec" in */*/*) spec="${spec#*/}" ;; esac
+		printf '%s\n' "${spec%%/*}"
+		return
+	fi
+
+	# `gh repo view|clone owner/repo` and `gh repo list owner` name the owner
+	# positionally, and gh rejects -R on those, so the scan above sees nothing.
+	local pos=""
+	if [ "${1:-}" = repo ]; then
+		case "${2:-}" in view | clone | list) pos="${3:-}" ;; esac
+	fi
+	case "$pos" in
+		"" | -*) ;;
+		*)
+			pos="${pos#*://}"
+			case "$pos" in */*/*) pos="${pos#*/}" ;; esac
+			printf '%s\n' "${pos%%/*}"
+			return ;;
+	esac
+
+	# `gh api /repos/OWNER/...` puts the owner in the path. gh also accepts
+	# {owner} as a placeholder it fills from the current repo, which names no
+	# owner of its own, so leave that to the remotes below.
+	if [ "${1:-}" = api ]; then
+		for arg in "$@"; do
+			arg="${arg#/}"
+			case "$arg" in
+				repos/'{'*) break ;;
+				repos/*/*) arg="${arg#repos/}" ;;
+				orgs/'{'* | users/'{'*) break ;;
+				orgs/* | users/*) arg="${arg#*/}" ;;
+				*) continue ;;
+			esac
+			printf '%s\n' "${arg%%/*}"
+			return
+		done
+	fi
+
+	# git reads the shared config from any linked worktree, so a worktree parked
+	# in /var/folders or ~/.superset/worktrees resolves the same owner as its
+	# main checkout. Path never enters into it.
+	#
+	# origin first, then any other remote: a gate repo or a local clone can hold
+	# a filesystem origin while the real GitHub URL sits on a second remote.
+	local url owner
+	while IFS= read -r url; do
+		[ -n "$url" ] || continue
+		owner="$(owner_from_url "$url")" && [ -n "$owner" ] && { printf '%s\n' "$owner"; return; }
+	done < <(
+		git config --get remote.origin.url 2>/dev/null || true
+		git config --get-regexp '^remote\..*\.url$' 2>/dev/null | cut -d' ' -f2- || true
+	)
+
+	# Outside a repo: `gh api /user`, `gh search`. Fall back on the same
+	# directory rule ~/.gitconfig uses for identity.
+	case "$PWD/" in
+		"$HOME"/dev/personal/*) printf 'tvrmsmith\n' ;;
+		*) printf '%s\n' "${GH_DEFAULT_OWNER:-TrevorSmith-Wellsky}" ;;
+	esac
+}
+
+# One keychain entry per owner, written by extras/gh-readonly-tokens.sh. gh's
+# own `gh:github.com` entries are keyed by account and so cannot hold two
+# tokens for one user; these are ours, under a distinct service name.
+keychain_token() {
+	security find-generic-password -s "gh-readonly" -a "$1" -w 2>/dev/null
+}
+
+# Report the routing decision and exit without running anything. Lets the bats
+# suite cover the classifier, and lets you check a command before trusting it.
+if [ -n "${GH_SHIM_EXPLAIN:-}" ]; then
+	if is_read "$@"; then echo "read $(gh_owner "$@")"; else echo "write"; fi
+	exit 0
+fi
+
+if is_read "$@"; then
+	if token="$(keychain_token "$(gh_owner "$@")")" && [ -n "$token" ]; then
+		exec env GH_TOKEN="$token" "$real_gh" "$@"
+	fi
+	# No read-only token provisioned yet (fresh machine, or gh-tokens-setup not
+	# run). Fall through and prompt rather than failing the command.
+fi
+
+# op matches plugins by bare command name, so `op plugin run -- /abs/path/gh`
+# errors with "unknown plugin". Drop this shim's directory from PATH instead,
+# which leaves the real binary first and avoids recursing into ourselves.
+stripped=""
+IFS=: read -ra parts <<< "$PATH"
+for part in "${parts[@]}"; do
+	[ "$part" = "$shim_dir" ] && continue
+	stripped="${stripped:+$stripped:}$part"
+done
+
+# No 1Password to escalate to: a Linux sandbox gets dot-local/bin copied in, so
+# this shim shadows the real gh there too, and it must not break it. The
+# sandbox's own gh auth is the credential in that case.
+if ! command -v op >/dev/null 2>&1; then
+	exec "$real_gh" "$@"
+fi
+
+echo "gh: needs write access, asking 1Password to approve:" >&2
+echo "    gh $*" >&2
+exec env PATH="$stripped" op plugin run -- gh "$@"
