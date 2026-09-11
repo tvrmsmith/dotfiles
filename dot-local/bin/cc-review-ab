@@ -16,6 +16,7 @@ out, think (a subset of out).
 """
 import argparse
 import json
+import math
 import os
 import pathlib
 import random
@@ -189,6 +190,43 @@ def row_tokens(rec):
     return {"out": tokens}
 
 
+def rate(rows, key="important"):
+    """Findings per run and its 95% half-width, treating the count as Poisson.
+
+    Half-width is 1.96*sqrt(mean/n): at n=20 and a mean of 1.0 that is +-0.44,
+    wide enough to invent a trend that reverses once the cell fills up.
+    """
+    vals = [r[key] for r in rows if r.get(key) is not None]
+    if not vals:
+        return None, None
+    mean = sum(vals) / len(vals)
+    return mean, 1.96 * math.sqrt(mean / len(vals))
+
+
+def separation(agg, key="important"):
+    """Per aspect, the two best-sampled arms and whether their intervals are disjoint."""
+    out = []
+    for aspect in sorted(agg):
+        arms = sorted(agg[aspect], key=lambda a: len(agg[aspect][a]), reverse=True)[:2]
+        if len(arms) < 2:
+            continue
+        (a, b) = arms
+        ma, ca = rate(agg[aspect][a], key)
+        mb, cb = rate(agg[aspect][b], key)
+        if ma is None or mb is None:
+            continue
+        hi, lo = (a, b) if ma >= mb else (b, a)
+        mhi, chi = (ma, ca) if ma >= mb else (mb, cb)
+        mlo, clo = (mb, cb) if ma >= mb else (ma, ca)
+        out.append({
+            "aspect": aspect, "hi": hi, "lo": lo,
+            "mhi": mhi, "chi": chi, "mlo": mlo, "clo": clo,
+            "ratio": mhi / mlo if mlo else None,
+            "separated": mhi - chi > mlo + clo,
+        })
+    return out
+
+
 def report(args):
     if not LOG.exists():
         sys.exit("no log yet")
@@ -220,6 +258,19 @@ def report(args):
                            for c in TOKEN_COLS)
             print(f"{aspect:<{w}}  {arm:<{aw}} {len(rows):>3}{counts}{toks}"
                   f" {cell(rows, lambda r: r.get('seconds'), 6, 1)}")
+
+    rows = separation(agg)
+    if not rows:
+        return
+    print("\nImportant findings per run, 95% interval. separated = the intervals are disjoint,")
+    print("so the gap is not just sampling noise.\n")
+    aw = max(len(f"{r['hi']} vs {r['lo']}") for r in rows)
+    print(f"{'aspect':<{w}}  {'arms':<{aw}}  {'higher':>13}  {'lower':>13}  {'ratio':>5}  verdict")
+    for r in rows:
+        ratio = f"{r['ratio']:.2f}x" if r["ratio"] else "-"
+        print(f"{r['aspect']:<{w}}  {r['hi']} vs {r['lo']:<{aw - len(r['hi']) - 4}}  "
+              f"{r['mhi']:>6.2f}+-{r['chi']:<5.2f}  {r['mlo']:>6.2f}+-{r['clo']:<5.2f}  "
+              f"{ratio:>5}  {'separated' if r['separated'] else 'overlapping'}")
 
 
 def main():
