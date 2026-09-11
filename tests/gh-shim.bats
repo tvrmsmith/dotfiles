@@ -6,6 +6,32 @@ SHIM="${BATS_TEST_DIRNAME}/../dot-local/bin/gh"
 
 routes() { GH_SHIM_EXPLAIN=1 bash "$SHIM" "$@"; }
 
+# A shim only shims if it wins the PATH race. dot-zshenv prepends ~/.local/bin,
+# then brew, gcloud and mise each prepend over it in dot-zprofile, which once
+# left the real gh first and handed agents gh's own write-scoped token.
+@test "the shim directory outranks homebrew in a login shell" {
+  command -v zsh >/dev/null || skip "no zsh"
+  p="$(zsh -lc 'printf %s "$PATH"' 2>/dev/null)"
+  shim="$(printf '%s' "$p" | tr ':' '\n' | grep -nxF "$HOME/.local/bin" | head -1 | cut -d: -f1)"
+  brew_bin="$(printf '%s' "$p" | tr ':' '\n' | grep -nxF "$(dirname "$(command -v brew 2>/dev/null || echo /nope/x)")" | head -1 | cut -d: -f1)"
+  [ -n "$brew_bin" ] || skip "homebrew not on PATH here"
+  if [ -z "$shim" ] || [ "$shim" -gt "$brew_bin" ]; then
+    printf '~/.local/bin at position %s, homebrew at %s\n' "${shim:-absent}" "$brew_bin" >&2
+    exit 1
+  fi
+}
+
+# op plugin init writes `alias gh="op plugin run -- gh"`, and an alias beats
+# PATH. The file still gets sourced so other plugins keep working; only gh is
+# unaliased.
+@test "a login shell resolves gh to the shim, with op plugins still loaded" {
+  command -v zsh >/dev/null || skip "no zsh"
+  [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/op/plugins.sh" ] || skip "no op plugins file"
+  out="$(zsh -lic 'type gh; print "plugins=${OP_PLUGIN_ALIASES_SOURCED:-no}"' 2>/dev/null | tail -2)"
+  contains "$out" "$HOME/.local/bin/gh"
+  contains "$out" "plugins=1"
+}
+
 @test "read verbs stay on the silent path" {
   for args in "pr list" "pr view 12" "pr diff 12" "pr checks 12" \
               "issue list" "issue view 3" "repo view" "repo clone o/r" \

@@ -172,13 +172,16 @@ clcwf() { (export CLAUDE_CODE_DISABLE_WORKFLOWS=0; claude-launcher --dangerously
 [ -f "$DEV_PERSONAL/dotfiles/extras/agent-sandboxing/init.zsh" ] && \
   source "$DEV_PERSONAL/dotfiles/extras/agent-sandboxing/init.zsh"
 
-# 1Password CLI shell plugins, deliberately NOT sourced. That file is generated
-# by `op plugin init` and its only content is `alias gh="op plugin run -- gh"`,
-# which sends every gh call — reads included — through a biometric approval, and
-# the alias reaches agent shells too. dot-local/bin/gh replaces it: reads use a
-# read-only keychain token, writes still go through the plugin and still prompt.
-# Re-sourcing this would shadow the shim, since an alias beats PATH. See
-# dotfiles-7wt.
+# 1Password CLI shell plugins. `op plugin init` writes one alias per plugin
+# here, so the file is sourced to keep future plugins working, then the gh alias
+# alone is dropped. That alias sends every gh call, reads included, through a
+# biometric approval, and it reaches agent shells; dot-local/bin/gh does the job
+# better, using a read-only keychain token for reads and this same plugin for
+# writes. Unaliasing rather than editing the file, because `op plugin init`
+# rewrites it. An alias beats PATH, so leaving it would shadow the shim
+# entirely. See dotfiles-7wt.
+[ -f "$XDG_CONFIG_HOME/op/plugins.sh" ] && source "$XDG_CONFIG_HOME/op/plugins.sh"
+unalias gh 2>/dev/null
 
 # bun completions
 [ -s "/Users/trevor.smith/.bun/_bun" ] && source "/Users/trevor.smith/.bun/_bun"

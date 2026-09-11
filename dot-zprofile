@@ -12,3 +12,12 @@ if command -v mise &>/dev/null; then
   eval "$(mise activate zsh --shims)" # this sets up non-interactive sessions
 fi
 
+# Every eval above prepends to PATH, so the shim dirs dot-zshenv put first end
+# up buried. brew alone pushes /opt/homebrew/bin ahead of ~/.local/bin, which
+# let the real gh beat dot-local/bin/gh and hand agents gh's own stored token,
+# write scope and all, with no 1Password approval. A shim that loses the PATH
+# race is not a shim. Re-assert both dirs last, dropping the earlier copies so
+# PATH does not grow a duplicate per nested shell.
+path=("$HOME/.local/bin-claude-shim" "$HOME/.local/bin" ${path:#($HOME/.local/bin-claude-shim|$HOME/.local/bin)})
+export PATH
+
