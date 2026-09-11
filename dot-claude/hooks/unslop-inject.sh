@@ -24,8 +24,21 @@ RULES='Prose rules (unslop), apply to every reply and every file you write:
 6. Plain word over fancy: use, not utilize or leverage. Help, not facilitate.
 7. Say the concrete thing. A mechanism, a number, or an instruction, never a feeling.
 8. No inflation: crucial, pivotal, testament, landscape, showcase, delve, tapestry.
+9. Inverted pyramid. The first two sentences carry the decision, detail descends from there, so stopping early still lands the point.
+10. Brevity governs the report, not the work. Investigate the same, write less of it.
+11. Close on one next step, or none.
 Write clean as you draft. The cleanup pass fails, so never generate the bad sentence.
 Editing a document, PR description, or commit body: load the unslop skill for the full checklist.'
+
+# Subagents receive no output style (verified 2026-09-11 by asking one to
+# introspect), so the audience note the style would carry has to ride along
+# here. Their report goes to an agent, which flips the brevity tradeoff. Padding
+# still burns the caller's window, but a truncated finding costs more than a
+# long one.
+if [ "$EVENT" = "SubagentStart" ]; then
+  RULES="$RULES
+You report to an agent, not to a person. Give the findings and the evidence behind them in full. Completeness beats brevity here, and the requester decides what happens next, so spend the words on substance rather than preamble, recap, or offers."
+fi
 
 jq -n --arg event "$EVENT" --arg ctx "$RULES" '{
   hookSpecificOutput: {
