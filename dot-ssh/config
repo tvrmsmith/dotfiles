@@ -22,7 +22,15 @@ Host github-personal
 	ControlPath ~/.ssh/sockets/personal-%C
 	ControlPersist 1h
 
+# IdentityFile is pinned for the same reason the personal block pins one. With no
+# pin this block takes whichever key the 1Password agent offers first, so a master
+# opened while the personal key led kept authenticating as the personal account for
+# the full ControlPersist hour, and every git call riding that socket inherited it.
+# Diagnosed 2026-09-14 against Redacted.Repo, where a live socket answered as
+# tvrmsmith and turned `git ls-remote` into "Repository not found".
 Host github.com
+	IdentityFile ~/.ssh/github-work.pub
+	IdentitiesOnly yes
 	ControlMaster auto
 	ControlPath ~/.ssh/sockets/work-%C
 	ControlPersist 1h
