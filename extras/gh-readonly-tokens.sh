@@ -183,44 +183,94 @@ finish() {
 # STAGES
 # ──────────────────────────────────────────────────────────────────────────
 
-TOTAL_STAGES=4
+TOTAL_STAGES=5
 
-# Owners given a token during this run. Guards the clobber that `-U` invites:
-# name the same owner at two stages and the second token silently replaces the
-# first, leaving one owner unreachable and no sign of it.
+# Two kinds of token, each its own keychain service, each keyed by owner login.
+# gh-readonly is read-only everywhere. gh-prwrite adds `Pull requests: write`
+# and nothing else, so it opens PRs and cannot merge one: GitHub gates merging
+# on `Contents: write`, which this token does not have. See dotfiles-jwp.
+#
+# Kept as separate tokens rather than one combined token so that a command the
+# shim misclassifies as a read still cannot write. That property is why the
+# read tier can safely borrow a token across owners.
+KIND_SERVICE() { case "$1" in pr) echo gh-prwrite ;; *) echo gh-readonly ;; esac; }
+KIND_LABEL()   { case "$1" in pr) echo "PR-write" ;; *) echo "read-only" ;; esac; }
+
+# Owners given a token during this run, one list per kind. Guards the clobber
+# that `-U` invites: name the same owner at two stages and the second token
+# silently replaces the first, leaving one owner unreachable and no sign of it.
 STORED_OWNERS=()
+STORED_PR_OWNERS=()
+OWNERS_SEEN=()
 
-# One token per GitHub resource owner, because a fine-grained PAT has exactly
-# one. Stored in the login keychain under service "gh-readonly", keyed by owner
-# login, which is what ~/.local/bin/gh looks up. Never write_env: this repo is
-# public, and a token in a file is a token in every backup.
+already_stored() {
+  local kind="$1" owner="$2" seen
+  case "$kind" in
+    pr) for seen in ${STORED_PR_OWNERS+"${STORED_PR_OWNERS[@]}"}; do
+          [ "$seen" = "$owner" ] && return 0; done ;;
+    *)  for seen in ${STORED_OWNERS+"${STORED_OWNERS[@]}"}; do
+          [ "$seen" = "$owner" ] && return 0; done ;;
+  esac
+  return 1
+}
+
+# One token per GitHub resource owner per kind, because a fine-grained PAT has
+# exactly one resource owner. Never write_env: this repo is public, and a token
+# in a file is a token in every backup.
 store_token() {
-  local owner="$1" token="$2" seen
+  local owner="$1" token="$2" kind="${3:-read}" service label
+  service=$(KIND_SERVICE "$kind"); label=$(KIND_LABEL "$kind")
   if [ -z "$owner" ] || [ -z "$token" ]; then
-    [ -n "$owner" ] && { SKIPPED+=("read-only token for $owner"); warn "no token entered for $owner, skipping"; }
+    [ -n "$owner" ] && { SKIPPED+=("$label token for $owner"); warn "no token entered for $owner, skipping"; }
     return 0
   fi
-  for seen in ${STORED_OWNERS+"${STORED_OWNERS[@]}"}; do
-    if [ "$seen" = "$owner" ]; then
-      warn "you already stored a token for $owner in this run."
-      note "  Each owner holds exactly one token, so saving this would discard that one."
-      note "  An org token belongs under the ORG's login, never under your username."
-      SKIPPED+=("read-only token for $owner (duplicate owner, not stored)")
-      return 1
-    fi
-  done
-  if security add-generic-password -U -s gh-readonly -a "$owner" -w "$token" \
-       -D "GitHub read-only PAT" 2>/dev/null; then
-    STORED_OWNERS+=("$owner")
-    printf '  %s✓ stored%s read-only token for %s\n' "$GREEN" "$RESET" "$owner"
+  if already_stored "$kind" "$owner"; then
+    warn "you already stored a $label token for $owner in this run."
+    note "  Each owner holds exactly one token of each kind, so saving this would discard that one."
+    note "  An org token belongs under the ORG's login, never under your username."
+    SKIPPED+=("$label token for $owner (duplicate owner, not stored)")
+    return 1
+  fi
+  if security add-generic-password -U -s "$service" -a "$owner" -w "$token" \
+       -D "GitHub $label PAT" 2>/dev/null; then
+    case "$kind" in
+      pr) STORED_PR_OWNERS+=("$owner") ;;
+      *)  STORED_OWNERS+=("$owner") ;;
+    esac
+    printf '  %s✓ stored%s %s token for %s\n' "$GREEN" "$RESET" "$label" "$owner"
   else
-    SKIPPED+=("read-only token for $owner (keychain write failed)")
+    SKIPPED+=("$label token for $owner (keychain write failed)")
     warn "could not write the keychain entry for $owner"
   fi
   return 0
 }
 
-has_token() { security find-generic-password -s gh-readonly -a "$1" -w >/dev/null 2>&1; }
+has_token() {
+  security find-generic-password -s "$(KIND_SERVICE "${2:-read}")" -a "$1" -w >/dev/null 2>&1
+}
+
+# Every owner this run named, whatever came of it. Stage 4 offers a PR token for
+# each rather than asking you to retype the logins.
+remember_owner() {
+  local owner="$1" seen
+  for seen in ${OWNERS_SEEN+"${OWNERS_SEEN[@]}"}; do [ "$seen" = "$owner" ] && return 0; done
+  OWNERS_SEEN+=("$owner")
+}
+
+# Who stage 4 offers. OWNERS_SEEN alone is wrong on a re-run: stage 3 only names
+# an org when you type one, so keeping every existing token and answering "done"
+# left the orgs out of the PR stage entirely. Recover them from the owners that
+# already hold a read token on this machine.
+pr_stage_owners() {
+  local owner
+  {
+    for owner in ${OWNERS_SEEN+"${OWNERS_SEEN[@]}"}; do printf '%s\n' "$owner"; done
+    suggest_owners | while IFS= read -r owner; do
+      [ -n "$owner" ] || continue
+      has_token "$owner" && printf '%s\n' "$owner"
+    done
+  } | awk '!seen[$0]++'
+}
 
 # Owner logins already checked out on this machine. Stage 3 needs an exact
 # login, and reading it off a remote beats recalling it.
@@ -234,41 +284,56 @@ suggest_owners() {
 }
 
 permissions_recipe() {
-  step "Repository access: All repositories."
-  step "Repository permissions, every one set to Read-only: Contents, Metadata,"
-  say  "    Pull requests, Issues, Actions, Commit statuses, Workflows."
-  step "Leave every Account permission at No access."
+  case "$1" in
+    pr)
+      step "Repository access: All repositories."
+      step "Repository permissions: set Pull requests to ${BOLD}Read and write${RESET}."
+      step "Set Contents, Metadata, Issues, Actions, Commit statuses to Read-only."
+      warn "Contents MUST stay Read-only. That is the whole gate."
+      note "  Merging a PR needs Contents: write, and so does enabling auto-merge."
+      note "  Leave it at read and this token cannot merge anything, by any route."
+      step "Leave every Account permission at No access."
+      ;;
+    *)
+      step "Repository access: All repositories."
+      step "Repository permissions, every one set to Read-only: Contents, Metadata,"
+      say  "    Pull requests, Issues, Actions, Commit statuses, Workflows."
+      step "Leave every Account permission at No access."
+      ;;
+  esac
   step "Expiration: whatever you'll tolerate re-running this wizard for."
 }
 
-# One stage per owner, all shaped the same: name the owner, mint a token whose
-# resource owner is that exact login, paste it. Returns non-zero when nothing
-# was stored, which the org loop uses to re-ask.
+# Name the owner, mint a token whose resource owner is that exact login, paste
+# it. Returns non-zero when nothing was stored, which the org loop uses to
+# re-ask.
 collect_for_owner() {
-  local owner="$1" token
+  local owner="$1" kind="${2:-read}" token label
+  label=$(KIND_LABEL "$kind")
+  remember_owner "$owner"
   # Ask before opening anything. A re-run to add one owner should not spray a
   # new-token page per stage for the owners you are keeping.
-  if has_token "$owner"; then
-    note "$owner already has a token."
-    if ! confirm "Replace the token for $owner?"; then
-      note "kept the existing token for $owner"
+  if has_token "$owner" "$kind"; then
+    note "$owner already has a $label token."
+    if ! confirm "Replace the $label token for $owner?"; then
+      note "kept the existing $label token for $owner"
       return 0
     fi
   fi
   open_url "https://github.com/settings/personal-access-tokens/new"
   step "Resource owner: $owner. That dropdown is the whole point of this stage."
-  permissions_recipe
-  ask_secret token "Paste the token whose resource owner is $owner:"
+  permissions_recipe "$kind"
+  ask_secret token "Paste the $label token whose resource owner is $owner:"
   if [ -z "$token" ]; then
-    if has_token "$owner"; then note "kept the existing token for $owner"; return 0; fi
-    SKIPPED+=("read-only token for $owner")
-    warn "no token entered for $owner, skipping"
+    if has_token "$owner" "$kind"; then note "kept the existing $label token for $owner"; return 0; fi
+    SKIPPED+=("$label token for $owner")
+    warn "no $label token entered for $owner, skipping"
     return 0
   fi
-  store_token "$owner" "$token"
+  store_token "$owner" "$token" "$kind"
 }
 
-banner "GitHub read-only tokens for ~/.local/bin/gh"
+banner "GitHub tokens for ~/.local/bin/gh"
 
 stage "Your personal account"
 say "A fine-grained token that reads your own repos and nothing else."
@@ -305,6 +370,35 @@ while true; do
   collect_for_owner "$ORG_OWNER" || pause "Press Enter to try again."
 done
 
+stage "PR tokens"
+say "A second token per owner so agents can open PRs without asking you, while"
+say "merging still waits for your 1Password approval."
+say ""
+say "This is not a policy the shim enforces, it is what the token can do. GitHub"
+say "gates opening a PR on Pull requests: write, and merging on Contents: write."
+say "Grant the first, withhold the second, and merge is closed off entirely."
+say ""
+note "Skip any owner you don't want agents opening PRs against. A skipped owner"
+note "  just means opening a PR there keeps prompting, same as today."
+say ""
+for OWNER in $(pr_stage_owners); do
+  if confirm "Add a PR-write token for $OWNER?"; then
+    collect_for_owner "$OWNER" pr || pause "Press Enter to continue."
+  else
+    note "skipped $OWNER; its PR creation keeps prompting"
+  fi
+done
+
+# The list above comes from this run and from this machine's remotes, so an org
+# whose repos are not cloned here appears in neither. Ask, rather than making
+# that owner wait for the next re-run.
+say ""
+while true; do
+  ask EXTRA_OWNER "Another owner to add a PR token for, or done:"
+  case "$EXTRA_OWNER" in "" | done | Done | DONE) break ;; esac
+  collect_for_owner "$EXTRA_OWNER" pr || pause "Press Enter to try again."
+done
+
 # Prove the scope, not the routing. Reading a repo shows the token reaches the
 # owner; a 403 on POST git/blobs shows it cannot write there. The blob is
 # unreferenced, so it touches no branch and GitHub garbage-collects it, which
@@ -329,14 +423,56 @@ verify_owner() {
   esac
 }
 
+# The PR token has to clear two bars: it can open a PR, and it cannot merge one.
+#
+# For the first, POST a PR with a head branch that does not exist. GitHub checks
+# permission before it validates the body, so 422 means authorised and 403 means
+# not, and either way no PR is created. For the second, reuse the blob probe:
+# merging needs Contents: write, so a 403 from POST git/blobs proves the token
+# cannot merge without going anywhere near a real merge.
+verify_pr_owner() {
+  local owner="$1" token repo create_status blob_status
+  token=$(security find-generic-password -s gh-prwrite -a "$owner" -w 2>/dev/null) || {
+    note "$owner: no PR token, so opening a PR there still prompts"; return; }
+  repo=$(GH_TOKEN="$token" gh api "/user/repos?per_page=100&affiliation=owner,organization_member" \
+           --jq ".[] | select(.owner.login == \"$owner\") | .full_name" 2>/dev/null | head -1)
+  if [ -z "$repo" ]; then
+    warn "$owner: PR token stored, but it can see no repo owned by $owner."
+    note "  Its resource owner is probably a different login, or the org has not approved it."
+    return
+  fi
+  create_status=$(GH_TOKEN="$token" gh api -X POST "/repos/$repo/pulls" \
+                    -f title=probe -f head=gh-wizard-probe-does-not-exist -f base=main \
+                    --silent -i 2>/dev/null | head -1)
+  blob_status=$(GH_TOKEN="$token" gh api -X POST "/repos/$repo/git/blobs" \
+                  -f content=probe -f encoding=utf-8 --silent -i 2>/dev/null | head -1)
+  case "$create_status" in
+    *422*) ;;
+    *403*) warn "$owner: the PR token cannot open a PR on $repo (403)."
+           note "  Set Pull requests to Read and write and re-run."; return ;;
+    *)     warn "$owner: the PR probe on $repo returned '${create_status:-no response}'."
+           note "  Expected 422 (authorised, bad branch) or 403 (not authorised)."; return ;;
+  esac
+  case "$blob_status" in
+    *403*) printf '  %s✓ %s%s can open PRs on %s, cannot merge them\n' "$GREEN" "$owner" "$RESET" "$repo" ;;
+    *)     warn "$owner: the PR token can WRITE CONTENTS on $repo ('${blob_status:-no response}', not 403)."
+           note "  That means it can merge. Set Contents back to Read-only and regenerate it." ;;
+  esac
+}
+
 stage "Verify"
-say "Routing first. A read prints 'read <owner>', a write prints 'write'."
+say "Routing first: a read prints 'read <owner>', opening a PR prints"
+say "'pr-write <owner>', and anything needing approval prints 'write'."
 GH_SHIM_EXPLAIN=1 "$HOME/.local/bin/gh" pr list || true
+GH_SHIM_EXPLAIN=1 "$HOME/.local/bin/gh" pr create --fill || true
 GH_SHIM_EXPLAIN=1 "$HOME/.local/bin/gh" pr merge 1 || true
 say ""
 say "Now the scope of each token stored, which is the check that matters."
 for OWNER in ${STORED_OWNERS+"${STORED_OWNERS[@]}"}; do verify_owner "$OWNER"; done
-if [ -z "${STORED_OWNERS+x}" ]; then note "nothing stored this run, so nothing to verify."; fi
+for OWNER in ${STORED_PR_OWNERS+"${STORED_PR_OWNERS[@]}"}; do verify_pr_owner "$OWNER"; done
+if [ -z "${STORED_OWNERS+x}" ] && [ -z "${STORED_PR_OWNERS+x}" ]; then
+  note "nothing stored this run, so nothing to verify."
+fi
 pause "Press Enter to finish."
 
 finish

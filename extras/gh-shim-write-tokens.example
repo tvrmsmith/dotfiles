@@ -1,0 +1,14 @@
+# Which 1Password item holds the write token for each GitHub owner.
+# Copy to ~/.config/gh-shim/write-tokens, chmod 600, and fill in your own refs.
+#
+#   <github-owner>  <1password-account>  op://<vault>/<item>/<field>
+#
+# Right-click the token field in 1Password and "Copy Secret Reference" to get
+# the op:// value. `op account list` gives the account column.
+#
+# dot-local/bin/gh reads this for the write tier only. Reads and the PR
+# lifecycle come from the login keychain instead, so they never touch 1Password.
+# An owner with no line here falls back to `op plugin run -- gh`, which picks an
+# account on its own and may well pick the wrong one.
+
+tvrmsmith  my.1password.com  op://Private/GitHub Personal Access Token/token
