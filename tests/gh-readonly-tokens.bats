@@ -8,15 +8,23 @@ WIZARD="${BATS_TEST_DIRNAME}/../extras/gh-readonly-tokens.sh"
 setup() {
   BIN="$(mktemp -d)"
   export LOG="$BIN/calls.log"
-  # PRESENT lists the owners the fake keychain already holds, so a test can
-  # replay a re-run rather than only a first run.
+  # PRESENT and PRESENT_PR list the owners the fake keychain already holds, per
+  # service, so a test can replay a re-run rather than only a first run. Keeping
+  # them separate matters: an owner can hold a read token and no PR token, which
+  # is every owner's state on the first run after the PR tier landed.
   cat > "$BIN/security" <<'EOF'
 #!/bin/bash
 echo "security $*" >> "$LOG"
 if [ "$1" = find-generic-password ]; then
-  for owner in $PRESENT; do
-    case " $* " in *" -a $owner "*) exit 0 ;; esac
+  svc=""; acct=""
+  while [ $# -gt 0 ]; do
+    case "$1" in -s) svc="$2"; shift 2 ;; -a) acct="$2"; shift 2 ;; *) shift ;; esac
   done
+  case "$svc" in
+    gh-prwrite) held="$PRESENT_PR" ;;
+    *)          held="$PRESENT" ;;
+  esac
+  for owner in $held; do [ "$owner" = "$acct" ] && exit 0; done
   exit 1
 fi
 exit 0
@@ -26,7 +34,7 @@ EOF
   done
   printf '#!/bin/bash\nexit 0\n' > "$BIN/gh"
   chmod +x "$BIN"/*
-  export PATH="$BIN:$PATH" ENV_FILE="$BIN/.env" PRESENT=""
+  export PATH="$BIN:$PATH" ENV_FILE="$BIN/.env" PRESENT="" PRESENT_PR=""
 }
 
 teardown() { rm -rf "$BIN"; }
@@ -34,6 +42,12 @@ teardown() { rm -rf "$BIN"; }
 # Keystrokes in, "owner <- token" lines out, one per token actually stored.
 run_wizard() { printf '%b' "$1" | bash "$WIZARD" >/dev/null 2>&1 || true
   grep add-generic-password "$LOG" | sed -E 's/.*-a ([^ ]+) -w ([^ ]+).*/\1 <- \2/'
+}
+
+# Same, but naming the keychain service, which is what separates a read-only
+# token from a PR-write one.
+run_wizard_svc() { printf '%b' "$1" | bash "$WIZARD" >/dev/null 2>&1 || true
+  grep add-generic-password "$LOG" | sed -E 's/.*-s ([^ ]+) -a ([^ ]+) -w ([^ ]+).*/\1 \2 <- \3/'
 }
 
 @test "a clean run stores one token per owner" {
@@ -73,6 +87,55 @@ TrevorSmith-Wellsky <- w-tok"
 TrevorSmith-Wellsky <- w-tok
 first-org <- a
 second-org <- b"
+}
+
+# The PR stage offers each owner the earlier stages named, so an owner is typed
+# once and gets both tokens. A PR token is opt-in per owner: declining leaves
+# that owner prompting on `pr create`, which is the pre-existing behaviour.
+@test "the PR stage stores under gh-prwrite, and only for owners you accept" {
+  out="$(run_wizard_svc '\n\np-tok\n\nw-tok\ndone\ny\npr-tok\nn\n\n')"
+  equals "$out" "gh-readonly tvrmsmith <- p-tok
+gh-readonly TrevorSmith-Wellsky <- w-tok
+gh-prwrite tvrmsmith <- pr-tok"
+}
+
+@test "declining every owner in the PR stage stores no PR token at all" {
+  out="$(run_wizard_svc '\n\np-tok\n\nw-tok\ndone\nn\nn\n\n')"
+  lacks "$out" "gh-prwrite"
+}
+
+# The bug this pins: OWNERS_SEEN only held owners typed this run, so a re-run
+# that kept every existing token and answered "done" at the org stage never
+# offered the orgs a PR token. They now come from the machine's own remotes.
+@test "a re-run that keeps every token still offers orgs a PR token" {
+  PRESENT="tvrmsmith TrevorSmith-Wellsky some-org"
+  # A checkout whose remote names an org, which is where stage 4 finds it.
+  mkdir -p "$BIN/dev/some-repo"
+  git -C "$BIN/dev/some-repo" init -q .
+  git -C "$BIN/dev/some-repo" remote add origin git@github.com:some-org/thing.git
+  export HOME="$BIN"
+
+  #        banner  personal  keep  work  keep  org=done  then the PR stage
+  out="$(run_wizard_svc '\n\nn\n\nn\ndone\nn\nn\ny\norg-pr\ndone\n\n')"
+  contains "$out" "gh-prwrite some-org <- org-pr"
+}
+
+@test "an owner with no read token is not offered a PR token" {
+  PRESENT="tvrmsmith"
+  mkdir -p "$BIN/dev/some-repo"
+  git -C "$BIN/dev/some-repo" init -q .
+  git -C "$BIN/dev/some-repo" remote add origin git@github.com:stranger-org/thing.git
+  export HOME="$BIN"
+
+  out="$(run_wizard_svc '\n\nn\n\nw-tok\ndone\nn\nn\ndone\n\n')"
+  lacks "$out" "stranger-org"
+}
+
+@test "an org named in stage 3 is offered a PR token too" {
+  out="$(run_wizard_svc '\n\np-tok\n\nw-tok\nsome-org\norg-tok\ndone\nn\nn\ny\norg-pr\n\n')"
+  contains "$out" "gh-prwrite some-org <- org-pr"
+  # The org's read token is untouched by the PR stage.
+  contains "$out" "gh-readonly some-org <- org-tok"
 }
 
 @test "no token is ever written to a file" {
