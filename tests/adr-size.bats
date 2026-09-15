@@ -103,7 +103,7 @@ $(words 100)
 ## Consequences
 
 $(words 2500)")"
-  contains "$result" 'consider superseding'
+  contains "$result" 'consider consolidating it in place'
 }
 
 @test "a file under the word limit with a short block stays silent" {
@@ -135,42 +135,36 @@ The rule text." "Just some prose, no heading.")"
   contains "$result" 'No `## Current rule` or `## Decision` block'
 }
 
-@test "five Amended paragraphs trip the consolidation nudge under the word limit" {
+@test "dated entries are not counted, however many the file carries" {
   live_file="$ADR_DIR/0001-live.md"
   printf '# Live ADR\n\n## Decision\n\nThe rule text.\n\nTail sentence.\n' > "$live_file"
   entries=""
-  for i in 1 2 3 4 5; do
-    entries="${entries}**Amended 2026-09-0${i}.** Note ${i}.
-
-"
-  done
-  result="$(edit_context "$live_file" "Tail sentence." "${entries}Tail sentence.")"
-  contains "$result" '5 dated entries'
-}
-
-@test "five dated Changelog bullets trip the same nudge" {
-  live_file="$ADR_DIR/0001-live.md"
-  printf '# Live ADR\n\n## Decision\n\nThe rule text.\n\n## Changelog\n\nTail sentence.\n' > "$live_file"
-  entries=""
-  for i in 1 2 3 4 5; do
-    entries="${entries}- **2026-08-0${i}** Note ${i}.
-"
-  done
-  result="$(edit_context "$live_file" "Tail sentence." "$entries")"
-  contains "$result" '5 dated entries'
-}
-
-@test "four dated entries under the word limit do not trip the nudge" {
-  live_file="$ADR_DIR/0001-live.md"
-  printf '# Live ADR\n\n## Decision\n\nThe rule text.\n\nTail sentence.\n' > "$live_file"
-  entries=""
-  for i in 1 2 3 4; do
+  for i in 1 2 3 4 5 6 7 8 9; do
     entries="${entries}**Amended 2026-09-0${i}.** Note ${i}.
 
 "
   done
   result="$(edit_context "$live_file" "Tail sentence." "${entries}Tail sentence.")"
   is_empty "$result"
+}
+
+@test "dated Changelog bullets are not counted either" {
+  live_file="$ADR_DIR/0001-live.md"
+  printf '# Live ADR\n\n## Decision\n\nThe rule text.\n\n## Changelog\n\nTail sentence.\n' > "$live_file"
+  entries=""
+  for i in 1 2 3 4 5 6 7 8 9; do
+    entries="${entries}- **2026-08-0${i}** Note ${i}.
+"
+  done
+  result="$(edit_context "$live_file" "Tail sentence." "$entries")"
+  is_empty "$result"
+}
+
+@test "a file thick with amendments is still nudged once it passes the word limit" {
+  live_file="$ADR_DIR/0001-live.md"
+  printf '# Live ADR\n\n## Decision\n\nThe rule text.\n\nTail sentence.\n' > "$live_file"
+  result="$(edit_context "$live_file" "Tail sentence." "**Amended 2026-09-01.** $(words 2600)")"
+  contains "$result" 'consider consolidating it in place'
 }
 
 @test "an ADR marked superseded by a paragraph is frozen, never linted" {
@@ -204,7 +198,7 @@ The header approach is
   superseded. A client-supplied header is spoofable.
 
 $(words 3000)")"
-  contains "$result" 'consider superseding'
+  contains "$result" 'consider consolidating it in place'
 }
 
 @test "the ADR directory README is an index, never linted" {

@@ -3,22 +3,23 @@
 # adr-size.sh. PreToolUse size lint for ADRs, in any repo.
 #
 # An ADR grows quietly, one amendment at a time, until the decision is buried in
-# its own changelog. This reports the counts at the moment of the write.
+# its own changelog. This reports the word counts at the moment of the write.
 #
-# Three checks, all nudges and never a deny. A block lands on the write itself,
+# Two checks, both nudges and never a deny. A block lands on the write itself,
 # and a write mid-way through drafting an ADR is exactly the write a wrong block
 # would hit:
 #
-#   1. The file states its decision under a heading a reader can find.
-#   2. That block stays under BLOCK_WORDS.
-#   3. The file stays under FILE_WORDS, and carries under AMENDMENTS
-#      date-stamped entries.
+#   1. The file states its decision under a heading a reader can find, and that
+#      block stays under BLOCK_WORDS.
+#   2. The file stays under FILE_WORDS.
+#
+# Length is the only trigger. Counting amendments was the earlier rule and it
+# measured the wrong thing: a file that still reads straight through is fine
+# however many dated paragraphs it carries, and one that does not is already
+# over a word ceiling, which says so without a second rule.
 #
 # Nothing here is keyed to one repo's template. The block heading matches either
-# name in general ADR use, `## Current rule` or `## Decision`, and the amendment
-# counter matches any line-leading `**YYYY-MM-DD`, which is both the standalone
-# amendment paragraph and the dated bullet under a `## Changelog`. Measured
-# against a ~200-ADR repo those cover all but three files.
+# name in general ADR use, `## Current rule` or `## Decision`.
 #
 # The limits are deliberately looser than any one repo's house rule, so the
 # nudge marks real bloat rather than firing on a quarter of ordinary writes. A
@@ -38,10 +39,8 @@ set -uo pipefail
 
 BLOCK_WORDS="${ADR_BLOCK_WORDS:-400}"
 FILE_WORDS="${ADR_FILE_WORDS:-2500}"
-AMENDMENTS="${ADR_AMENDMENTS:-5}"
 
 BLOCK_RE='^## (Current rule|Decision)([[:space:]]|$)'
-AMENDMENT_RE='^[-*]?[[:space:]]*\*\*(Amended )?[0-9]{4}-[0-9]{2}-[0-9]{2}'
 
 [ "${NM_GATE:-}" = 1 ] && exit 0
 
@@ -133,12 +132,8 @@ block_words() {
   ' | wc -w | tr -d ' '
 }
 
-amendment_count() {
-  printf '%s' "$1" | grep -cE "$AMENDMENT_RE"
-}
-
 size_notes() {
-  local new_content="$1" old_content="$2" notes="" words total amendments
+  local new_content="$1" old_content="$2" notes="" words total
 
   is_superseded "$new_content" && return 0
 
@@ -156,9 +151,8 @@ size_notes() {
   fi
 
   total="$(printf '%s' "$new_content" | wc -w | tr -d ' ')"
-  amendments="$(amendment_count "$new_content")"
-  if [ "$total" -gt "$FILE_WORDS" ] || [ "$amendments" -ge "$AMENDMENTS" ]; then
-    notes="${notes}The file runs $total words with $amendments dated entries, against limits of $FILE_WORDS and $AMENDMENTS. Past that a reader reconstructs the rule from a changelog; consider superseding with a new ADR. "
+  if [ "$total" -gt "$FILE_WORDS" ]; then
+    notes="${notes}The file runs $total words against a $FILE_WORDS limit. Past that a reader reconstructs the rule from a changelog; consider consolidating it in place, or splitting it if it holds more than one decision. "
   fi
 
   printf '%s' "${notes% }"
