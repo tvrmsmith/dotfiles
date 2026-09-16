@@ -75,13 +75,18 @@ Used by `/wayfinder`. The **map** is one bead; its tickets are child beads.
 
 - **Claim**: `bd update <id> --claim` — the session's first write, before any work.
 
-- **Resolve**: record the answer, then close, then index it on the map:
+- **Resolve**: record the answer in `design`, then close, then index it on the map:
 
   ```bash
-  bd comment <id> --file <answer>
+  bd update <id> --design-file <answer>            # the record: what is true now
   bd close <id> --reason "<one-line answer>"
   bd update <map-id> --body-file <updated-map>     # append to Decisions so far
   ```
+
+  The answer goes in `design`, not in a comment. Comments hold the trail (alternatives
+  rejected, grilling, approval evidence), and `bd search` does not index them. Load the
+  **`bd-decision-records`** skill for the full field split and the amendment rule; every
+  wayfinder ticket is typed `decision`, so `~/.claude/hooks/bd-close-guard.sh` enforces it.
 
   A ticket ruled out of scope is closed the same way and gisted into the map's **Out of scope**
   section instead.
