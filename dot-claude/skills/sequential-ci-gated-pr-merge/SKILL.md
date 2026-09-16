@@ -53,10 +53,10 @@ Environment-specific gotchas (1Password/`gh` aliasing, worktree auth, macOS bash
 
 ## Usage example
 
-Merge ordered set `#1408 #1419 #1407 #1422` for `mediwareinc/Redacted.Repo`, one at a time:
+Merge ordered set `#1408 #1419 #1407 #1422`, one at a time:
 
 ```bash
-REPO=mediwareinc/Redacted.Repo
+REPO=<owner>/<repo>
 SKILL=~/.claude/skills/sequential-ci-gated-pr-merge
 
 # --- PR 1408 (iteration 1) ---

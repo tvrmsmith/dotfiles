@@ -24,7 +24,7 @@ Resolve each:
 - **Branch** — must be a feature branch, not the repo default. If the tree has
   uncommitted work, commit it first, then proceed.
 - **Beads issue id** — take it from the user's argument if given; else infer from
-  the branch name (e.g. `feature/repo-123-*` → `repo-123`); else check claimed
+  the branch name (e.g. `feature/proj-123-*` → `proj-123`); else check claimed
   items (`bd list --status in_progress`). If still ambiguous, ask the user and
   wait — a wrong id closes the wrong issue at stage 4.
 - **PR** — likely none yet (no-mistakes creates it). If a PR already exists for

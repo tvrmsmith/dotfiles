@@ -13,7 +13,7 @@ description: >-
 
 # Split a loop branch into per-bead PRs
 
-A `gnhf`/`repo loop` run leaves one branch holding dozens of commits, each
+A loop run (`gnhf`, or the repo's own `loop` CLI) leaves one branch holding dozens of commits, each
 closing its own bead. Reviewers need them separated. The split itself is
 mechanical; the judgement is in **clusters**, **staleness**, and merge order.
 
@@ -342,7 +342,7 @@ Each branch is now an ordinary finished branch. The gates already have skills:
 
 - `no-mistakes` — local review + tests + lint per branch, before anything is pushed.
 - `tuicr` — human review.
-- `/ship-pr` (`repo pr ship`) — rebase, verify, push, open, merge queue.
+- `/ship-pr` (or the repo's own `pr ship` CLI) — rebase, verify, push, open, merge queue.
 
 `no-mistakes` resolves a run from the **current** repo and branch — neither
 `status` nor `respond` takes a run id. Fire each from the worktree holding that
@@ -1001,7 +1001,7 @@ Skip it explicitly on every run rather than trusting the run to stop after `lint
 
 Two costs worth predicting out loud, since both surprise people:
 
-- `repo verify` is transitive. A kernel-wide branch fans out to most of the repo
+- The repo's `verify` CLI is transitive. A kernel-wide branch fans out to most of the repo
   and can gate slower than every other branch combined.
 - The seeder smoke needs a live Aspire stack, and stacks collide across
   worktrees. Run it in one lane, serially, and only for branches touching a

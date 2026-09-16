@@ -23,12 +23,24 @@ REAL_CLAUDE="/Users/trevor.smith/.local/bin/claude"
 LINK_SETTINGS="/Users/trevor.smith/.local/bin/link-claude-settings"
 
 # Map a git remote URL to the real dev checkout whose personal config should be
-# linked into the gate worktree. Add cases here as more repos need it.
+# linked into the gate worktree. The map itself is machine-local (this repo is
+# public and the entries name work repos and absolute paths), one entry per
+# line in $REPO_ROOTS:
+#
+#   <remote-substring> <absolute path to the dev checkout>
+#
+# Blank lines and # comments are skipped. No match means pass-through.
+REPO_ROOTS="${NM_CLAUDE_REPO_ROOTS:-$HOME/.config/nm-claude/repo-roots}"
+
 main_root_for_remote() {
-  case "$1" in
-    *Redacted.Repo*) printf '%s' "/Users/trevor.smith/dev/wellsky/Redacted.Repo" ;;
-    *) return 1 ;;
-  esac
+  [ -r "$REPO_ROOTS" ] || return 1
+  local match root
+  while read -r match root; do
+    case "$match" in ''|'#'*) continue ;; esac
+    [ -n "$root" ] || continue
+    case "$1" in *"$match"*) printf '%s' "$root"; return 0 ;; esac
+  done < "$REPO_ROOTS"
+  return 1
 }
 
 # no-mistakes runs us with cwd = the ephemeral worktree.

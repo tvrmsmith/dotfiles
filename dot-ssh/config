@@ -26,7 +26,7 @@ Host github-personal
 # pin this block takes whichever key the 1Password agent offers first, so a master
 # opened while the personal key led kept authenticating as the personal account for
 # the full ControlPersist hour, and every git call riding that socket inherited it.
-# Diagnosed 2026-09-14 against Redacted.Repo, where a live socket answered as
+# Diagnosed 2026-09-14 against a work repo, where a live socket answered as
 # tvrmsmith and turned `git ls-remote` into "Repository not found".
 Host github.com
 	IdentityFile ~/.ssh/github-work.pub
