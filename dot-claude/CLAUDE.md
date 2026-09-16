@@ -15,10 +15,10 @@
 - `~/.gitconfig` uses `includeIf "gitdir:~/dev/personal/"` to auto-load `~/.gitconfig-personal`, sets personal `user.name`, `user.email` (`tvrmsmith@gmail.com`), personal SSH signing key
 - Repos cloned under `~/dev/personal/` auto-get personal identity, no per-repo `git config` needed
 - Remotes: personal repos use the `github-personal` SSH host alias, work repos use `github.com` direct
-- `gh` routes its own credential per command. Reads and the PR lifecycle (`create`, `comment`, `edit`, `ready`, `close`) are silent. Merging, reviewing, releases and everything else block on Trevor approving them in 1Password. Run `gh` where the repo is, or pass `-R owner/repo`. No `gh auth switch`, no `cd` first
-- Open PRs freely. Never merge one: the token cannot, and `--auto` cannot either
-- A 403 from `gh` means the command needs Trevor's approval. Say so and stop; another endpoint or flag hits the same wall
-- Merging a feature branch → prefer squash merge
+- `gh` routes its own credential per command, don't set token env vars
+- Run `gh` where the repo is, or pass `-R owner/repo`. No `gh auth switch`, no `cd` first
+- A 403 from `gh` means the command needs Trevor's approval, which may not arrive promptly
+- Merging a feature branch → prefer squash merge unless it's handled by the merge queue.
 
 ## Planning
 
