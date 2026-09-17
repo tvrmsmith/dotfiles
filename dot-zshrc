@@ -193,3 +193,7 @@ export PATH="$BUN_INSTALL/bin:$PATH"
 source /Users/trevor.smith/dev/wellsky/consolo.docker-dev/.helpers/compose.sh
 source /Users/trevor.smith/dev/wellsky/consolo.docker-dev/.helpers/git.sh
 source /Users/trevor.smith/dev/wellsky/consolo.docker-dev/.helpers/system.sh
+
+# Last line on purpose. mise, bun and anything sourced above prepend to PATH,
+# which buries ~/.local/bin and the shims that have to win. Defined in .zshenv.
+hoist_shim_path
