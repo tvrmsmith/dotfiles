@@ -191,6 +191,39 @@ PREFIX='\n\np-tok\n\nw-tok\ndone\nn\nn\ndone\n'
   [ ! -f "$WRITE_MAP" ]
 }
 
+# No fine-grained token reads the Checks API on a private repo, so a 403 there
+# is not a misconfiguration and the wizard must not send you hunting for a
+# permission GitHub withdrew. A 403 on Actions or Commit statuses IS grantable,
+# and those two are what `gh pr checks` has to be reconstructed from.
+@test "verify names the Checks limit as a limit, not a fixable permission" {
+  cat > "$BIN/gh" <<'EOF'
+#!/bin/bash
+case "$*" in
+  */user/repos*) echo "tvrmsmith/thing" ;;
+  *check-runs*)  echo "HTTP/2.0 403 Forbidden" ;;
+  *git/blobs*)   echo "HTTP/2.0 403 Forbidden" ;;
+  *)             echo "HTTP/2.0 200 OK" ;;
+esac
+exit 0
+EOF
+  # verify_owner reads the stored token back, so this stub prints one. The
+  # setup stub only answers present/absent, which is all the other tests need.
+  cat > "$BIN/security" <<'EOF'
+#!/bin/bash
+[ "$1" = find-generic-password ] && { echo "tok"; exit 0; }
+exit 0
+EOF
+  chmod +x "$BIN/gh" "$BIN/security"
+  export HOME="$BIN"   # keep suggest_owners off the real ~/dev
+  #                      replace tvrmsmith's token, decline every later stage
+  out="$(printf '%b' '\n\ny\np-tok\n\n\ndone\nn\nn\ndone\nn\nn\ndone\n\n' \
+         | bash "$WIZARD" 2>&1 || true)"
+  contains "$out" "no Checks API, as expected"
+  lacks "$out" "Add Checks"
+  lacks "$out" "cannot read commit statuses"
+  lacks "$out" "cannot read Actions runs"
+}
+
 @test "no token is ever written to a file" {
   run_wizard '\n\np-tok\n\nw-tok\ndone\n\n' >/dev/null
   [ -f "$ENV_FILE" ] && lacks "$(cat "$ENV_FILE")" "p-tok"
