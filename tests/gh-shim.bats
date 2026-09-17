@@ -28,6 +28,26 @@ tier() { routes "$@" | awk '{print $1}'; }
 # op plugin init writes `alias gh="op plugin run -- gh"`, and an alias beats
 # PATH. The file still gets sourced so other plugins keep working; only gh is
 # unaliased.
+# The test above runs `zsh -lc`, which never reads .zshrc, so it passed while
+# `mise activate` and the bun block were burying ~/.local/bin to fourth in every
+# shell Trevor actually types in. It survived only because neither mise nor bun
+# ships a `gh`. Hence this one: the hoist has to run after .zshrc too.
+@test "the shim directory outranks every activation prepend interactively" {
+  command -v zsh >/dev/null || skip "no zsh"
+  p="$(zsh -lic 'printf %s "$PATH"' 2>/dev/null)"
+  at() { printf '%s' "$p" | tr ':' '\n' | grep -nxF "$1" | head -1 | cut -d: -f1; }
+  shim="$(at "$HOME/.local/bin")"
+  [ -n "$shim" ] || { echo "~/.local/bin is not on the interactive PATH" >&2; exit 1; }
+  for later in "$HOME/.bun/bin" "$HOME/.local/share/mise/shims" /opt/homebrew/bin; do
+    pos="$(at "$later")"
+    [ -n "$pos" ] || continue
+    if [ "$shim" -gt "$pos" ]; then
+      printf '~/.local/bin at %s, %s at %s\n' "$shim" "$later" "$pos" >&2
+      exit 1
+    fi
+  done
+}
+
 @test "a login shell resolves gh to the shim, with op plugins still loaded" {
   command -v zsh >/dev/null || skip "no zsh"
   [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/op/plugins.sh" ] || skip "no op plugins file"

@@ -19,6 +19,21 @@ typeset -U path PATH
 # symlink and routes terminal-started sessions through claude-launcher.
 export PATH="$HOME/.local/bin-claude-shim:$HOME/.local/bin:$HOME/.dotnet/tools:$DEV_PERSONAL/ralph/scripts:$PATH"
 
+# Puts the two shim dirs back in front, dropping their earlier copies so PATH
+# does not grow one entry per nested shell.
+#
+# Called from the bottom of BOTH .zprofile and .zshrc, because every activation
+# eval prepends and .zshrc runs last. Hoisting in .zprofile alone was not
+# enough: `mise activate zsh` and the bun block then pushed the shims down to
+# fourth in every interactive shell. It happened to still work, since neither
+# mise nor bun ships a `gh`, which is the kind of luck that ends on an install.
+# A shim that loses the PATH race is not a shim. See dotfiles-4ul.
+hoist_shim_path() {
+	path=("$HOME/.local/bin-claude-shim" "$HOME/.local/bin"
+		${path:#($HOME/.local/bin-claude-shim|$HOME/.local/bin)})
+	export PATH
+}
+
 # Vertex config for Claude Code is machine-local: ~/.zshenv.local (sourced at
 # the bottom of this file, untracked) sets CLAUDE_CODE_USE_VERTEX and friends on
 # work machines. It can't live in ~/.claude/settings.json any more — that file
