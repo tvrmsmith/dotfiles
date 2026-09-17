@@ -176,16 +176,25 @@ report() {
 	return "$rc"
 }
 
-[ -z "$required" ] || echo "gh-pr-checks: --required needs branch protection, which this token cannot read; showing every check" >&2
+# Under --json the caller is a program, and several of them read stdout and stderr
+# as one stream. A banner then lands in front of the array and the decode fails on
+# its first character rather than on anything wrong with the checks. So every
+# advisory below is suppressed in --json mode, and the empty case answers with an
+# empty array on stdout instead of prose on stderr.
+[ -z "$required" ] || [ -n "$json_fields" ] || echo "gh-pr-checks: --required needs branch protection, which this token cannot read; showing every check" >&2
 
 rows="$(collect)"
 if [ "$(printf '%s' "$rows" | jq 'length')" = 0 ]; then
-	echo "gh-pr-checks: no checks reported on ${number:+#$number }($sha)" >&2
+	if [ -n "$json_fields" ]; then
+		printf '%s\n' '[]'
+	else
+		echo "gh-pr-checks: no checks reported on ${number:+#$number }($sha)" >&2
+	fi
 	exit 0
 fi
 
 if [ -z "$watch" ]; then
-	echo "gh-pr-checks: rebuilt from commit statuses and Actions jobs, because this token cannot read the Checks API. A check posted as an App check run rather than a status is not listed." >&2
+	[ -n "$json_fields" ] || echo "gh-pr-checks: rebuilt from commit statuses and Actions jobs, because this token cannot read the Checks API. A check posted as an App check run rather than a status is not listed." >&2
 	report "$rows"
 	exit $?
 fi
