@@ -18,6 +18,20 @@ hook_out() {
     '{tool_name: $t, tool_input: {($k): $v}}' | bash "$HOOK"
 }
 
+# Pipes a Bash payload for command $1, run as if from $TMP, so a relative
+# `docs/adr/...` path in the command resolves against the fixture.
+bash_out() {
+  jq -n --arg v "$1" --arg cwd "$TMP" \
+    '{tool_name: "Bash", cwd: $cwd, tool_input: {command: $v}}' | bash "$HOOK"
+}
+
+# Pipes an Edit payload replacing $1 with $2 in an ADR.
+edit_out() {
+  jq -n --arg f "$ADR_DIR/0007-x.md" --arg o "$1" --arg n "$2" \
+    '{tool_name: "Edit", tool_input: {file_path: $f, old_string: $o, new_string: $n}}' \
+    | bash "$HOOK"
+}
+
 context_of() { printf '%s' "$1" | jq -r '.hookSpecificOutput.additionalContext // empty'; }
 decision_of() { printf '%s' "$1" | jq -r '.hookSpecificOutput.permissionDecision // empty'; }
 
@@ -58,6 +72,55 @@ decision_of() { printf '%s' "$1" | jq -r '.hookSpecificOutput.permissionDecision
 @test "an inspecting Bash command against an ADR stays a read" {
   out="$(NM_GATE=1 hook_out Bash "git log docs/adr/0001-x.md")"
   is_empty "$(decision_of "$out")"
+}
+
+@test "NM_GATE lets a rename within docs/adr through, with renumber guidance" {
+  out="$(NM_GATE=1 bash_out "git mv docs/adr/0007-x.md docs/adr/0009-x.md")"
+  is_empty "$(decision_of "$out")"
+  contains "$(context_of "$out")" "ADR renumber"
+}
+
+@test "a bare mv renames too" {
+  out="$(NM_GATE=1 bash_out "mv docs/adr/0007-x.md docs/adr/0009-x.md")"
+  is_empty "$(decision_of "$out")"
+}
+
+@test "NM_GATE denies a rename onto an ADR that already exists" {
+  touch "$ADR_DIR/0009-x.md"
+  out="$(NM_GATE=1 bash_out "mv docs/adr/0007-x.md docs/adr/0009-x.md")"
+  equals "$(decision_of "$out")" "deny"
+}
+
+@test "NM_GATE denies a move out of the ADR directory" {
+  out="$(NM_GATE=1 bash_out "mv docs/adr/0007-x.md docs/0007-x.md")"
+  equals "$(decision_of "$out")" "deny"
+}
+
+@test "NM_GATE denies a rename with a second command chained onto it" {
+  out="$(NM_GATE=1 bash_out "mv docs/adr/0007-x.md docs/adr/0009-x.md && rm docs/adr/0001-y.md")"
+  equals "$(decision_of "$out")" "deny"
+}
+
+@test "NM_GATE denies a rename carrying a flag" {
+  out="$(NM_GATE=1 bash_out "mv -f docs/adr/0007-x.md docs/adr/0009-x.md")"
+  equals "$(decision_of "$out")" "deny"
+}
+
+@test "NM_GATE lets a digits-only edit through" {
+  out="$(NM_GATE=1 edit_out "# 0007. Cache the index" "# 0009. Cache the index")"
+  is_empty "$(decision_of "$out")"
+  contains "$(context_of "$out")" "ADR renumber"
+}
+
+@test "NM_GATE denies an edit that changes a word alongside the number" {
+  out="$(NM_GATE=1 edit_out "# 0007. Cache the index" "# 0009. Cache the manifest")"
+  equals "$(decision_of "$out")" "deny"
+}
+
+@test "an interactive rename gets the renumber guidance, not amend/supersede" {
+  out="$(bash_out "git mv docs/adr/0007-x.md docs/adr/0009-x.md")"
+  contains "$(context_of "$out")" "ADR renumber"
+  lacks "$(context_of "$out")" "Supersede it"
 }
 
 @test "a write outside docs/adr is untouched" {

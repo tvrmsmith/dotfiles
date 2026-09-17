@@ -27,8 +27,9 @@
 # without editing this file by exporting ADR_BLOCK_WORDS / ADR_FILE_WORDS.
 #
 # adr-guard.sh is the separate concern on the same paths: who may write an ADR
-# at all. It denies every no-mistakes gate write, so this hook stays quiet under
-# NM_GATE rather than annotating a write that is already refused.
+# at all. Under NM_GATE it refuses every write but a renumber, so this hook
+# stays quiet there rather than annotating a write that is already refused, or
+# counting words at an edit that only moves digits.
 #
 # Reconstructing the resulting file from Edit/MultiEdit is best-effort; a
 # failure to read or replay it skips the checks rather than blocking.
