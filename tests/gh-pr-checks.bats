@@ -129,3 +129,27 @@ run_helper() { "$HELPER" "$@" -R o/r 2>/dev/null; }
   rc=0; run_helper 1 >/dev/null || rc=$?
   equals "$rc" 8
 }
+
+# The advisory banners below go to stderr, which is correct and still not enough:
+# a caller reading both streams as one parses prose as JSON. no-mistakes does
+# exactly that, reported `invalid character 'g' looking for beginning of value`,
+# and drove a run to passed-with-override while every check on the PR was green.
+# So these merge the streams on purpose; run_helper cannot, since it discards
+# stderr and that is what hid the bug.
+
+@test "--json stays parseable when the caller merges stdout and stderr" {
+  one_status success
+  out="$("$HELPER" 1 -R o/r --json name,bucket 2>&1)"
+  equals "$(printf '%s' "$out" | jq -r '.[0].name')" snyk
+}
+
+@test "no checks under --json answers with an empty array, not prose" {
+  out="$("$HELPER" 1 -R o/r --json name,bucket 2>&1)"
+  equals "$(printf '%s' "$out" | jq -c .)" '[]'
+}
+
+@test "the rebuild banner still reaches a human on stderr" {
+  one_status success
+  err="$("$HELPER" 1 -R o/r 2>&1 1>/dev/null)"
+  contains "$err" "cannot read the Checks API"
+}
