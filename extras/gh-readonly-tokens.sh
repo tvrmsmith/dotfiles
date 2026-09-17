@@ -298,6 +298,11 @@ permissions_recipe() {
       step "Repository access: All repositories."
       step "Repository permissions, every one set to Read-only: Contents, Metadata,"
       say  "    Pull requests, Issues, Actions, Commit statuses, Workflows."
+      note "  There is no Checks permission to grant, so do not go looking for one."
+      note "  GitHub withdrew it from fine-grained tokens; only GitHub Apps and"
+      note "  classic tokens reach the Checks API. That is why \`gh pr checks\` fails"
+      note "  on a private repo with 'Resource not accessible by personal access"
+      note "  token', and why Actions and Commit statuses above are load-bearing."
       step "Leave every Account permission at No access."
       ;;
   esac
@@ -521,6 +526,36 @@ verify_owner() {
     *403*) printf '  %s✓ %s%s reads %s, cannot write it\n' "$GREEN" "$owner" "$RESET" "$repo" ;;
     *)     warn "$owner: the write probe on $repo returned '${status:-no response}', not 403."
            note "  A success means the token is over-scoped; regenerate it with read-only permissions." ;;
+  esac
+  verify_checks_read "$owner" "$token" "$repo"
+}
+
+# A token can read every repo and still not say whether CI passed. No fine-
+# grained token reads the Checks API on a private repo: GitHub withdrew that
+# permission, leaving it to GitHub Apps and classic tokens (community
+# discussion 129512). So a 403 here is not something to fix on the token, and
+# the probe exists to say so, because `gh pr checks` itself reports it as ten
+# GraphQL "Resource not accessible" lines naming node paths.
+#
+# The two endpoints it CAN reach, commit statuses and Actions runs, together
+# cover the same ground. That is what the Actions and Commit statuses
+# permissions above are for.
+verify_checks_read() {
+  local owner="$1" token="$2" repo="$3" runs statuses actions
+  runs=$(GH_TOKEN="$token" gh api "/repos/$repo/commits/HEAD/check-runs" --silent -i 2>/dev/null | head -1)
+  statuses=$(GH_TOKEN="$token" gh api "/repos/$repo/commits/HEAD/status" --silent -i 2>/dev/null | head -1)
+  actions=$(GH_TOKEN="$token" gh api "/repos/$repo/actions/runs?per_page=1" --silent -i 2>/dev/null | head -1)
+  case "$runs" in *403*)
+    note "$owner: no Checks API, as expected on a fine-grained token."
+    note "  \`gh pr checks\` fails on this owner's private repos. Nothing to fix." ;;
+  esac
+  case "$statuses" in *403*)
+    warn "$owner: cannot read commit statuses, which IS grantable."
+    note "  Add Commit statuses: Read-only to this token." ;;
+  esac
+  case "$actions" in *403*)
+    warn "$owner: cannot read Actions runs, which IS grantable."
+    note "  Add Actions: Read-only to this token." ;;
   esac
 }
 

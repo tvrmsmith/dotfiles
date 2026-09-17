@@ -373,6 +373,17 @@ if is_read "$@"; then
 	for owner in "$(gh_owner "$@")" "$(dir_owner)"; do
 		[ -n "$owner" ] || continue
 		if token="$(keychain_token "$owner")" && [ -n "$token" ]; then
+			if [ "$1" = pr ] && [ "${2:-}" = checks ]; then
+				# GitHub withdrew the Checks permission from fine-grained tokens,
+				# so the real `gh pr checks` answers a private repo with ten
+				# GraphQL "Resource not accessible" lines and no permission fixes
+				# it. gh-pr-checks rebuilds the same table from commit statuses
+				# and Actions jobs, which this token can read. See dotfiles-4ul
+				# and community discussion 129512.
+				shift 2
+				exec env GH_TOKEN="$token" REAL_GH="$real_gh" \
+					"$shim_dir/gh-pr-checks" "$@"
+			fi
 			exec env GH_TOKEN="$token" "$real_gh" "$@"
 		fi
 	done

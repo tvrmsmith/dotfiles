@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+#
+# `gh pr checks`, rebuilt out of the two APIs a fine-grained token can reach.
+#
+# GitHub withdrew the Checks permission from fine-grained PATs, leaving it to
+# GitHub Apps and classic tokens (community discussion 129512). So `gh pr
+# checks` on a private or internal repo answers with ten GraphQL "Resource not
+# accessible by personal access token" lines naming node paths, and there is no
+# permission to grant that fixes it. A public repo works only because check
+# runs are public there.
+#
+# Commit statuses and Actions runs are both grantable and both readable, and
+# between them they carry the same information: third-party checks arrive as
+# statuses, GitHub Actions ones as jobs. This assembles the table from those.
+#
+# The reconstruction is lossy in one direction: a third-party check implemented
+# as a GitHub App check run rather than a commit status is invisible to it.
+# Snyk posts statuses and shows up; GitGuardian posts check runs and does not.
+# So this probes the Checks API first and hands straight over to the real gh
+# whenever that works, which is every public repo. Reconstruction is the
+# fallback, not the default, and it says on stderr what it cannot see.
+#
+# dot-local/bin/gh execs this for `gh pr checks`, with GH_TOKEN and REAL_GH
+# already set. Run it directly and it finds its own gh and expects a token in
+# the environment.
+
+set -uo pipefail
+
+real_gh="${REAL_GH:-}"
+if [ -z "$real_gh" ]; then
+	# Skip this script's own directory so `gh` cannot resolve back to the shim.
+	self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+	while IFS= read -r candidate; do
+		[ "$(dirname "$candidate")" = "$self_dir" ] && continue
+		real_gh="$candidate"
+		break
+	done < <(type -a -p gh 2>/dev/null)
+fi
+[ -n "$real_gh" ] || { echo "gh-pr-checks: cannot find the real gh" >&2; exit 1; }
+
+orig_args=("$@")
+selector="" repo="" watch="" interval=10 fail_fast="" json_fields="" jq_expr="" required=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-R | --repo) repo="${2:-}"; shift 2 ;;
+		--repo=*) repo="${1#*=}"; shift ;;
+		--watch) watch=1; shift ;;
+		--fail-fast) fail_fast=1; watch=1; shift ;;
+		-i | --interval) interval="${2:-10}"; shift 2 ;;
+		--interval=*) interval="${1#*=}"; shift ;;
+		--json) json_fields="${2:-}"; shift 2 ;;
+		--json=*) json_fields="${1#*=}"; shift ;;
+		-q | --jq) jq_expr="${2:-}"; shift 2 ;;
+		--jq=*) jq_expr="${1#*=}"; shift ;;
+		# Only the checks a branch protection rule requires. That list lives
+		# behind an endpoint the read token has no business holding, so say so
+		# rather than silently showing every check as if it were required.
+		--required) required=1; shift ;;
+		-w | --web) exec "$real_gh" pr checks "$@" ;;
+		-*) shift ;;
+		*) [ -n "$selector" ] || selector="$1"; shift ;;
+	esac
+done
+
+gh_api() { "$real_gh" api "$@" 2>/dev/null; }
+
+[ -n "$repo" ] || repo="$(gh_api "repos/{owner}/{repo}" --jq .full_name)"
+[ -n "$repo" ] || { echo "gh-pr-checks: no repo; run inside a checkout or pass -R owner/repo" >&2; exit 1; }
+
+# `pr view -R owner/repo` insists on a selector, so the no-argument form has to
+# name the current branch itself rather than letting gh infer it.
+[ -n "$selector" ] || selector="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)"
+if [ -z "$selector" ]; then
+	echo "gh-pr-checks: no pull request given, and no branch to infer one from" >&2
+	exit 1
+fi
+
+pr_json="$("$real_gh" pr view "$selector" -R "$repo" --json number,headRefOid 2>&1)"
+sha="$(printf '%s' "$pr_json" | jq -r '.headRefOid // empty' 2>/dev/null)"
+number="$(printf '%s' "$pr_json" | jq -r '.number // empty' 2>/dev/null)"
+if [ -z "$sha" ]; then
+	printf '%s\n' "$pr_json" >&2
+	exit 1
+fi
+
+# Where the Checks API answers, gh's own output is the better answer: it sees
+# App check runs, which the rebuild below cannot. Public repos land here.
+probe="$("$real_gh" api "repos/$repo/commits/$sha/check-runs" --silent -i 2>/dev/null | head -1)"
+case "$probe" in
+	*403*) ;;
+	*2[0-9][0-9]*) exec "$real_gh" pr checks "${orig_args[@]}" ;;
+esac
+
+# One row per check, in gh's own shape, so `--json` answers with the field names
+# a caller already wrote against.
+collect() {
+	local statuses jobs='[]' id
+	statuses="$(gh_api "repos/$repo/commits/$sha/status" --jq '
+		[.statuses[] | {
+			name: .context,
+			state: (.state | ascii_upcase),
+			bucket: (if .state == "success" then "pass"
+			         elif .state == "pending" then "pending"
+			         else "fail" end),
+			link: (.target_url // ""),
+			description: (.description // ""),
+			startedAt: (.created_at // ""),
+			completedAt: (.updated_at // ""),
+			workflow: "",
+			event: ""
+		}]')"
+	[ -n "$statuses" ] || statuses='[]'
+
+	# A re-run keeps the run id, so one call per workflow run covers every
+	# attempt GitHub still reports for this head sha.
+	while IFS= read -r id; do
+		[ -n "$id" ] || continue
+		local these
+		these="$(gh_api "repos/$repo/actions/runs/$id/jobs?per_page=100" --jq '
+			[.jobs[] | {
+				name: .name,
+				state: ((.conclusion // .status) | ascii_upcase),
+				bucket: (if .status != "completed" then "pending"
+				         elif .conclusion == "success" then "pass"
+				         elif .conclusion == "skipped" or .conclusion == "neutral" then "skipping"
+				         elif .conclusion == "cancelled" then "cancel"
+				         else "fail" end),
+				link: (.html_url // ""),
+				description: "",
+				startedAt: (.started_at // ""),
+				completedAt: (.completed_at // ""),
+				workflow: (.workflow_name // ""),
+				event: ""
+			}]')"
+		[ -n "$these" ] || continue
+		jobs="$(jq -c -n --argjson a "$jobs" --argjson b "$these" '$a + $b')"
+	done < <(gh_api "repos/$repo/actions/runs?head_sha=$sha&per_page=100" --jq '.workflow_runs[].id')
+
+	jq -c -n --argjson s "$statuses" --argjson j "$jobs" '$s + $j'
+}
+
+render_table() {
+	jq -r '
+		def dur($s): if $s == null or $s == "" then "0s"
+			elif $s >= 60 then "\($s / 60 | floor)m\($s % 60)s"
+			else "\($s)s" end;
+		def secs: if . == "" or . == null then null else (fromdateiso8601? // null) end;
+		.[] |
+		(.startedAt | secs) as $a | (.completedAt | secs) as $b |
+		((if $a == null or $b == null or $b < $a then null else $b - $a end)) as $d |
+		[.name, .bucket, dur($d), .link, .description] | @tsv'
+}
+
+worst_exit() {
+	# gh: 0 everything passed, 1 something failed, 8 something is still running.
+	jq -r 'if any(.[]; .bucket == "fail") then 1
+	       elif any(.[]; .bucket == "pending") then 8
+	       else 0 end'
+}
+
+report() {
+	local rows="$1" rc
+	rc="$(printf '%s' "$rows" | worst_exit)"
+	if [ -n "$json_fields" ]; then
+		local filtered
+		filtered="$(printf '%s' "$rows" | jq --arg f "$json_fields" \
+			'[.[] | with_entries(select(.key as $k | ($f | split(",")) | index($k)))]')"
+		if [ -n "$jq_expr" ]; then
+			printf '%s' "$filtered" | jq -r "$jq_expr"
+		else
+			printf '%s\n' "$filtered"
+		fi
+	else
+		printf '%s' "$rows" | render_table
+	fi
+	return "$rc"
+}
+
+[ -z "$required" ] || echo "gh-pr-checks: --required needs branch protection, which this token cannot read; showing every check" >&2
+
+rows="$(collect)"
+if [ "$(printf '%s' "$rows" | jq 'length')" = 0 ]; then
+	echo "gh-pr-checks: no checks reported on ${number:+#$number }($sha)" >&2
+	exit 0
+fi
+
+if [ -z "$watch" ]; then
+	echo "gh-pr-checks: rebuilt from commit statuses and Actions jobs, because this token cannot read the Checks API. A check posted as an App check run rather than a status is not listed." >&2
+	report "$rows"
+	exit $?
+fi
+
+while :; do
+	rc=0
+	report "$rows" || rc=$?
+	[ "$rc" = 8 ] || exit "$rc"
+	[ -z "$fail_fast" ] || [ "$rc" != 1 ] || exit 1
+	sleep "$interval"
+	rows="$(collect)"
+done
