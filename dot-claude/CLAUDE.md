@@ -56,3 +56,7 @@
 - **Design phase**: ALWAYS load the `mattpocock-skills:codebase-design` skill before placing a seam, designing or changing a module interface, or restructuring code, and use its vocabulary.
 - **Cross-boundary contract approval**: any contract crossing a service or independent-deploy boundary (service↔service, frontend↔BFF, Kafka/event schemas, APIs consumed outside the owning service) needs my approval before implementation. Load the `contract-approval` skill and follow it.
 
+### GCloud
+
+- You can run all of the gcloud auth commands yourself, they will open the browser.
+
