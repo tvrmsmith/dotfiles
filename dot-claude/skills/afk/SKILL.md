@@ -26,9 +26,14 @@ does hang, or fails a network call twice, gets interrupted and parked rather tha
 
 ## Still his call
 
-Reversible local work is yours. Orchestration is not: fanning work out to other agents or
-sessions, and working a wayfinder map, both wait for Trevor whole. Park the thread and spend the
-turn on self-contained work instead. These wait for him too: rewriting or discarding history
+Reversible local work is yours, and that includes subagents executing a plan Trevor already
+agreed. An assignment list he approved is a decision already made, so dispatching its workers is
+executing, not orchestrating. Stalling there strands the plan half-built, which is worse than
+either finishing it or never starting.
+
+Orchestration he has not seen waits for him whole: working a wayfinder map, and any fan-out that
+picks the approach, widens the scope, or starts work no agreed plan covers. Park that thread and
+spend the turn on self-contained work instead. These wait for him too: rewriting or discarding history
 (force-push, `reset --hard`, dropping commits or stashes), deleting branches or files he has not
 agreed to delete, merging to `main`, releasing, deploying, anything outward-facing, and anything
 touching money, secrets, or credentials.
