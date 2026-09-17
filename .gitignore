@@ -40,3 +40,4 @@ dot-config/corporate-ca.crt
 *.db
 .beads-credential-key
 .beads/proxieddb/
+.beads.gate.lock
