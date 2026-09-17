@@ -1,5 +1,8 @@
 # Which 1Password item holds the write token for each GitHub owner.
-# Copy to ~/.config/gh-shim/write-tokens, chmod 600, and fill in your own refs.
+# extras/gh-readonly-tokens.sh writes this file for you. This copy is the format
+# reference, for reading a map by hand or fixing one entry without a full re-run.
+#
+# By hand: copy to ~/.config/gh-shim/write-tokens, chmod 600, fill in your refs.
 #
 #   <github-owner>  <1password-account>  op://<vault>/<item>/<field>
 #
