@@ -34,7 +34,10 @@ EOF
   done
   printf '#!/bin/bash\nexit 0\n' > "$BIN/gh"
   chmod +x "$BIN"/*
-  export PATH="$BIN:$PATH" ENV_FILE="$BIN/.env" PRESENT="" PRESENT_PR=""
+  # The write tier's owner map is a plain file, so point it at the sandbox
+  # rather than the machine's real ~/.config.
+  export PATH="$BIN:$PATH" ENV_FILE="$BIN/.env" PRESENT="" PRESENT_PR="" \
+    WRITE_MAP="$BIN/gh-shim/write-tokens"
 }
 
 teardown() { rm -rf "$BIN"; }
@@ -136,6 +139,56 @@ gh-prwrite tvrmsmith <- pr-tok"
   contains "$out" "gh-prwrite some-org <- org-pr"
   # The org's read token is untouched by the PR stage.
   contains "$out" "gh-readonly some-org <- org-tok"
+}
+
+# Stage 5 writes ~/.config/gh-shim/write-tokens, the write tier's owner ->
+# 1Password account map. Without it the shim falls back to `op plugin run`,
+# which chooses an account on its own and chose the wrong one. See dotfiles-4ul.
+
+# Keystrokes in, the resulting map out, comments dropped.
+run_wizard_map() { printf '%b' "$1" | bash "$WIZARD" >/dev/null 2>&1 || true
+  grep -v '^#' "$WRITE_MAP" 2>/dev/null | grep -v '^$' || true
+}
+
+# Everything up to the write stage: two tokens, no orgs, no PR tokens.
+PREFIX='\n\np-tok\n\nw-tok\ndone\nn\nn\ndone\n'
+
+@test "the write stage maps an owner to a 1Password account and reference" {
+  out="$(run_wizard_map "$PREFIX"'y\nmy.example.com\nop://v/i/token\nn\ndone\n')"
+  equals "$out" "tvrmsmith my.example.com op://v/i/token"
+}
+
+@test "the map is written unreadable by anyone else" {
+  run_wizard_map "$PREFIX"'y\nmy.example.com\nop://v/i/token\nn\ndone\n' >/dev/null
+  equals "$(stat -f %Lp "$WRITE_MAP")" 600
+}
+
+@test "an owner the run never asks about keeps its line" {
+  mkdir -p "$(dirname "$WRITE_MAP")"
+  printf '# a comment\nold-org  acct.example.com  op://v/old/token\n' > "$WRITE_MAP"
+  out="$(run_wizard_map "$PREFIX"'y\nmy.example.com\nop://v/i/token\nn\ndone\n')"
+  contains "$out" "old-org acct.example.com op://v/old/token"
+  contains "$out" "tvrmsmith my.example.com op://v/i/token"
+}
+
+@test "keeping an owner's existing entry leaves it unchanged" {
+  mkdir -p "$(dirname "$WRITE_MAP")"
+  printf 'tvrmsmith  my.example.com  op://v/i/token\n' > "$WRITE_MAP"
+  #                             offered tvrmsmith, then "no, don't replace"
+  out="$(run_wizard_map "$PREFIX"'y\nn\nn\ndone\n')"
+  equals "$out" "tvrmsmith my.example.com op://v/i/token"
+}
+
+@test "a reference that is not an op:// URI is refused" {
+  # Otherwise the typo surfaces hours later as an opaque op error, at the one
+  # moment the human is waiting on an approval prompt.
+  out="$(run_wizard_map "$PREFIX"'y\nmy.example.com\nPrivate/GitHub/token\n\nn\ndone\n')"
+  lacks "$out" "tvrmsmith"
+}
+
+@test "declining every owner writes no map at all" {
+  run_wizard_map "$PREFIX"'n\nn\ndone\n' >/dev/null
+  [ ! -f "$WRITE_MAP" ]
 }
 
 @test "no token is ever written to a file" {

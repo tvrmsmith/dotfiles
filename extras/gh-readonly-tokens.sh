@@ -183,7 +183,7 @@ finish() {
 # STAGES
 # ──────────────────────────────────────────────────────────────────────────
 
-TOTAL_STAGES=5
+TOTAL_STAGES=6
 
 # Two kinds of token, each its own keychain service, each keyed by owner login.
 # gh-readonly is read-only everywhere. gh-prwrite adds `Pull requests: write`
@@ -333,6 +333,107 @@ collect_for_owner() {
   store_token "$owner" "$token" "$kind"
 }
 
+# ── The write tier's owner → 1Password map ────────────────────────────────
+#
+# The third tier holds no token of its own: it reads one from 1Password at the
+# moment you approve. It still needs to know WHICH 1Password item, because
+# `op plugin run` cannot be told, and left to itself it authenticated a personal
+# merge as the work user. So the owner decides, from this map. See dotfiles-4ul.
+#
+# Not the keychain, unlike the other two tiers. Nothing secret is stored here,
+# only the coordinates of something secret, and the shim wants them readable
+# without a keychain prompt of its own.
+WRITE_MAP="${WRITE_MAP:-${XDG_CONFIG_HOME:-$HOME/.config}/gh-shim/write-tokens}"
+
+# "owner account op://..." rows this run settled on, whether typed or kept.
+WRITE_ROWS=()
+
+answered_write() {
+  local want="$1" row
+  for row in ${WRITE_ROWS+"${WRITE_ROWS[@]}"}; do
+    [ "${row%% *}" = "$want" ] && return 0
+  done
+  return 1
+}
+
+# Prints "account op://..." for an owner already in the map, or fails. A field
+# may hold spaces (item names do), so only the gaps between fields normalise.
+write_row_for() {
+  local want="$1" owner account ref
+  [ -f "$WRITE_MAP" ] || return 1
+  while read -r owner account ref; do
+    case "$owner" in '' | '#'*) continue ;; esac
+    [ "$owner" = "$want" ] || continue
+    [ -n "$account" ] && [ -n "$ref" ] || continue
+    printf '%s %s\n' "$account" "$ref"
+    return 0
+  done < "$WRITE_MAP"
+  return 1
+}
+
+collect_write_for_owner() {
+  local owner="$1" current
+  current=$(write_row_for "$owner" || true)
+  if [ -n "$current" ]; then
+    note "$owner currently reads its write token from: $current"
+    if ! confirm "Replace that for $owner?"; then
+      WRITE_ROWS+=("$owner $current")
+      note "kept the existing entry for $owner"
+      return 0
+    fi
+  fi
+  ask WRITE_ACCOUNT "1Password account for $owner (the URL column of \`op account list\`):"
+  ask WRITE_REF "Secret reference to its token field (op://vault/item/field):"
+  if [ -z "$WRITE_ACCOUNT" ] || [ -z "$WRITE_REF" ]; then
+    [ -n "$current" ] && { WRITE_ROWS+=("$owner $current"); note "kept the existing entry for $owner"; return 0; }
+    SKIPPED+=("write-token mapping for $owner")
+    warn "nothing entered for $owner, so its writes keep guessing an account"
+    return 0
+  fi
+  # A bad reference fails at approval time, hours later, as an opaque op error.
+  # Catching the shape here costs one line and turns that into a retype.
+  case "$WRITE_REF" in
+    op://*/*/*) ;;
+    *) warn "that is not an op:// reference with a vault, item and field."
+       return 1 ;;
+  esac
+  case "$WRITE_ACCOUNT" in
+    *[[:space:]]*) warn "an account URL has no spaces in it."; return 1 ;;
+  esac
+  WRITE_ROWS+=("$owner $WRITE_ACCOUNT $WRITE_REF")
+  printf '  %s✓ mapped%s %s → %s\n' "$GREEN" "$RESET" "$owner" "$WRITE_ACCOUNT"
+  return 0
+}
+
+# Rewrites the whole map. Owners this run never asked about keep the line they
+# already had, so adding one owner does not drop the rest.
+write_map_flush() {
+  local dir tmp owner account ref
+  if [ -z "${WRITE_ROWS+x}" ]; then
+    note "no owners mapped, so $WRITE_MAP is left as it is"
+    return 0
+  fi
+  dir=$(dirname "$WRITE_MAP")
+  mkdir -p "$dir"
+  tmp=$(mktemp "$dir/.write-tokens.XXXXXX")
+  chmod 600 "$tmp"
+  {
+    printf '# owner  1password-account  op://vault/item/field\n'
+    printf '# Written by extras/gh-readonly-tokens.sh. Read by dot-local/bin/gh.\n'
+    if [ -f "$WRITE_MAP" ]; then
+      while read -r owner account ref; do
+        case "$owner" in '' | '#'*) continue ;; esac
+        [ -n "$account" ] && [ -n "$ref" ] || continue
+        answered_write "$owner" && continue
+        printf '%s %s %s\n' "$owner" "$account" "$ref"
+      done < "$WRITE_MAP"
+    fi
+    printf '%s\n' "${WRITE_ROWS[@]}"
+  } > "$tmp"
+  mv "$tmp" "$WRITE_MAP"
+  printf '  %s✓ wrote%s %s\n' "$GREEN" "$RESET" "$WRITE_MAP"
+}
+
 banner "GitHub tokens for ~/.local/bin/gh"
 
 stage "Your personal account"
@@ -460,9 +561,37 @@ verify_pr_owner() {
   esac
 }
 
+stage "Write tokens in 1Password"
+say "The last tier, the one that prompts. It has no token of its own: on your"
+say "approval it reads a full-access token out of 1Password. This stage records"
+say "which item, per owner."
+say ""
+say "It has to be per owner. \`op plugin run\` picks an account by itself, and it"
+say "picked the work one for a personal merge, which failed as the wrong user."
+say ""
+note "Nothing secret is written here, only an op:// reference to the secret."
+note "  Right-click the token field in 1Password and Copy Secret Reference."
+note "  An owner you skip falls back to that guessing, so map the ones you merge in."
+say ""
+for OWNER in $(pr_stage_owners); do
+  if confirm "Map $OWNER to a 1Password write token?"; then
+    collect_write_for_owner "$OWNER" || pause "Press Enter to continue."
+  else
+    note "skipped $OWNER; its writes keep guessing an account"
+  fi
+done
+
+say ""
+while true; do
+  ask EXTRA_WRITE_OWNER "Another owner to map, or done:"
+  case "$EXTRA_WRITE_OWNER" in "" | done | Done | DONE) break ;; esac
+  collect_write_for_owner "$EXTRA_WRITE_OWNER" || pause "Press Enter to try again."
+done
+write_map_flush
+
 stage "Verify"
 say "Routing first: a read prints 'read <owner>', opening a PR prints"
-say "'pr-write <owner>', and anything needing approval prints 'write'."
+say "'pr-write <owner>', and anything needing approval prints 'write <owner>'."
 GH_SHIM_EXPLAIN=1 "$HOME/.local/bin/gh" pr list || true
 GH_SHIM_EXPLAIN=1 "$HOME/.local/bin/gh" pr create --fill || true
 GH_SHIM_EXPLAIN=1 "$HOME/.local/bin/gh" pr merge 1 || true
