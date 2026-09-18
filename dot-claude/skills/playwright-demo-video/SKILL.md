@@ -86,6 +86,8 @@ export default defineConfig({
 
 `video.show.test` (level `file|title|step`) burns the step title on-screen, BUT only at fixed corners/edges (`top`/`bottom`/`top-left`...). No custom offset. For a bottom-center caption (the placement that reads best), DROP `show.test` and draw a custom overlay from the spec (§2). Keep `show.actions` for click outlines either way.
 
+For a tour long enough to have chapters, draw a SECOND, smaller pill directly under the caption: a standing chapter label restating which part of the tour a viewer joining mid-clip is in. Both pills are one custom overlay, drawn together (§2's `caption`), so a viewer never sees the caption without its chapter context.
+
 ## 2. The spec (dual-mode)
 
 One spec = one continuous flow. Every `test.step()` title is written for the VIEWER and set as the on-screen caption via `caption` (see spec rules below).
@@ -119,37 +121,123 @@ async function applyDemoStyles(page: Page) {
   });
 }
 
-// Demo-only step caption: bottom-center pill (placement rationale in §1). Drawn on
-// document.body (outside the app root); see spec rules below for persistence/self-heal
-// behavior. No-op in CI.
+// The chapter the tour is in, restated under every caption so a viewer joining mid-clip has
+// context. Owned by `section`, redrawn by `caption`.
+let chapter = '';
+
+// Demo-only overlay pair: the step caption as a bottom-center pill (placement rationale in
+// §1), plus the standing chapter label just below it. Both are drawn on document.body
+// (outside the app root) and both are recreated here on every call, which is what heals them
+// after a full page reload (see spec rules below). `display` follows whether the pill has
+// text, so an empty chapter hides its pill. No-op in CI.
 async function caption(page: Page, text: string) {
   if (!DEMO) return;
-  await page.evaluate((label) => {
-    const id = 'demo-caption';
-    let el = document.getElementById(id);
-    if (!el) {
-      el = document.createElement('div');
-      el.id = id;
+  await page.evaluate((pills) => {
+    for (const pill of pills) {
+      let el = document.getElementById(pill.id);
+      if (!el) {
+        el = document.createElement('div');
+        el.id = pill.id;
+        Object.assign(el.style, {
+          position: 'fixed',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          maxWidth: '80vw',
+          background: 'rgba(17, 24, 39, 0.88)',
+          color: '#fff',
+          textAlign: 'center',
+          borderRadius: '9999px',
+          boxShadow: '0 6px 24px rgba(0,0,0,0.35)',
+          zIndex: '2147483646',
+          pointerEvents: 'none',
+        } as CSSStyleDeclaration);
+        document.body.appendChild(el);
+      }
       Object.assign(el.style, {
-        position: 'fixed',
-        left: '50%',
-        bottom: '25%',
-        transform: 'translateX(-50%)',
-        maxWidth: '80vw',
-        padding: '14px 28px',
-        background: 'rgba(17, 24, 39, 0.88)',
-        color: '#fff',
-        font: '600 24px/1.3 -apple-system, Segoe UI, Roboto, sans-serif',
-        textAlign: 'center',
-        borderRadius: '9999px',
-        boxShadow: '0 6px 24px rgba(0,0,0,0.35)',
-        zIndex: '2147483647',
-        pointerEvents: 'none',
+        bottom: pill.bottom,
+        font: pill.font,
+        padding: pill.padding,
+        letterSpacing: pill.letterSpacing,
+        display: pill.text ? 'block' : 'none',
       } as CSSStyleDeclaration);
-      document.body.appendChild(el);
+      el.textContent = pill.text;
     }
-    el.textContent = label;
-  }, text);
+  }, [
+    {
+      id: 'demo-caption',
+      text,
+      bottom: '17%',
+      font: '600 24px/1.3 -apple-system, Segoe UI, Roboto, sans-serif',
+      padding: '14px 28px',
+      letterSpacing: 'normal',
+    },
+    {
+      id: 'demo-chapter',
+      text: chapter,
+      bottom: '11%',
+      font: '700 15px/1.3 -apple-system, Segoe UI, Roboto, sans-serif',
+      padding: '7px 18px',
+      letterSpacing: '0.12em',
+    },
+  ]);
+}
+
+// Demo-only chapter break: a full-frame title card, then the chapter stands under every later
+// caption. Call it immediately before the caption of the step that opens the chapter. The
+// `chapter` assignment happens unconditionally (not gated on DEMO) so module state stays
+// consistent in CI, where the rest of the function no-ops.
+async function section(page: Page, kicker: string, title: string) {
+  chapter = `${kicker.toUpperCase()} · ${title}`;
+  if (!DEMO) return;
+  await page.evaluate((card) => {
+    const el = document.createElement('div');
+    el.id = 'demo-section-card';
+    Object.assign(el.style, {
+      position: 'fixed',
+      inset: '0',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '20px',
+      background: 'rgba(17, 24, 39, 0.94)',
+      color: '#fff',
+      zIndex: '2147483647',
+      pointerEvents: 'none',
+      opacity: '0',
+      transition: 'opacity 250ms ease',
+    } as CSSStyleDeclaration);
+
+    const kickerEl = document.createElement('div');
+    Object.assign(kickerEl.style, {
+      font: '700 20px/1 -apple-system, Segoe UI, Roboto, sans-serif',
+      letterSpacing: '0.24em',
+      color: '#9ca3af',
+    } as CSSStyleDeclaration);
+    kickerEl.textContent = card.kicker.toUpperCase();
+
+    const titleEl = document.createElement('div');
+    Object.assign(titleEl.style, {
+      font: '700 54px/1.2 -apple-system, Segoe UI, Roboto, sans-serif',
+      maxWidth: '68vw',
+      textAlign: 'center',
+    } as CSSStyleDeclaration);
+    titleEl.textContent = card.title;
+
+    el.append(kickerEl, titleEl);
+    document.body.appendChild(el);
+    requestAnimationFrame(() => {
+      el.style.opacity = '1';
+    });
+  }, { kicker, title });
+  await page.waitForTimeout(2600);
+  await page.evaluate(() => {
+    const el = document.getElementById('demo-section-card');
+    if (!el) return;
+    el.style.opacity = '0';
+    setTimeout(() => el.remove(), 300);
+  });
+  await page.waitForTimeout(350);
 }
 ```
 
@@ -195,8 +283,9 @@ test('<flow title> [Spec: <ticket-id>]', async ({ page }) => {
 
 ### Spec rules
 
-- **`caption(page, '<title>')` as the FIRST line of each step**, text = the step title. Reads as narration; no-op in CI.
-- **Captions persist across client-side nav** (same document). After a full page reload the overlay is gone; `caption` re-creates it — so just call it again in the next step.
+- **`caption(page, '<title>')` as the FIRST line of each step**, text = the step title. Reads as narration; no-op in CI. Open a new chapter by calling `section(page, kicker, title)` immediately before that step's `caption` (see §2).
+- **Captions persist across client-side nav** (same document). A `page.goto()` is a full document load and wipes every body-attached overlay AND the `applyDemoStyles` stylesheet — order that step `goto` → `applyDemoStyles` → `section` (if opening a chapter) → `caption`, never `caption` before `goto`, which silently plays that step with no caption. Client-side router nav keeps the document, so the overlays survive and a plain `caption(page, ...)` call is enough to update them.
+- **Pass an explicit timeout to clicks**, e.g. `.click({ timeout: 20_000 })`. The CI config leaves `actionTimeout` at its default of 0 (no cap), so on a long demo spec a selector miss burns the whole test timeout instead of failing fast.
 - **Pace with `slowMo` (config) + `dwell` only at semantic boundaries** (after a page settles, after a value lands, to hold the final state). `dwell` is the ONLY pacing primitive — never raw `page.waitForTimeout` in a step, or CI slows down too.
 - **Assert what the viewer should see** (`expect(...).toBeVisible()`) — doubles as a settle point AND is the real e2e assertion when `DEMO` is unset. Assert in every step, not just the demo-worthy ones.
 - **Mutations restore in `finally`, gated `if (!DEMO)`** — keeps the CI gate idempotent (seed data un-drifted) without tailing the recording with an un-narrated edit-back.
