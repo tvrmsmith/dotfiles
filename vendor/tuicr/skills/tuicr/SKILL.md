@@ -1,6 +1,6 @@
 ---
 name: tuicr
-description: Use tuicr's review CLI to read and add comments in active TUI review sessions, and launch tuicr in tmux, Zellij, or Herdr when a user needs an interactive review pane.
+description: Use tuicr's review CLI to read and add comments in active TUI review sessions, and launch tuicr in cmux, tmux, Zellij, Herdr, or Orca when a user needs an interactive review pane.
 ---
 
 # tuicr Review Workflow
@@ -49,11 +49,17 @@ If the user's intent is ambiguous, ask which workflow they want.
    local and PR sessions by owner/repo. Each row carries a `kind` (`local` or
    `pr`) and a usable `slug`. Use `--all` when you don't know the repo.
 
+   `[]` with exit 0 also means "not a repo root" — a subdirectory returns it
+   too. Pass the root, then `--all`, before concluding nothing is open.
+
 3. Choose the session:
    - If the CLI clearly reports exactly one relevant active session with
      `"active": true`, attach to it.
    - If multiple sessions are active, or the correct session is not clear, ask
-     the user which slug to use.
+     the user which slug to use. One repo can hold a worktree and a
+     commit-range session at once, and adding to the wrong one exits 0.
+   - Skip any row with a non-null `superseded_by`: that session is idle and a
+     live TUI is reviewing the same checkout. Poll the slug it names instead.
    - If the user provided a slug or session JSON path, use it directly.
    - For a PR review, pass the PR slug from the listing (e.g.
      `gh:owner/repo/pr/N`) to `--session`; it is self-contained and needs no
@@ -63,7 +69,7 @@ If the user's intent is ambiguous, ask which workflow they want.
      `"active": true` as a convenience signal. If slug resolution fails, ask the
      user for the slug or repo path used by the session.
 
-The CLI works even if the agent is not running inside tmux, Zellij, or Herdr,
+The CLI works even if the agent is not running inside tmux, Zellij, Herdr, or Orca,
 so do not require a multiplexer just to connect to an existing active session.
 
 ## Start A Session
@@ -72,30 +78,75 @@ When the user needs an interactive tuicr pane and no active session exists:
 
 | Environment | Action |
 |-------------|--------|
-| `$TMUX` is set | Run `tuicr-wrapper.sh /path/to/repo` |
-| `$ZELLIJ` is set | Run `tuicr-wrapper-zellij.sh /path/to/repo` |
-| `$HERDR_ENV` is `1` | Run `tuicr-wrapper-herdr.sh /path/to/repo` |
+| `$CMUX_WORKSPACE_ID` is set | Run `tuicr-wrapper-cmux.sh /path/to/repo -- <scope>` |
+| `$TMUX` is set | Run `tuicr-wrapper.sh /path/to/repo -- <scope>` |
+| `$ZELLIJ` is set | Run `tuicr-wrapper-zellij.sh /path/to/repo -- <scope>` |
+| `$HERDR_ENV` is `1` | Run `tuicr-wrapper-herdr.sh /path/to/repo -- <scope>` |
+| `$TERM_PROGRAM` is `Orca` or `$ORCA_TERMINAL_HANDLE` is set | Run `tuicr-wrapper-orca.sh /path/to/repo -- <scope>` |
 | None is set | Tell the user you are waiting for them to start `tuicr` in the repo, then attach with `tuicr review list` after they say it is ready |
 
+`<scope>` is `-w` for uncommitted working-tree changes or `-r <revset>` for a
+commit range — always pass one explicitly so the user is never left to pick
+staged/unstaged/commit-range manually in the TUI.
+
 If more than one multiplexer marker is set, prefer the innermost multiplexer if
-that is clear; otherwise ask.
+that is clear; otherwise ask. cmux hosts a Ghostty terminal, so `$TERM_PROGRAM`
+reads `ghostty` inside cmux — check `$CMUX_WORKSPACE_ID`, not the terminal name.
+
+tuicr supports both git and Jujutsu (jj) repositories, and jj workspaces may
+have no `.git` directory at all. Do not pre-check the directory with
+`git rev-parse` or refuse to launch because git does not recognize it; always
+run the wrapper and let it validate the repository.
 
 Wrapper paths are relative to this skill directory:
 
 ```bash
-<skill-directory>/tuicr-wrapper.sh /path/to/repo
-<skill-directory>/tuicr-wrapper-zellij.sh /path/to/repo
-<skill-directory>/tuicr-wrapper-herdr.sh /path/to/repo
+<skill-directory>/tuicr-wrapper-cmux.sh /path/to/repo -- -w
+<skill-directory>/tuicr-wrapper.sh /path/to/repo -- -w
+<skill-directory>/tuicr-wrapper-zellij.sh /path/to/repo -- -w
+<skill-directory>/tuicr-wrapper-herdr.sh /path/to/repo -- -w
+<skill-directory>/tuicr-wrapper-orca.sh /path/to/repo -- -w
 ```
 
 The Herdr wrapper requires `jq` to read pane IDs and completion results from
-Herdr's JSON responses.
+Herdr's JSON responses. The tmux, Orca and zellij wrappers require `lsof`, which
+is how they tell a tuicr reviewing this repository from one reviewing another. The
+Orca wrapper also requires `jq` and the `orca` CLI; it splits the current Orca
+terminal, so run it from inside an Orca-managed pane.
+
+Every wrapper accepts pass-through tuicr arguments after `--`, which is how
+you scope the review instead of leaving the scope selector for the user to
+fill in — for example `-- -w` for uncommitted working-tree changes or
+`-- -r <revset>` for a commit range. Always pass one of these explicitly when
+launching a review pane.
 
 If your tool supports command timeouts, use a long timeout, such as 10 minutes,
-because the wrappers wait for the TUI to exit. Once the TUI creates its active
-session, use `tuicr review list --repo /path/to/repo` to capture the slug. If
-your environment cannot run another command while the wrapper is waiting, read
-the comments after the user exits tuicr.
+because the tmux, Zellij, and Herdr wrappers wait for the TUI to exit. The cmux
+wrapper is the exception: it returns as soon as the pane is running and prints
+the new surface ref between `=== TUICR SURFACE ===` markers. Capture that ref —
+it is how you close the pane later with `cmux close-surface --surface <ref>`.
+Once the TUI creates its active session, use
+`tuicr review list --repo /path/to/repo` to capture the slug. If your
+environment cannot run another command while a blocking wrapper is waiting,
+read the comments after the user exits tuicr.
+
+## Reconstruct The Diff
+
+To review a patch yourself, rebuild the diff the user sees. The slug's source
+segment says which:
+
+| Slug segment | Diff |
+|--------------|------|
+| `worktree/<head>`, `staged-and-unstaged/<head>` | `git diff HEAD` |
+| `staged/<head>` | `git diff --cached` |
+| `unstaged/<head>` | `git diff` |
+| `commits/<base>..<head>` | `git diff <base>~1..<head>` |
+| `pr/<n>` | `gh pr diff <n>` |
+| `pristine` | none; every tracked file shown in full |
+
+Range endpoints are inclusive and printed oldest-first, so `<base>` without
+`~1` drops the first commit. Check the file count against the listing row's
+`file_count`; a mismatch means every line number you derive will be wrong.
 
 ## Read User Comments
 
@@ -118,8 +169,25 @@ The command emits JSON. Each comment includes fields like:
 - `end_line`
 - `side`
 - `comment_type`
+- `author`
 - `lifecycle_state`
+- `author`
+- `in_reply_to`
+- `released_in`
 - `content`
+
+`author` tells the user's comments from your own: the user's default to `user`
+(or their configured username), while yours carry whatever `--username` you
+passed. `in_reply_to` is the id of the comment a reply answers, or `null`.
+
+Together they give you the set of comments still needing a response, without
+re-reading your own replies as fresh feedback:
+
+```bash
+tuicr review comments --repo /path/to/repo --session <slug> | jq '
+  (map(select(.in_reply_to)) | map(.in_reply_to)) as $answered
+  | map(select(.author != "<your username>" and (.id | IN($answered[]) | not)))'
+```
 
 Treat these comments as the user's review feedback:
 
@@ -128,15 +196,43 @@ Treat these comments as the user's review feedback:
 - `note`: answer or acknowledge
 - `praise`: no action required
 
-If you are waiting during an active review, poll this command about every 30
-seconds and compare comment IDs with the previous result. Read immediately when
-the user says comments are ready. Stop polling once the user says the review is
-done or your tooling would block other work.
+## Wait For The Release
 
-If the result is empty, ask whether the user saved comments in the intended
-session or whether another active session should be selected. If the review may
-have continued while you were working, rerun `tuicr review comments` before
-claiming completion.
+Comments hit the session file the moment the user confirms them, so a poll can
+easily catch a half-written batch. `:send` in the TUI is how the user says "this
+batch is ready": it bumps a monotonic `release_count` on the session and stamps
+every unreleased comment with that batch number.
+
+While waiting, poll `tuicr review list` about every 30 seconds and watch
+`release_count`. Act when it increases — not when `updated_at` moves, which it
+does on every keystroke-level save. `unreleased_count` tells you the user is
+still writing. Then read the batch:
+
+```bash
+tuicr review comments --session <slug> | jq 'map(select(.released_in == <n>))'
+```
+
+A `:send` that releases nothing (`release_count` moves, no new comments) is the
+user saying "I am done, no further notes" — stop polling. An edited comment
+loses its `released_in` and comes back in a later batch, so re-read a comment id
+you have seen before if it reappears.
+
+If the user has not adopted `:send`, fall back to polling `tuicr review
+comments` every 30 seconds and comparing comment IDs with the previous result.
+Read immediately when the user says comments are ready. Stop polling once the
+user says the review is done or your tooling would block other work.
+
+An empty result does not by itself mean the review didn't happen. On exit,
+tuicr always prints a line like `tuicr-summary: reviewed 3/3 files, 0 comments
+added` to stderr (visible in the pane's scrollback), and `tuicr review list`
+reports the same `reviewed_count`/`file_count` for the session. If
+`reviewed_count` equals `file_count`, zero comments is a legitimate "nothing to
+flag" outcome — treat the review as complete, don't ask the user to confirm.
+Only ask whether the user saved comments in the intended session, or whether
+another active session should be selected, when `reviewed_count` is less than
+`file_count` (the user quit before reviewing everything) or you can't find a
+`tuicr-summary:` line at all. If the review may have continued while you were
+working, rerun `tuicr review comments` before claiming completion.
 
 ## Add Agent Comments
 
@@ -172,13 +268,38 @@ tuicr review add --repo /path/to/repo --session <slug> \
   "Consider splitting this file-level concern into a helper."
 ```
 
+Reply to a specific comment with `--reply-to <comment-id>`, taking the id from
+`tuicr review comments`. The reply is anchored at its parent automatically, so
+do not pass target flags with it. Reply to each comment you address — that is
+what lets you and the user see what has been handled:
+
+```bash
+tuicr review add --repo /path/to/repo --session <slug> \
+  --reply-to 79c9b3e1-0a7a-4efe-9d43-f7085d7c1a82 \
+  --username "Codex" \
+  "Fixed: handled the empty case."
+```
+
 Omit `--target-file` for a review-level comment. Add `--end-line` for a range
 comment. Use `--side old` for removed lines and `--side new` for added or
 unchanged lines in the new file.
 
 For structured input, use `--input` with literal JSON, `@path/to/file.json`, or
 `-` for stdin. Supported target types are `review`, `file`, `line`, and
-`line_range`.
+`line_range`. One object per call — an array is a parse error. The file key is
+`file`, not `path`. `target.type` is inferred from the fields present:
+
+```bash
+tuicr review add --session <slug> --username "Codex" --input \
+  '{"file":"src/main.rs","line":42,"side":"new","comment_type":"issue","content":"Handle the empty case."}'
+```
+
+Then verify. A line outside the diff stores, prints back, and exits 0, but
+never renders — invisible to the user, successful-looking to you. Re-read
+`tuicr review comments` and check each `start_line` exists on the side you gave
+(`new` for added or unchanged, `old` for removed). Check `author` to distinguish
+your comments from the user's, and keep the returned `id`s to identify the exact
+comments in later reads.
 
 ## Legacy Export Output
 
@@ -196,6 +317,13 @@ wrapper mentions clipboard export, ask the user to paste it only when the CLI
 comments are unavailable.
 
 ## Multiplexer Tips
+
+cmux:
+
+- Switch panes: click the pane, or `cmux focus-pane --pane <ref>`
+- Close tuicr: press `q`; the pane closes itself. Force it with `cmux close-surface --surface <ref>`
+- List panes: `cmux list-panes`
+- Read a pane without focusing it: `cmux read-screen --surface <ref>`
 
 tmux:
 
@@ -217,16 +345,25 @@ Herdr:
 - Select a pane: click it in the Herdr UI
 - Close tuicr: press `q`; the wrapper then closes the review pane
 
+Orca:
+
+- Select a pane: click it in the Orca UI
+- Close tuicr: press `q`; the wrapper then closes the review pane
+- Split direction: set `TUICR_PANE_DIRECTION` to `horizontal` (side by side) or
+  `vertical` (stacked)
+
 ## Error Handling
 
 | Situation | Action |
 |-----------|--------|
 | Multiple plausible active sessions | Ask which session slug to use |
-| No active session, tmux/Zellij/Herdr available | Start a new tuicr pane with the matching wrapper |
+| No active session, cmux/tmux/Zellij/Herdr/Orca available | Start a new tuicr pane with the matching wrapper |
 | No active session, no multiplexer | Tell the user you are waiting for them to start `tuicr` |
+| cmux wrapper printed no surface ref | Run `cmux list-panes` to find the pane, or ask the user to start `tuicr` themselves |
 | `tuicr` not installed | Tell the user to install tuicr |
 | Not a repository | Ask for the correct repo directory |
-| Comments are empty | Confirm the selected session or ask the user to save/add comments |
+| Comments are empty, but `reviewed_count` == `file_count` | Treat as a completed review with nothing to flag — don't ask |
+| Comments are empty and `reviewed_count` < `file_count` | Confirm the selected session or ask the user to save/add comments |
 
 ## When Not To Use
 
