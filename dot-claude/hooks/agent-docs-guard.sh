@@ -9,8 +9,18 @@
 # expectation; this hook is what makes it land at the moment of the edit, when
 # the instruction is actually actionable.
 #
-# Guidance only — never a deny. Writing one of these files is legitimate; the
-# only claim here is that it should be done with the skill loaded.
+# Guidance for an interactive session — never a deny. Writing one of these files
+# is legitimate; the only claim there is that it should be done with the skill
+# loaded.
+#
+# One case is a deny instead. Under NM_GATE=1 (set by nm-claude, so the caller is
+# a no-mistakes gate step agent) a write to an agent INSTRUCTION file is refused,
+# the same shape adr-guard.sh uses for docs/adr/. Those files are the standing
+# orders every later step reads, and a gate run amends them unattended: one
+# overnight run rewrote AGENTS.md on eight successive restarts, each costing a
+# full revalidation. Reads stay open, since AGENTS.md is how the gate agent
+# learns the project's rules in the first place. The deny is narrower than the
+# nudge: a SKILL.md is agent-facing craft the gate may still fix.
 #
 # Fires once per session, tracked by a marker under
 # $TMPDIR/claude-agent-docs-guard/. Repeating it on every edit of a long
@@ -32,11 +42,63 @@ payload="$(cat)"
 tool="$(printf '%s' "$payload" | jq -r '.tool_name // empty')"
 case "$tool" in
   Edit|Write|MultiEdit|NotebookEdit) ;;
+  # Bash reaches the gate deny below and nothing else. A shell command carries no
+  # single target to nudge about, and the deny is the half that has to hold
+  # whatever writes the file.
+  Bash) ;;
   *) exit 0 ;;
 esac
 
+deny() {
+  jq -n --arg r "$1" '{
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason: $r
+    }
+  }'
+}
+
+# The instruction files, the subset of the agent-facing set that steers every
+# later agent in the repository rather than describing one thing. A no-mistakes
+# gate agent amending one of these rewrites the standing orders of the steps
+# behind it, inside a run nobody is watching; Trevor keeps them hand-edited.
+# Narrower than AGENT_DOC_RE on purpose: a SKILL.md is agent-facing craft the
+# gate may still fix.
+AGENT_INSTRUCTION_RE='(^|/)(AGENTS?\.md|CLAUDE(\.local)?\.md|GEMINI\.md|\.cursorrules)$'
+
+# The same set recognised inside a shell command line, where the path sits
+# between other words instead of alone. The surrounding classes admit `>`, a
+# space, or a quote on either side while refusing a longer filename that merely
+# ends the same way (`MY-CLAUDE.md`).
+AGENT_INSTRUCTION_CMD_RE='(^|[^[:alnum:]_.-])([^[:space:]'"'"'";|&<>]*/)?(AGENTS?\.md|CLAUDE(\.local)?\.md|GEMINI\.md|\.cursorrules)([^[:alnum:]_-]|$)'
+
+GATE_DENY='Blocked: no-mistakes gate agents leave agent instruction files as they stand. AGENTS.md, CLAUDE.md and their siblings are the standing orders every later step reads, so Trevor writes them by hand, in a session he is watching. Report what you wanted to record as a finding instead, naming the file and the exact text you would add, and let it reach him. Every other file in the repository is yours to edit as usual.'
+
+if [ "$tool" = "Bash" ]; then
+  [ "${NM_GATE:-}" = 1 ] || exit 0
+  command="$(printf '%s' "$payload" | jq -r '.tool_input.command // empty')"
+  [ -n "$command" ] || exit 0
+  printf '%s' "$command" | grep -Eq "$AGENT_INSTRUCTION_CMD_RE" || exit 0
+  # Reading one of these is how a gate agent learns the project's rules, so only
+  # a command that can mutate is denied. The patterns mirror adr-guard.sh; an
+  # unusual writer (an inline python heredoc) still gets through, which is why
+  # the deny above covers the file-editing tools directly.
+  printf '%s' "$command" | grep -Eq '(>>?[[:space:]]*[^|&;]*(AGENTS?\.md|CLAUDE(\.local)?\.md|GEMINI\.md|\.cursorrules)|[[:space:]]tee[[:space:]]|sed[[:space:]]+-[a-zA-Z]*i|\bperl\b[^|]*-[a-zA-Z]*i|\b(rm|mv|cp|truncate|install)\b|git[[:space:]]+(apply|checkout|restore|mv|rm)\b|\bpatch\b)' || exit 0
+  deny "$GATE_DENY"
+  exit 0
+fi
+
 target="$(printf '%s' "$payload" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty')"
 [ -n "$target" ] || exit 0
+
+# Ahead of every match below, and ahead of the once-per-session marker: a deny
+# has to hold on the tenth edit of a session exactly as it did on the first,
+# while the nudge is spent after one.
+if [ "${NM_GATE:-}" = 1 ] && printf '%s' "$target" | grep -Eq "$AGENT_INSTRUCTION_RE"; then
+  deny "$GATE_DENY"
+  exit 0
+fi
 
 # Filenames that are agent-facing by convention, plus the `agents/` sidecar dirs
 # the Matt Pocock skills use for per-harness metadata. A `docs/` file reached by
