@@ -31,7 +31,7 @@ NPM_SKILLS=(
 # prefix|remote|branch|subpath|url  (subpath is relative to the upstream repo root)
 GIT_SKILLS=(
   "no-mistakes|tvrmsmith-no-mistakes|personal-build|skills/no-mistakes|git@github-personal:tvrmsmith/no-mistakes.git"
-  "tuicr|agavra-tuicr|main|skills/tuicr|https://github.com/agavra/tuicr.git"
+  "tuicr|tvrmsmith-tuicr|groupdiff|skills/tuicr|git@github-personal:tvrmsmith/tuicr.git"
   "pstack|backnotprop-pstack|main|skills/unslop|https://github.com/backnotprop/pstack.git"
 )
 
