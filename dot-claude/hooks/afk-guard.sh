@@ -49,12 +49,53 @@ except Exception:
 event=$(json_value hook_event_name)
 mark="$MARKS/$(json_value session_id)"
 
+# UserPromptSubmit also fires for a background task-notification and for a
+# peer session's message, neither of which is Trevor. The transcript row
+# matching this hook's prompt_id carries the real source: typed_prompt below
+# requires promptSource "typed" and origin.kind "human", so a notification
+# (promptSource "system", origin.kind "task-notification") or a peer message
+# (origin.kind "peer") leaves the marker in place instead of announcing a
+# return nobody made.
+typed_prompt() {
+  printf '%s' "$input" | python3 -c "
+import json,sys
+
+try:
+    payload = json.load(sys.stdin)
+    prompt_id = payload['prompt_id']
+    path = payload['transcript_path']
+except Exception:
+    print('no')
+    sys.exit()
+
+try:
+    with open(path) as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if row.get('type') != 'user' or row.get('promptId') != prompt_id:
+                continue
+            origin = row.get('origin') or {}
+            kind = origin.get('kind') if isinstance(origin, dict) else None
+            print('yes' if row.get('promptSource') == 'typed' and kind == 'human' else 'no')
+            sys.exit()
+except Exception:
+    pass
+print('no')
+" 2>/dev/null
+}
+
 # A typed prompt is proof Trevor is back at the keyboard. Tell the sessions that
 # actually ran under AFK, once each, and only those: UserPromptSubmit stdout is
 # injected into the agent's context. This runs before the flag check, since the
 # whole point is to reach a session after AFK has ended.
 if [ "$event" = "UserPromptSubmit" ]; then
-  if [ -f "$mark" ]; then
+  if [ -f "$mark" ] && [ "$(typed_prompt)" = "yes" ]; then
     rm -f "$mark"
     cat <<EOF
 Trevor is back: he typed this prompt himself, so AFK is over for this session.
