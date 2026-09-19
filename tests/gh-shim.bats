@@ -56,6 +56,30 @@ tier() { routes "$@" | awk '{print $1}'; }
   contains "$out" "plugins=1"
 }
 
+# The two tests above defend a race the shim should not be in at all. install.sh
+# runs `brew unlink gh`, so the shim is the only `gh` any PATH can reach and
+# order stops mattering. `brew upgrade gh` relinks, which is what this catches.
+@test "no second gh competes with the shim on PATH" {
+  command -v zsh >/dev/null || skip "no zsh"
+  command -v brew >/dev/null 2>&1 || skip "no homebrew"
+  found="$(zsh -lic 'whence -ap gh' 2>/dev/null)"
+  [ -n "$found" ] || { echo "no gh on the interactive PATH at all" >&2; exit 1; }
+  others="$(printf '%s\n' "$found" | grep -vxF "$HOME/.local/bin/gh" || true)"
+  if [ -n "$others" ]; then
+    printf 'gh also resolves at:\n%s\nrun ./install.sh to unlink it\n' "$others" >&2
+    exit 1
+  fi
+}
+
+# With brew's gh unlinked there is nothing named gh on PATH, so the shim has to
+# reach the keg through Homebrew's opt link or every command exits 127.
+@test "the shim finds the real binary with no gh on PATH" {
+  command -v brew >/dev/null 2>&1 || skip "no homebrew"
+  brew list --formula gh >/dev/null 2>&1 || skip "gh not installed with brew"
+  [ -x "$(brew --prefix)/opt/gh/bin/gh" ] || { echo "brew's gh keg has no opt link" >&2; exit 1; }
+  equals "$(PATH=/usr/bin:/bin GH_SHIM_EXPLAIN=1 bash "$SHIM" pr list 2>&1 | awk '{print $1}')" "read"
+}
+
 @test "read verbs stay on the silent path" {
   for args in "pr list" "pr view 12" "pr diff 12" "pr checks 12" \
               "issue list" "issue view 3" "repo view" "repo clone o/r" \

@@ -129,6 +129,42 @@ install_tuicr() {
 	fi
 }
 
+unlink_brew_gh() {
+	# Take the name `gh` away from the real binary, so dot-local/bin/gh is the
+	# only gh on any PATH and cannot lose the race that used to decide which one
+	# ran. Claude Code pins a PATH snapshot per session
+	# (~/.claude/shell-snapshots/snapshot-zsh-*.sh) captured from whatever
+	# launched it, and the hoist_shim_path calls in .zprofile/.zshrc never run in
+	# that shell, so brew came first in most agent sessions. Unlinking leaves the
+	# keg installed and reachable at $(brew --prefix)/opt/gh/bin/gh, which is
+	# where the shim looks when PATH holds no other gh. See dotfiles-asc.
+	#
+	# Rerunnable, and needed on every run: `brew upgrade gh` links the new
+	# version back.
+	command -v brew >/dev/null 2>&1 || return 0
+	brew list --formula gh >/dev/null 2>&1 || return 0
+
+	local prefix
+	prefix="$(brew --prefix)"
+	if [ -e "$prefix/bin/gh" ]; then
+		echo "Unlinking Homebrew's gh so the shim owns the name..."
+		brew unlink gh
+	fi
+
+	if [ ! -x "$prefix/opt/gh/bin/gh" ]; then
+		echo "install.sh: $prefix/opt/gh/bin/gh missing; the gh shim has no real binary to call." >&2
+	fi
+
+	# Unlinking removes the keg's completions and man pages along with the
+	# binary. The completion is the one worth keeping: it fires on the shim, and
+	# losing it is a daily regression. `man gh` stays gone; `gh help` covers it.
+	if [ -f "$prefix/opt/gh/share/zsh/site-functions/_gh" ]; then
+		mkdir -p "$prefix/share/zsh/site-functions"
+		ln -sfn "$prefix/opt/gh/share/zsh/site-functions/_gh" \
+			"$prefix/share/zsh/site-functions/_gh"
+	fi
+}
+
 # Files that live-writers replace instead of updating in place. Each is stowed
 # like everything else, but a writer that saves atomically (temp file + rename)
 # swaps our symlink for a regular file, and stow then refuses to place anything
@@ -288,6 +324,7 @@ main() {
 	install_no_mistakes
 	install_tuicr
 	setup_dotfiles
+	unlink_brew_gh
 	link_beads_prime
 	echo "Dot files installed."
 }

@@ -2,24 +2,14 @@
 
 Personal dotfiles managed with GNU Stow.
 
-## Stow convention
-
-Files/dirs prefixed `dot-` are symlinked into `$HOME` with the prefix replaced by `.` (via `stow --dotfiles`). Exclusions live in `.stow-local-ignore`. Submodules in `.gitmodules`.
-
-## Workflow
-
-- Install / add new files: `./install.sh` (or `stow --dotfiles -t "$HOME" .`)
-- Edit existing `dot-*` file → change is live via symlink; no reinstall needed
-- New top-level config → create as `dot-<name>` (or under `dot-config/`), then re-stow
-
 ## Notes
 
-- Shell configs source `$CONSOLO_DOCKER_DEV_DIR/.helpers/{compose,git,system}.sh` — work-machine path, may not exist elsewhere; guard new sources similarly
-- `NVIM_APPNAME` (set in `dot-zshenv`) selects the active neovim config: `nvim-LazyVim` (default), `nvim` (kickstart), or `nvim-Lazyman`. `nvims` command (Lazyman) switches interactively
-- Agent sandboxing (`mysbx`, `mysbx-*`, `nono-*`, files under `extras/agent-sandboxing/` + `dot-local/bin/mysbx`): see the repo-scoped `agent-sandboxing` skill at `.claude/skills/agent-sandboxing/SKILL.md`.
-- `dot-local/bin/gh` shims the real `gh` into three tiers, each with its own credential. Reads use a read-only token; the PR lifecycle uses one scoped `Pull requests: write` with contents left at read, so it opens PRs and cannot merge (GitHub gates merging, and auto-merge, on `Contents: write`); everything else goes through 1Password and prompts. Both silent tokens live in the login keychain keyed by GitHub resource owner (`security find-generic-password -s gh-readonly|gh-prwrite -a <owner>`), because a fine-grained PAT has exactly one owner. Keeping them separate is what makes a misclassified write harmless. `GH_SHIM_EXPLAIN=1 gh <args>` prints the routing decision and runs nothing; `tests/gh-shim.bats` covers the classifier. Provision with `extras/gh-readonly-tokens.sh` (rerunnable). Sourcing `~/.config/op/plugins.sh` again would shadow the shim, since an alias beats PATH
-- The write tier picks its 1Password account by owner too, from `~/.config/gh-shim/write-tokens` (machine-local; see `extras/gh-shim-write-tokens.example`). It must, because `op plugin run` cannot be told which account to use: it pins one item in `~/.config/op/plugins/gh.json`, then lets a per-terminal selection override that, so one command authenticated as two different users in two windows. `OP_ACCOUNT` does not steer it either, it only changes which account the already-chosen vault resolves in. The shim runs `op read --account` instead, which resolves the one reference it is handed. Not `op run`, which resolves every `op://` reference in the inherited environment rather than only the ones in its `--env-file`, so a shell exporting a work `op://` var broke every personal write. `extras/gh-readonly-tokens.sh` writes the map
-- A `~/.config` subdirectory whose own tool writes into it (`gh` rewrites `hosts.yml`, 1Password drops `telemetry-enabled`) needs BOTH a `mkdir -p` in `install.sh` and the runtime name in `.stow-local-ignore`. The mkdir is load-bearing, not belt-and-braces. With the target absent, stow folds the parent into one symlink and never descends, so a nested ignore pattern is never consulted.
+Each of these is a rule the files themselves do not confess.
+
+- Editing a stowed `dot-*` file is live through the symlink. Only a new top-level path needs `./install.sh`
+- A `~/.config` subdirectory whose own tool writes into it (`gh` rewrites `hosts.yml`, 1Password drops `telemetry-enabled`) needs BOTH a `mkdir -p` in `install.sh` and the runtime name in `.stow-local-ignore`. The mkdir is load-bearing, not belt-and-braces. With the target absent, stow folds the parent into one symlink and never descends, so a nested ignore pattern is never consulted
+- Shell configs source `$CONSOLO_DOCKER_DEV_DIR/.helpers/{compose,git,system}.sh`, a work-machine path that is absent elsewhere. Guard a new source the same way
+- `gh` runs through `dot-local/bin/gh`, which picks a credential tier from what the command does. The design and its traps are in that file's header comment; `GH_SHIM_EXPLAIN=1 gh <args>` prints the routing decision and runs nothing. Sourcing `~/.config/op/plugins.sh` after startup restores an alias that shadows the shim
 
 ## Issue tracker
 
