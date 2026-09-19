@@ -53,8 +53,27 @@ while IFS= read -r candidate; do
 	break
 done < <(type -aP gh)
 
+# Nothing on PATH is the expected case on Trevor's machines: install.sh runs
+# `brew unlink gh`, so the Cellar binary is reachable through Homebrew's `opt`
+# link but carries no bare `gh` anywhere on PATH. That is deliberate. A shim
+# that shares the name with the real binary only wins while it is earlier on
+# PATH, and Claude Code pins a captured PATH in its shell snapshot that the
+# .zprofile/.zshrc hoist never gets to correct, so the race was lost in most
+# agent shells. With no competitor there is no race, in any launcher. The `opt`
+# link is read directly rather than through `brew --prefix gh`, which costs a
+# subprocess on every gh call. See dotfiles-asc.
 if [ -z "$real_gh" ]; then
-	echo "gh shim: no real gh binary found on PATH" >&2
+	for prefix in "${HOMEBREW_PREFIX:-}" /opt/homebrew /usr/local /home/linuxbrew/.linuxbrew; do
+		[ -n "$prefix" ] || continue
+		if [ -x "$prefix/opt/gh/bin/gh" ]; then
+			real_gh="$prefix/opt/gh/bin/gh"
+			break
+		fi
+	done
+fi
+
+if [ -z "$real_gh" ]; then
+	echo "gh shim: no real gh binary found on PATH or in a Homebrew opt prefix" >&2
 	exit 127
 fi
 
