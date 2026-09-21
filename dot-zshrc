@@ -159,7 +159,11 @@ print("\n".join(lines))
   fi
   # TERM=dumb stops glow probing the terminal without costing colour, and
   # `command` skips the glow wrapper since there is now nothing to flush.
-  printf '%s\n' "$md" | TERM=dumb command glow -
+  # beads.json is the stock dark theme minus the literal "## " prefix every
+  # built-in style puts on headings, which reads as unrendered markdown.
+  local style=~/.config/glow/beads.json
+  [[ -r $style ]] || style=dark
+  printf '%s\n' "$md" | TERM=dumb command glow -s "$style" -
 }
 
 # Manual ADC refresh. Claude Code also runs this itself via the gcpAuthRefresh

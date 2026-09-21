@@ -229,11 +229,13 @@ setup_dotfiles() {
 	#     tokens live in the login keychain, so a copied one names accounts a
 	#     fresh machine cannot authenticate as anyway.
 	#   - 1Password writes an empty telemetry-enabled marker next to its config.
-	# Both runtime names are in .stow-local-ignore, and a nested ignore pattern
+	#   - glow writes glow.yml on `glow config`, alongside the beads.json style
+	#     this repo owns.
+	# Each runtime name is in .stow-local-ignore, and a nested ignore pattern
 	# is only consulted once its parent exists as a real directory: absent, stow
 	# links the parent wholesale and never descends. These mkdirs are what make
-	# those two patterns do anything at all. See dotfiles-2ft.
-	mkdir -p "$HOME/.config/gh" "$HOME/.config/1Password"
+	# those patterns do anything at all. See dotfiles-2ft.
+	mkdir -p "$HOME/.config/gh" "$HOME/.config/1Password" "$HOME/.config/glow"
 
 	# Reconcile the live-writer files (see LIVE_WRITER_FILES) before stow: drop
 	# the live copy when it's already a link to our file, or a regular file
