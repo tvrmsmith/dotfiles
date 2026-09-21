@@ -65,18 +65,36 @@ fi
 
 catls() { [[ -f "$1" ]] && cat "$1" || ls "${1:-.}"; }
 
-# bd asks the terminal for its background colour (OSC 11) and device attributes
-# (DA1) on every command and never reads the answers, so the replies arrive
-# after bd exits and land in ZLE: stray characters on the command line, plus an
+# Charm/termenv programs ask the terminal what colours it uses and never wait
+# long enough for the answer. bd sends OSC 11 plus DA1; glow sends OSC 10, OSC
+# 11 and two cursor-position requests. When a reply lands after the program has
+# given up, it arrives on the next prompt instead: stray text like
+# "c0c0/caca/f5f5]11;rgb:1313/1414/1c1c" on the command line, and zsh's
 # "execute: " prompt when a reply's ESC pairs with the next byte and triggers
-# execute-named-cmd. Swallow whatever is still buffered before returning.
+# execute-named-cmd. Swallow anything still in flight before ZLE sees it.
+#
+# The first wait is the long one, since the whole problem is a slow reply; the
+# rest drain immediately. Interactive stdin only, so scripts and agent shells
+# keep their input. Typeahead entered while the program ran is lost, which is
+# the price of not being able to tell a reply from a keystroke.
+_drain_tty() {
+  [[ -t 0 ]] || return 0
+  local discard
+  read -t 0.2 -k 1 -s discard || return 0
+  while read -t 0.02 -k 1 -s discard; do :; done
+}
+
 bd() {
   command bd "$@"
   local ret=$?
-  if [[ -t 0 ]]; then
-    local discard
-    while read -t 0.05 -k 1 -s discard; do :; done
-  fi
+  _drain_tty
+  return $ret
+}
+
+glow() {
+  command glow "$@"
+  local ret=$?
+  _drain_tty
   return $ret
 }
 
