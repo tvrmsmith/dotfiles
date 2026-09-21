@@ -65,27 +65,25 @@ fi
 
 catls() { [[ -f "$1" ]] && cat "$1" || ls "${1:-.}"; }
 
-# Charm/termenv programs ask the terminal what colours it uses and never wait
-# long enough for the answer. bd sends OSC 11 plus DA1; glow sends OSC 10, OSC
-# 11 and two cursor-position requests. When a reply lands after the program has
-# given up, it arrives on the next prompt instead: stray text like
-# "c0c0/caca/f5f5]11;rgb:1313/1414/1c1c" on the command line, and zsh's
+# Charm/termenv programs ask the terminal what colours it uses and stop waiting
+# before Orca answers. The reply then lands on the next prompt: stray text like
+# "c0c0/caca/f5f5]11;rgb:1313/1414/1c1c" on the command line, plus zsh's
 # "execute: " prompt when a reply's ESC pairs with the next byte and triggers
-# execute-named-cmd. Swallow anything still in flight before ZLE sees it.
+# execute-named-cmd. `ttyprobe <command>` shows what a given program asks for.
 #
-# The first wait is the long one, since the whole problem is a slow reply; the
-# rest drain immediately. Interactive stdin only, so scripts and agent shells
-# keep their input. Typeahead entered while the program ran is lost, which is
-# the price of not being able to tell a reply from a keystroke.
-# Discard the replies, do not try to read them. While a command runs the tty is
-# in cooked mode, so the bytes sit in the line-discipline buffer where `read`
-# cannot reach them, however generous the timeout. They only become readable
-# once ZLE switches to raw mode, which is exactly when they become the leak.
-# tcflush drops them from the queue outright.
+# TERM=dumb is the real fix where it fits, since a probe never sent cannot
+# arrive late. It suits glow, which keeps its colour under it (430 escape
+# sequences vs 432), and bdr uses it below. It does not suit bd, which drops
+# from 260k escape sequences to none, so bd falls back to this flush.
 #
-# Read /dev/tty rather than fd 0: glow is fed from a pipe in bdr, so fd 0 is
-# not the terminal. Typeahead entered while the command ran is discarded too,
-# since nothing distinguishes it from a reply.
+# Discard, do not read. While a command runs the tty is in cooked mode, so the
+# bytes sit in the line-discipline buffer where `read` cannot reach them at any
+# timeout. They only become readable once ZLE switches to raw mode, which is
+# the moment they become the leak. tcflush drops them from the queue instead.
+#
+# Two caveats. Typeahead entered while the command ran goes too, since nothing
+# distinguishes it from a reply. And a reply slower than the flush still gets
+# through, which is why suppression beats cleanup.
 _drain_tty() {
   [[ -o interactive ]] || return 0
   python3 -c 'import sys, termios; termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)' \
@@ -159,7 +157,9 @@ print("\n".join(lines))
     echo "bdr: no issue rendered for $1" >&2
     return 1
   fi
-  printf '%s\n' "$md" | glow -
+  # TERM=dumb stops glow probing the terminal without costing colour, and
+  # `command` skips the glow wrapper since there is now nothing to flush.
+  printf '%s\n' "$md" | TERM=dumb command glow -
 }
 
 # Manual ADC refresh. Claude Code also runs this itself via the gcpAuthRefresh
