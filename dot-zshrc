@@ -77,11 +77,19 @@ catls() { [[ -f "$1" ]] && cat "$1" || ls "${1:-.}"; }
 # rest drain immediately. Interactive stdin only, so scripts and agent shells
 # keep their input. Typeahead entered while the program ran is lost, which is
 # the price of not being able to tell a reply from a keystroke.
+# Discard the replies, do not try to read them. While a command runs the tty is
+# in cooked mode, so the bytes sit in the line-discipline buffer where `read`
+# cannot reach them, however generous the timeout. They only become readable
+# once ZLE switches to raw mode, which is exactly when they become the leak.
+# tcflush drops them from the queue outright.
+#
+# Read /dev/tty rather than fd 0: glow is fed from a pipe in bdr, so fd 0 is
+# not the terminal. Typeahead entered while the command ran is discarded too,
+# since nothing distinguishes it from a reply.
 _drain_tty() {
-  [[ -t 0 ]] || return 0
-  local discard
-  read -t 0.2 -k 1 -s discard || return 0
-  while read -t 0.02 -k 1 -s discard; do :; done
+  [[ -o interactive ]] || return 0
+  python3 -c 'import sys, termios; termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)' \
+    </dev/tty 2>/dev/null
 }
 
 bd() {
