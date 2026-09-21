@@ -65,6 +65,21 @@ fi
 
 catls() { [[ -f "$1" ]] && cat "$1" || ls "${1:-.}"; }
 
+# bd asks the terminal for its background colour (OSC 11) and device attributes
+# (DA1) on every command and never reads the answers, so the replies arrive
+# after bd exits and land in ZLE: stray characters on the command line, plus an
+# "execute: " prompt when a reply's ESC pairs with the next byte and triggers
+# execute-named-cmd. Swallow whatever is still buffered before returning.
+bd() {
+  command bd "$@"
+  local ret=$?
+  if [[ -t 0 ]]; then
+    local discard
+    while read -t 0.05 -k 1 -s discard; do :; done
+  fi
+  return $ret
+}
+
 # Render a beads issue's markdown description with glow.
 # bd show renders plain on a TTY; this pulls the raw markdown and pretty-prints it.
 bdr() {
