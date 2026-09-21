@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Report which terminal queries a command sends.
+
+Charm/termenv programs ask the terminal for its colours and never wait long
+enough for the answer, so the reply lands on the next shell prompt as stray
+text. Run a suspect command under this to see what it asked for:
+
+    ttyprobe bd show some-id
+    ttyprobe glow README.md
+
+It runs the command on a pty, answers the queries the way a terminal would,
+and prints a tally. "none" clears the command.
+"""
+import os
+import pty
+import re
+import select
+import shlex
+import sys
+import time
+
+QUERIES = (
+    (rb"\x1b\]10;\?", "OSC 10 (foreground)", b"\x1b]10;rgb:c0c0/caca/f5f5\x1b\\"),
+    (rb"\x1b\]11;\?", "OSC 11 (background)", b"\x1b]11;rgb:1313/1414/1c1c\x1b\\"),
+    (rb"\x1b\[6n", "DSR (cursor position)", b"\x1b[1;1R"),
+    (rb"\x1b\[c", "DA1 (device attributes)", b"\x1b[?1;2c"),
+)
+
+if len(sys.argv) < 2:
+    sys.exit("usage: ttyprobe <command> [args...]")
+
+# Run through an interactive zsh so shell functions and aliases work, not just
+# binaries on PATH. bdr is a function, and exec'ing it directly just fails.
+command = " ".join(shlex.quote(a) for a in sys.argv[1:])
+
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp("zsh", ["zsh", "-i", "-c", command])
+    os._exit(127)
+
+counts = {}
+produced = 0
+deadline = time.time() + 60
+while time.time() < deadline:
+    readable, _, _ = select.select([fd], [], [], 0.2)
+    if not readable:
+        if os.waitpid(pid, os.WNOHANG)[0]:
+            break
+        continue
+    try:
+        chunk = os.read(fd, 65536)
+    except OSError:
+        break
+    if not chunk:
+        break
+    produced += len(chunk)
+    for pattern, label, reply in QUERIES:
+        hits = len(re.findall(pattern, chunk))
+        if hits:
+            counts[label] = counts.get(label, 0) + hits
+        for _ in range(hits):
+            os.write(fd, reply)
+
+print("\n%s asked the terminal:" % sys.argv[1], file=sys.stderr)
+if counts:
+    for label, n in sorted(counts.items()):
+        print("  %-26s x%d" % (label, n), file=sys.stderr)
+    print("\nAny of these can leak onto your next prompt.", file=sys.stderr)
+elif not produced:
+    # A command that never ran also asks nothing, so say which happened.
+    print("  nothing, and it printed nothing either, so it probably never ran",
+          file=sys.stderr)
+else:
+    print("  nothing - this command is not the leak", file=sys.stderr)
