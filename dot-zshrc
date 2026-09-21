@@ -80,8 +80,10 @@ bd() {
   return $ret
 }
 
-# Render a beads issue's markdown description with glow.
-# bd show renders plain on a TTY; this pulls the raw markdown and pretty-prints it.
+# Render a whole beads issue as one markdown document with glow.
+# bd show renders plain on a TTY, so this pulls the raw fields from --json and
+# stitches the markdown-bearing ones into a single document. Empty fields are
+# skipped, and bd omits them from the JSON entirely when they were never set.
 bdr() {
   if [ -z "$1" ]; then
     echo "usage: bdr <issue-id>" >&2
@@ -91,9 +93,47 @@ bdr() {
     echo "bdr: glow not installed (brew install glow)" >&2
     return 1
   fi
-  bd show "$1" --json \
-    | python3 -c "import sys,json; d=json.load(sys.stdin); o=d[0] if isinstance(d,list) else d; print(o.get('description',''))" \
-    | glow -
+  local md
+  md=$(bd show "$1" --json \
+    | python3 -c '
+import sys, json
+
+raw = sys.stdin.read().strip()
+doc = json.loads(raw) if raw else None
+issue = doc[0] if isinstance(doc, list) and doc else doc
+if not isinstance(issue, dict) or not issue.get("id"):
+    sys.exit(1)
+
+lines = ["# {} {}".format(issue.get("id", ""), issue.get("title", "")).strip()]
+
+meta = [str(issue[k]) for k in ("issue_type", "status", "owner") if issue.get(k)]
+if issue.get("priority") is not None:
+    meta.insert(0, "P{}".format(issue["priority"]))
+if meta:
+    # Inline code, not italics: glow autolinks a bare owner email otherwise.
+    lines += ["", "`{}`".format(" | ".join(meta))]
+
+# bd renamed acceptance criteria at some point, so accept either key.
+sections = [
+    ("Description", ("description",)),
+    ("Design", ("design",)),
+    ("Acceptance criteria", ("acceptance_criteria", "acceptance")),
+    ("Notes", ("notes",)),
+]
+for heading, keys in sections:
+    body = next((issue[k].strip() for k in keys if (issue.get(k) or "").strip()), "")
+    if body:
+        # Field bodies carry their own ## headings, so a rule marks where one
+        # field stops and the next begins.
+        lines += ["", "---", "", "## " + heading, "", body]
+
+print("\n".join(lines))
+')
+  if [ -z "$md" ]; then
+    echo "bdr: no issue rendered for $1" >&2
+    return 1
+  fi
+  printf '%s\n' "$md" | glow -
 }
 
 # Manual ADC refresh. Claude Code also runs this itself via the gcpAuthRefresh
