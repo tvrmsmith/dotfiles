@@ -1,6 +1,6 @@
 ---
 name: pr-review-loop
-description: Converge a PR against its own automatic Claude bot review instead of running a review yourself. Triggers on "PR review loop", "loop the Claude PR review".
+description: Converge a PR against its own automatic Claude bot review instead of running a review yourself, attended or unattended. Triggers on "PR review loop", "loop the Claude PR review", "unattended PR review".
 ---
 # PR Review Loop
 
@@ -20,6 +20,7 @@ Arguments are free-form natural language. Extract optional elements; fall back t
 | Poll interval | `30s` | "poll every 60s" |
 | Focus | none | "focus on error handling" |
 | Model preset | none (recommend + confirm each iteration) | "model=sonnet", "use opus", "haiku for fixes" |
+| Mode | attended | "unattended", "--unattended", "no human in the room" |
 
 **Model preset:** when set, skip 3e's confirm prompt and apply that model to every iteration's fixes.
 
@@ -28,8 +29,43 @@ Focus, when set, is appended as guidance to the `@claude` re-request (step 3g) a
 After parsing, echo the resolved config in one line before anything else, so a misparse is caught immediately:
 
 ```
-PR: <#/url> · Max: <n> · Poll: <interval>/<timeout> · Focus: <focus or "none"> · Model: <preset or "per-iteration">
+PR: <#/url> · Max: <n> · Poll: <interval>/<timeout> · Focus: <focus or "none"> · Model: <preset or "per-iteration"> · Mode: <attended|unattended>
 ```
+
+### 1a. Unattended mode
+
+Unattended means no human is in the room, so the loop takes a documented default at every gate and runs to a verdict the caller can read. A pipeline node (an Archon AI node listing this skill under `skills:`) is the caller this exists for.
+
+**Take the default and keep going.** Each of the four gates states its own unattended default where the gate lives, so the model picks nothing. The gates are 3a bot author, 3d ambiguous findings, 3e fix model, 3i poll timeout. `AskUserQuestion` is attended-only. Unattended, reaching for it hangs the pipeline node until its own timeout kills the run.
+
+**The verdict** is the last thing the run prints, a fenced JSON object and nothing after it, so an Archon node's `output_format` validates it and a downstream node reads `$<node>.output.clean`:
+
+```json
+{
+  "clean": false,
+  "verdict": "deferred-only",
+  "pr": "https://github.com/<owner>/<repo>/pull/<n>",
+  "head_sha": "<short sha of the last pushed commit, or null>",
+  "iterations": 2,
+  "fixed": 7,
+  "deferred": [
+    { "finding": "src/auth.ts:42 · widen the retry window", "reason": "ambiguous, no human in the room" }
+  ],
+  "stop_reason": "one sentence, human-readable"
+}
+```
+
+`clean` is true only for `verdict: "clean"`, the one outcome meaning the bot came back with nothing actionable. Every other value names a section 4 stop condition:
+
+- `deferred-only`, progress stalled on findings nobody was there to approve.
+- `max-iterations`, the cap ran out with findings still open.
+- `timed-out`, the bot never posted a fresh review.
+- `no-review`, there was no bot review to converge against.
+- `blocked`, the loop could not run at all, from no open PR or a push that `git-ssh-fix` and a retry did not fix.
+
+Write the same object to `$ARTIFACTS_DIR/pr-review-loop.json` when that variable is set, so the verdict survives the node's output being truncated.
+
+Attended runs print the section 5 prose report instead and skip the JSON.
 
 ## 2. Auth and directory awareness
 
@@ -51,6 +87,8 @@ Pull the newest Claude-bot review on the PR from **both** sources:
   `gh pr view <n> --json comments`.
 
 **Bot author detection.** Match the author login against `claude[bot]` or `github-actions[bot]` (author type `Bot`). On the first iteration, if no author matches or the match is ambiguous, inspect the PR once and confirm the correct bot author with the user via `AskUserQuestion` before proceeding. Remember the confirmed author for the rest of the run.
+
+**Unattended default:** take the newest author of type `Bot` whose post carries review structure, and remember it. When several qualify, the one that posted most recently wins. When none qualifies on iteration 1, exit with verdict `no-review` rather than converging against a human's comment.
 
 **Iteration 1** uses the review already on the PR — the automatic one; no trigger is needed. Later iterations use the review that landed in step 3i.
 
@@ -79,6 +117,8 @@ Skip findings the user already deferred (see section 4 state).
 
 If there are any ambiguous/unnecessary findings this iteration, present them with `AskUserQuestion` (group related findings; split into multiple sequential questions if they exceed one question's capacity; each option is fix or skip). Clear findings are NOT shown. The approved set = clear findings + ambiguous findings the user chose to fix. Findings the user declined are recorded as deferred. If every finding this iteration is clear, skip the question and go straight to fix dispatch (3e).
 
+**Unattended default:** fix the clear findings and defer every ambiguous one, each recorded with the reason `ambiguous, no human in the room`. The loop declines a judgment call nobody is present to make rather than guessing it, and the verdict's `deferred` list is where the caller picks it back up. When that leaves no approved set at all, skip 3e and 3f, go straight to 3g to reply and resolve, and let section 4's deferred-only stop end the run.
+
 ### 3e. Fix dispatch
 
 **Model selection (each iteration, before dispatch).** Pick the model that will apply this iteration's approved fixes. Routing policy:
@@ -86,6 +126,8 @@ If there are any ambiguous/unnecessary findings this iteration, present them wit
 - Default **Sonnet** (`sonnet`). Escalate to **Opus** (`opus`) for subtle logic, cross-file refactors, or correctness/security judgment. **Haiku** (`haiku`) only for purely mechanical fixes (renames, typos, formatting) — sparingly. Never **Fable**.
 
 If a model preset was parsed (step 1), use it and skip the prompt. Otherwise present the recommendation with `AskUserQuestion`: recommended model first, labelled `(Recommended)`, then the other allowed models so the choice can be overridden. **Ask every iteration** — each iteration's fixes differ and may warrant a different model. When a large batch is split across parallel subagents whose complexity differs materially, recommend per-batch rather than one model for the whole iteration.
+
+**Unattended default:** apply the routing policy above as the decision, per iteration, with no prompt. A parsed model preset still overrides it.
 
 Apply the approved findings via subagent(s), dispatched with the selected model via the Agent tool's `model` parameter:
 
@@ -136,12 +178,14 @@ Poll for a **new** bot review/comment whose `createdAt` (or review `submittedAt`
 - Review lands → return to 3b to parse it for the next iteration.
 - **Poll timeout** → present `AskUserQuestion`: (a) keep waiting — extend by the timeout again, (b) stop and report, (c) check the Actions run (`gh run list` / `gh run watch`), then re-present this gate once the run finishes. Interactive; never silently abort.
 
+**Unattended default:** on the timeout, check the Actions run once (`gh run list`). A run triggered by this iteration's comment that is still `in_progress` or `queued` buys one extension of the poll timeout; anything else (no such run, or one already finished without posting a review) stops the loop with verdict `timed-out`. One extension per iteration, never two, so a stuck bot costs the pipeline a bounded wait.
+
 ### 3j. Iteration summary
 
 After each iteration, print one line:
 
 ```
-Iter <i>/<max>: <total> findings · <fixed> fixed · <deferred> deferred · pushed <sha>
+Iter <i>/<max>: <total> findings · <fixed> fixed · <deferred> deferred · pushed <sha or "nothing">
 ```
 
 Then evaluate stop conditions (section 4). If none hold, start the next iteration at 3a using the review that landed in 3i.
@@ -152,14 +196,15 @@ Stop the loop when ANY holds:
 
 - Iteration count reaches max iterations.
 - The fetched review returns no actionable findings (clean review) — evaluate this AFTER removing the running deferred set, since 3a re-fetches the full review each time and the bot will re-report deferred items every round.
-- The only findings left are ones the user already deferred (no progress possible).
-- The poll times out AND the user chose "stop" at the timeout gate.
+- The only findings left are already-deferred ones (no progress possible).
+- The poll times out AND the timeout gate resolved to stop (the user's choice attended, 3i's default unattended).
+- Unattended only: there is no bot review to converge against, or the loop cannot run (no open PR, or a push that `git-ssh-fix` and a retry did not fix). Attended, both of these are questions for the user.
 
-**State across iterations:** maintain a running set of deferred findings. Once the user defers a finding, never surface it again in this run; only genuinely new findings trigger the decision gate on later iterations.
+**State across iterations:** maintain a running set of deferred findings. Once a finding is deferred, by the user attended or by 3d's default unattended, never surface it again in this run. Only genuinely new findings trigger the decision gate on later iterations.
 
 ## 5. Final report
 
-On exit, print:
+Unattended, the report is the 1a verdict object and nothing else. Attended, print:
 
 - Total iterations run.
 - Total findings fixed.
