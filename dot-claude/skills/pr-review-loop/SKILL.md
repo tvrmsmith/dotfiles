@@ -60,7 +60,7 @@ Unattended means no human is in the room, so the loop takes a documented default
 
 `stop_reason` restates `verdict` in one sentence. It may add the concrete detail (a sha, a count, a run id) but must never name a reason the enum below does not cover. For `failed` and `blocked` the detail is mandatory. It names the failing command and its last error line when a command failed, and otherwise names the state that stopped the run.
 
-`clean` is true only for `verdict: "clean"`, the one outcome meaning the bot came back with nothing actionable:
+`clean` is true only for `verdict: "clean"`, the one outcome meaning nothing actionable is left on the PR:
 
 - `deferred-only`, progress stalled on findings nobody was there to approve.
 - `max-iterations`, the cap ran out.
@@ -74,8 +74,9 @@ Unattended means no human is in the room, so the loop takes a documented default
 1. A terminal `failed`, `blocked` or `no-review` happened, wherever in the loop it happened, including before the run ever reaches 3j.
 2. The parsed set minus the running deferred set is empty AND the running deferred set is empty → `clean`.
 3. The parsed set minus the running deferred set is empty AND the running deferred set is not → `deferred-only`. This is also how a bot that quietly drops a deferred item lands, rather than burning the cap.
-4. The poll was exhausted per 3i → `timed-out`.
-5. The iteration count reached max → `max-iterations`.
+4. The iteration made no commit per 3f → `clean` when the running deferred set is empty, `deferred-only` when it is not. Nothing changed for the bot to re-review, so another iteration would repeat this one.
+5. The poll was exhausted per 3i → `timed-out`.
+6. The iteration count reached max → `max-iterations`.
 
 When no rule fires, print 3j's iteration summary for the iteration just completed, using that iteration's own fix and push counts rather than the freshly parsed review's, then resume the next iteration at 3d with the review already parsed at 3b and triaged at 3c, skipping the 3a re-fetch and the 3b re-parse.
 
@@ -106,7 +107,7 @@ Pull the newest Claude-bot review on the PR from **both** sources:
 
 **Bot author detection.** Match the author login against `claude[bot]` or `github-actions[bot]` (author type `Bot`). On the first iteration, if no author matches or the match is ambiguous, inspect the PR once and confirm the correct bot author with the user via `AskUserQuestion` before proceeding. Remember the confirmed author for the rest of the run.
 
-**Unattended default:** take the newest `Bot` author whose login is `claude[bot]` or `github-actions[bot]`, and remember it for the rest of the run. When neither login posted on iteration 1, stop with verdict `no-review` rather than converging against a human's comment or another tool's findings. When a known login has posted on iteration 1 but no post of theirs carries review structure, the first review is still in flight; wait for one poll timeout at the poll interval for one to appear, applying 3i's landed-vs-acknowledgment heuristic with the run's start time in place of a trigger timestamp. Match the post's `updatedAt` as well as its `createdAt` here, since the bot commonly edits its acknowledgment comment into the review in place and 3i's newer-than-trigger filter alone misses that. Stop with verdict `no-review` if that timeout expires with still no review-structured post. On later iterations the remembered author is the only one eligible, so a post from anyone else is not the review.
+**Unattended default:** take the newest post that both carries an allowed login, `claude[bot]` or `github-actions[bot]`, and carries review structure per 3i's heuristic, and remember that post's author for the rest of the run. A newer post from an allowed login that carries no review structure never displaces the remembered author, so a coverage or deploy-preview comment from `github-actions[bot]` cannot hijack the selection away from the bot that posted the review. When no post on the PR satisfies both conditions on iteration 1, the first review may still be in flight; wait for one poll timeout at the poll interval for one to appear, applying 3i's landed-vs-acknowledgment heuristic with the run's start time in place of a trigger timestamp. Match the post's `updatedAt` as well as its `createdAt` here, since the bot commonly edits its acknowledgment comment into the review in place and 3i's newer-than-trigger filter alone misses that. Stop with verdict `no-review` only when that wait expires with still no post satisfying both conditions, rather than converging against a human's comment or another tool's findings. On later iterations the remembered author is the only one eligible, so a post from anyone else is not the review.
 
 **Iteration 1** uses the review already on the PR — the automatic one; no trigger is needed. Later iterations use the review that landed in step 3i.
 
@@ -159,7 +160,7 @@ Deferred findings are NOT fixed.
 - **One commit per iteration:** stage this round's fixes and commit as a single commit, message via the `caveman:caveman-commit` style.
 - Push to the PR branch (auth and retry per §2).
 
-**Unattended:** a push that `git-ssh-fix` and one retry did not fix stops the run with verdict `blocked`, emitting the verdict object with the counts so far and the unpushed local commit sha in `stop_reason`, since that commit exists only in this worktree. An empty index after a non-empty approved set means no edit was needed, the ordinary outcome when a finding was informational or the code was already correct. Make no commit and no push, leave `head_sha` at its previous value, and continue to 3g, where those findings take the no-action-needed reply. The normal stop conditions then decide the verdict.
+**Unattended:** a push that `git-ssh-fix` and one retry did not fix stops the run with verdict `blocked`, emitting the verdict object with the counts so far and the unpushed local commit sha in `stop_reason`, since that commit exists only in this worktree. An empty index after a non-empty approved set means no edit was needed, the ordinary outcome when a finding was informational or the code was already correct. Make no commit and no push, leave `head_sha` at its previous value, and continue to 3g, where those findings take the no-action-needed reply. An iteration that makes no commit cannot change what the bot sees, so skip 3h and 3i and go straight to 3j, where 1a's verdict rule ends the run.
 
 Capture the pushed short SHA for the iteration summary and the thread replies.
 
