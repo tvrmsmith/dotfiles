@@ -1,6 +1,6 @@
 ---
 name: pr-review-loop
-description: Converge a PR against its own automatic Claude bot review instead of running a review yourself. Triggers on "PR review loop", "loop the Claude PR review".
+description: Converge a PR against its own automatic Claude bot review instead of running a review yourself, attended or unattended. Triggers on "PR review loop", "loop the Claude PR review", "unattended PR review".
 ---
 # PR Review Loop
 
@@ -20,6 +20,7 @@ Arguments are free-form natural language. Extract optional elements; fall back t
 | Poll interval | `30s` | "poll every 60s" |
 | Focus | none | "focus on error handling" |
 | Model preset | none (recommend + confirm each iteration) | "model=sonnet", "use opus", "haiku for fixes" |
+| Mode | attended | "unattended", "--unattended", "no human in the room" |
 
 **Model preset:** when set, skip 3e's confirm prompt and apply that model to every iteration's fixes.
 
@@ -28,12 +29,66 @@ Focus, when set, is appended as guidance to the `@claude` re-request (step 3g) a
 After parsing, echo the resolved config in one line before anything else, so a misparse is caught immediately:
 
 ```
-PR: <#/url> · Max: <n> · Poll: <interval>/<timeout> · Focus: <focus or "none"> · Model: <preset or "per-iteration">
+PR: <#/url> · Max: <n> · Poll: <interval>/<timeout> · Focus: <focus or "none"> · Model: <preset or "per-iteration"> · Mode: <attended|unattended>
 ```
+
+### 1a. Unattended mode
+
+Unattended means no human is in the room, so the loop takes a documented default at every gate and runs to a verdict the caller can read. A pipeline node (an Archon AI node listing this skill under `skills:`) is the caller this exists for.
+
+**Take the default and keep going.** Each of the four gates states its own unattended default where the gate lives, so the model picks nothing. The gates are 3a bot author, 3d ambiguous findings, 3e fix model, 3i poll timeout. `AskUserQuestion` is attended-only. Unattended, reaching for it hangs the pipeline node until its own timeout kills the run.
+
+**The verdict** is the last thing the run prints, a fenced JSON object and nothing after it, so an Archon node's `output_format` validates it and a downstream node reads `$<node>.output.clean`:
+
+```json
+{
+  "clean": false,
+  "verdict": "deferred-only",
+  "pr": "<the PR URL, or null when no open PR was found>",
+  "head_sha": "<short sha of the last pushed commit, or null>",
+  "iterations": 2,
+  "fixed": 7,
+  "deferred": [
+    { "finding": "src/auth.ts:42 · widen the retry window", "reason": "ambiguous, no human in the room" }
+  ],
+  "unresolved_threads": 0,
+  "stop_reason": "one sentence, human-readable"
+}
+```
+
+`unresolved_threads` counts the review threads 3g could not close, and is `0` on a run that closed them all.
+
+`stop_reason` restates `verdict` in one sentence. It may add the concrete detail (a sha, a count, a run id) but must never name a reason the enum below does not cover. For `failed` and `blocked` the detail is mandatory. It names the failing command and its last error line when a command failed, and otherwise names the state that stopped the run.
+
+`clean` is true only for `verdict: "clean"`, the one outcome meaning nothing actionable is left on the PR:
+
+- `deferred-only`, progress stalled on findings nobody was there to approve.
+- `max-iterations`, the cap ran out.
+- `timed-out`, the bot never posted a fresh review.
+- `no-review`, there was no bot review to converge against.
+- `blocked`, the loop could not run, from no open PR or a push that `git-ssh-fix` and a retry did not fix.
+- `failed`, the loop reached a state it cannot proceed from.
+
+**The verdict rule.** Unattended, evaluate this at 3j against the finding set 3b parsed for the current iteration, first match winning. The deferred set throughout is the running set section 4 maintains across iterations, not the findings deferred during the current iteration alone. The rule replaces section 4's unordered conditions, which stay as written for attended runs. Unattended, it also overrides 3i's and 3j's routing. A review that lands at 3i is parsed at 3b and triaged at 3c, and the verdict rules are then evaluated at 3j before any further iteration starts, so the final review before the cap is always the one the verdict reflects.
+
+1. A terminal `failed`, `blocked` or `no-review` happened, wherever in the loop it happened, including before the run ever reaches 3j.
+2. The parsed set minus the running deferred set is empty AND the running deferred set is empty → `clean`.
+3. The parsed set minus the running deferred set is empty AND the running deferred set is not → `deferred-only`. This is also how a bot that quietly drops a deferred item lands, rather than burning the cap.
+4. The iteration made no commit per 3f → `clean` when the running deferred set is empty, `deferred-only` when it is not. Nothing changed for the bot to re-review, so another iteration would repeat this one.
+5. The poll was exhausted per 3i → `timed-out`.
+6. The iteration count reached max → `max-iterations`.
+
+When no rule fires, print 3j's iteration summary for the iteration just completed, using that iteration's own fix and push counts rather than the freshly parsed review's, then resume the next iteration at 3d with the review already parsed at 3b and triaged at 3c, skipping the 3a re-fetch and the 3b re-parse.
+
+**Tool failures are never domain outcomes.** Any `gh` or `git` command that still fails after one retry ends the run with verdict `failed`. Never read a non-zero exit as an empty result, so a failed `gh api` is not "no bot post qualifies" and a failed `gh pr comment` is not a review that never landed. Every unattended exit path, including one you did not plan for, prints the verdict object as its last output. Where a step documents its own handling for a failing command, that handling wins over this blanket rule, whether the handling is a terminal verdict or a carry-on. The blanket rule covers everything else. For example, section 2's `gh pr view` finding no PR and 3f's unfixable push both give `blocked`, 3i's poll tick and its post-timeout `gh run list` query both give `timed-out`, and 3g's `resolveReviewThread` carries on with the thread counted into `unresolved_threads`.
+
+Write the same object to `$ARTIFACTS_DIR/pr-review-loop.json` once, at exit, when that variable is set, so the verdict survives the node's output being truncated. Run `mkdir -p "$ARTIFACTS_DIR"` first; if the write still fails, print a one-line warning before the JSON and carry on.
 
 ## 2. Auth and directory awareness
 
 Follow the global git/`gh` rules in `~/.claude/CLAUDE.md`. If a push fails with `Permission denied`, invoke the `git-ssh-fix` skill and retry.
+
+**Unattended:** when there is no open PR to converge against, stop before iteration 1 with verdict `blocked`, `pr` null and `iterations` 0.
 
 Resolve `<owner>/<repo>` and the PR number once up front (`gh pr view --json number,headRefName,url,headRepositoryOwner,headRepository`). Reuse them for every `gh` / `gh api` call in the loop.
 
@@ -51,6 +106,8 @@ Pull the newest Claude-bot review on the PR from **both** sources:
   `gh pr view <n> --json comments`.
 
 **Bot author detection.** Match the author login against `claude[bot]` or `github-actions[bot]` (author type `Bot`). On the first iteration, if no author matches or the match is ambiguous, inspect the PR once and confirm the correct bot author with the user via `AskUserQuestion` before proceeding. Remember the confirmed author for the rest of the run.
+
+**Unattended default:** take the newest post that both carries an allowed login, `claude[bot]` or `github-actions[bot]`, and carries review structure per 3i's heuristic, and remember that post's author for the rest of the run. A newer post from an allowed login that carries no review structure never displaces the remembered author, so a coverage or deploy-preview comment from `github-actions[bot]` cannot hijack the selection away from the bot that posted the review. When no post on the PR satisfies both conditions on iteration 1, the first review may still be in flight; wait for one poll timeout at the poll interval for one to appear, applying 3i's landed-vs-acknowledgment heuristic with the run's start time in place of a trigger timestamp. Match the post's `updatedAt` as well as its `createdAt` here, since the bot commonly edits its acknowledgment comment into the review in place and 3i's newer-than-trigger filter alone misses that. Stop with verdict `no-review` only when that wait expires with still no post satisfying both conditions, rather than converging against a human's comment or another tool's findings. On later iterations the remembered author is the only one eligible, so a post from anyone else is not the review.
 
 **Iteration 1** uses the review already on the PR — the automatic one; no trigger is needed. Later iterations use the review that landed in step 3i.
 
@@ -79,6 +136,8 @@ Skip findings the user already deferred (see section 4 state).
 
 If there are any ambiguous/unnecessary findings this iteration, present them with `AskUserQuestion` (group related findings; split into multiple sequential questions if they exceed one question's capacity; each option is fix or skip). Clear findings are NOT shown. The approved set = clear findings + ambiguous findings the user chose to fix. Findings the user declined are recorded as deferred. If every finding this iteration is clear, skip the question and go straight to fix dispatch (3e).
 
+**Unattended default:** fix the clear findings and defer every ambiguous one, each recorded with the reason `ambiguous, no human in the room`. The loop declines a judgment call nobody is present to make rather than guessing it, and the verdict's `deferred` list is where the caller picks it back up. When that leaves no approved set at all, skip 3e, 3f, 3h and 3i, do 3g, then go to 3j with `pushed nothing` and let 1a's verdict rule name the verdict.
+
 ### 3e. Fix dispatch
 
 **Model selection (each iteration, before dispatch).** Pick the model that will apply this iteration's approved fixes. Routing policy:
@@ -86,6 +145,8 @@ If there are any ambiguous/unnecessary findings this iteration, present them wit
 - Default **Sonnet** (`sonnet`). Escalate to **Opus** (`opus`) for subtle logic, cross-file refactors, or correctness/security judgment. **Haiku** (`haiku`) only for purely mechanical fixes (renames, typos, formatting) — sparingly. Never **Fable**.
 
 If a model preset was parsed (step 1), use it and skip the prompt. Otherwise present the recommendation with `AskUserQuestion`: recommended model first, labelled `(Recommended)`, then the other allowed models so the choice can be overridden. **Ask every iteration** — each iteration's fixes differ and may warrant a different model. When a large batch is split across parallel subagents whose complexity differs materially, recommend per-batch rather than one model for the whole iteration.
+
+**Unattended default:** apply the routing policy above as the decision, per iteration, with no prompt. A parsed model preset still overrides it.
 
 Apply the approved findings via subagent(s), dispatched with the selected model via the Agent tool's `model` parameter:
 
@@ -99,6 +160,8 @@ Deferred findings are NOT fixed.
 - **One commit per iteration:** stage this round's fixes and commit as a single commit, message via the `caveman:caveman-commit` style.
 - Push to the PR branch (auth and retry per §2).
 
+**Unattended:** a push that `git-ssh-fix` and one retry did not fix stops the run with verdict `blocked`, emitting the verdict object with the counts so far and the unpushed local commit sha in `stop_reason`, since that commit exists only in this worktree. An empty index after a non-empty approved set means no edit was needed, the ordinary outcome when a finding was informational or the code was already correct. Make no commit and no push, leave `head_sha` at its previous value, and continue to 3g, where those findings take the no-action-needed reply. An iteration that makes no commit cannot change what the bot sees, so skip 3h and 3i and go straight to 3j, where 1a's verdict rule ends the run.
+
 Capture the pushed short SHA for the iteration summary and the thread replies.
 
 ### 3g. Reply to comments and resolve threads
@@ -110,6 +173,8 @@ Capture the pushed short SHA for the iteration summary and the thread replies.
 - **No action needed** (the bot confirmed correct behaviour or filed an informational note) → resolve the thread; a reply is optional.
 
 Before moving to 3h, re-run the `reviewThreads` query and confirm every thread reports `isResolved: true` except any the user asked to keep open. An unresolved thread left behind is a defect in this step, not a signal.
+
+**Unattended:** a thread still reporting `isResolved: false` after one retry of `resolveReviewThread` does not block the iteration; count it into the verdict's `unresolved_threads` and carry on.
 
 Mechanics: inline review comments live in review threads. Reply with
 `gh api repos/<owner>/<repo>/pulls/<n>/comments -f body=... -F in_reply_to=<comment_id>`.
@@ -136,12 +201,16 @@ Poll for a **new** bot review/comment whose `createdAt` (or review `submittedAt`
 - Review lands → return to 3b to parse it for the next iteration.
 - **Poll timeout** → present `AskUserQuestion`: (a) keep waiting — extend by the timeout again, (b) stop and report, (c) check the Actions run (`gh run list` / `gh run watch`), then re-present this gate once the run finishes. Interactive; never silently abort.
 
+**Unattended default (poll tick):** a poll tick that fails logs one line and counts as no review yet, since a laptop drops coverage mid-run. The poll path never produces `failed`. Whatever went wrong, the caller learns the bot did not answer inside the budget, so a window of failing ticks ends the same way the timeout does, with verdict `timed-out`.
+
+**Unattended default (poll timeout):** on the timeout, check the Actions runs once with `gh run list -R <owner>/<repo> --event issue_comment --limit 100 --json databaseId,status,createdAt`, reusing the repo section 2 resolved. The match is the newest run whose `createdAt` is at or after 3h's trigger timestamp; when its `status` is `queued` or `in_progress` it buys one extension of the poll timeout. Anything else (no run matches, the matching run already finished without posting a review, or the query itself failed) stops the loop with verdict `timed-out`. One extension per iteration, never two, so a stuck bot costs the pipeline a bounded wait.
+
 ### 3j. Iteration summary
 
 After each iteration, print one line:
 
 ```
-Iter <i>/<max>: <total> findings · <fixed> fixed · <deferred> deferred · pushed <sha>
+Iter <i>/<max>: <total> findings · <fixed> fixed · <deferred> deferred · pushed <sha or "nothing">
 ```
 
 Then evaluate stop conditions (section 4). If none hold, start the next iteration at 3a using the review that landed in 3i.
@@ -152,14 +221,16 @@ Stop the loop when ANY holds:
 
 - Iteration count reaches max iterations.
 - The fetched review returns no actionable findings (clean review) — evaluate this AFTER removing the running deferred set, since 3a re-fetches the full review each time and the bot will re-report deferred items every round.
-- The only findings left are ones the user already deferred (no progress possible).
-- The poll times out AND the user chose "stop" at the timeout gate.
+- The only findings left are already-deferred ones (no progress possible).
+- The poll times out AND the timeout gate resolved to stop (the user's choice attended, 3i's default unattended).
 
-**State across iterations:** maintain a running set of deferred findings. Once the user defers a finding, never surface it again in this run; only genuinely new findings trigger the decision gate on later iterations.
+Unattended, 1a's ordered verdict rule decides which verdict a stop carries, and adds the terminal stops `no-review` (3a), `blocked` (§2, 3f) and `failed`.
+
+**State across iterations:** maintain a running set of deferred findings. Once a finding is deferred, by the user attended or by 3d's default unattended, never surface it again in this run. Only genuinely new findings trigger the decision gate on later iterations.
 
 ## 5. Final report
 
-On exit, print:
+Unattended, the report is the 1a verdict object and nothing else. Attended, print:
 
 - Total iterations run.
 - Total findings fixed.
