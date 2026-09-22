@@ -58,6 +58,11 @@ nodes:
     prompt: |
       Build the slice on bead $INPUTS.bead. Run unattended.
 
+      This checkout has no beads database of its own. Read the bead with
+      `BEADS_DIR=$INPUTS.beads_dir bd show $INPUTS.bead`, and set
+      `BEADS_DIR=$INPUTS.beads_dir` the same way on every other bd command,
+      including any bead you file.
+
   # Joins on all_done, not the default: under the default, a failed `build`
   # would skip `verify`, which would skip `release`, and the bead would stay
   # claimed by a worker that is gone. all_done runs the commit check on every

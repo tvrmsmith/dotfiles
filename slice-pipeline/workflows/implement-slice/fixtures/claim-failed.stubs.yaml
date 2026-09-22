@@ -1,0 +1,21 @@
+# Claim failed: `claim` is left unstubbed, so it fails with a missing stub.
+# `release` is left unstubbed too, so reaching it would add a second failed
+# node and break the exact `fail-node` set. That is the guard: a run that
+# never claimed the bead must not release it. Archon tolerates an unstubbed
+# all_done join, so this guard holds only while release keeps the default
+# trigger rule.
+fixture:
+  expect: failed
+  fail-node: claim
+  reached: [verify]
+  inputs:
+    bead: demo-slice-1
+    beads_dir: /tmp/beads
+
+verify:
+  verified: false
+  committed: false
+  tests_touched: false
+  branch: slice/demo-slice-1
+  sha: ""
+  reason: "no branch slice/demo-slice-1"

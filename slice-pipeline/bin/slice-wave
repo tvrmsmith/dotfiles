@@ -46,26 +46,36 @@ cmd_branch_name() {
 	printf '%s\n' "$branch"
 }
 
+# Sets the caller's `bead` and `beads_dir` locals from --bead and --beads-dir.
+# Returns 2 on an unknown flag or a flag with no value after it.
+parse_flags() {
+	while [ $# -gt 0 ]; do
+		[ $# -ge 2 ] || { echo "slice-wave: $1 needs a value" >&2; return 2; }
+		case "$1" in
+			--bead) bead="$2" ;;
+			--beads-dir) beads_dir="$2" ;;
+			*) echo "slice-wave: unknown flag $1" >&2; return 2 ;;
+		esac
+		shift 2
+	done
+}
+
 # Puts the current worktree on the branch derived from $1, creating it if
 # refs/heads/<branch> does not exist yet. Already being on it is a no-op.
+# git's own error reaches stderr, since a dirty tree and a branch held by
+# another worktree need different fixes.
 switch_to_branch() {
 	local branch="$1"
 	if git show-ref --verify --quiet "refs/heads/$branch"; then
-		git switch "$branch" >/dev/null 2>&1
+		git switch --quiet "$branch"
 	else
-		git switch -c "$branch" >/dev/null 2>&1
+		git switch --quiet -c "$branch"
 	fi
 }
 
 cmd_claim() {
 	local bead="" beads_dir=""
-	while [ $# -gt 0 ]; do
-		case "$1" in
-			--bead) bead="${2:-}"; shift 2 ;;
-			--beads-dir) beads_dir="${2:-}"; shift 2 ;;
-			*) shift ;;
-		esac
-	done
+	parse_flags "$@" || return 2
 	[ -n "$bead" ] && [ -n "$beads_dir" ] || {
 		echo "slice-wave: claim needs --bead and --beads-dir" >&2
 		return 2
@@ -82,33 +92,39 @@ cmd_claim() {
 		return 1
 	}
 
-	BEADS_DIR="$beads_dir" bd update "$bead" --claim >/dev/null 2>&1 || {
+	# Built before the claim, so a failure here cannot strand a claimed bead
+	# with no release to follow it.
+	local claimed
+	claimed="$(jq -n --arg bead "$bead" --arg beads_dir "$beads_dir" --arg branch "$branch" \
+		'{bead: $bead, beads_dir: $beads_dir, branch: $branch}')" || {
+		echo "slice-wave: cannot build the claim output, so $bead was not claimed" >&2
+		return 1
+	}
+
+	BEADS_DIR="$beads_dir" bd update "$bead" --claim >/dev/null || {
 		echo "slice-wave: tracker refused to claim $bead" >&2
 		return 1
 	}
 
-	jq -n --arg bead "$bead" --arg beads_dir "$beads_dir" --arg branch "$branch" \
-		'{bead: $bead, beads_dir: $beads_dir, branch: $branch}'
+	printf '%s\n' "$claimed"
 }
 
-# An empty assignee plus an open status is how the tracker releases a claim:
-# it has no unassign flag, and this clears the assignee, the lease expiry and
-# the heartbeat in one unconditional field set.
+# Detaches first: Archon keeps a finished run's worktree, and while it still
+# has the slice branch checked out, a retry's claim cannot switch to it. A
+# failed detach does not stop the unclaim, because a bead left claimed by a
+# gone worker is the worse outcome. `bd unclaim` refuses to clear a claim
+# held by a different actor.
 cmd_release() {
 	local bead="" beads_dir=""
-	while [ $# -gt 0 ]; do
-		case "$1" in
-			--bead) bead="${2:-}"; shift 2 ;;
-			--beads-dir) beads_dir="${2:-}"; shift 2 ;;
-			*) shift ;;
-		esac
-	done
+	parse_flags "$@" || return 2
 	[ -n "$bead" ] && [ -n "$beads_dir" ] || {
 		echo "slice-wave: release needs --bead and --beads-dir" >&2
 		return 2
 	}
 
-	BEADS_DIR="$beads_dir" bd update "$bead" -a "" -s open >/dev/null 2>&1 || {
+	git switch --quiet --detach || echo "slice-wave: cannot detach, so the slice branch stays checked out here" >&2
+
+	BEADS_DIR="$beads_dir" bd unclaim "$bead" >/dev/null || {
 		echo "slice-wave: tracker refused to release $bead" >&2
 		return 1
 	}
@@ -117,19 +133,19 @@ cmd_release() {
 }
 
 # True when $1 is a test file: a path component named test/tests/spec/specs/
-# __tests__, a basename containing .test./.spec./_test./_spec., or a basename
-# ending in .bats. One-sided by design: nothing requires a non-test file to
+# __tests__ or ending in .Test/.Tests, a basename containing .test./.spec./
+# _test./_spec./Test./Tests., a basename starting test_, or one ending in .bats. One-sided by design: nothing requires a non-test file to
 # have changed too, since a tests-only slice is legitimate work.
 is_test_path() {
 	local base="${1##*/}"
 	case "$base" in
-		*.bats | *.test.* | *.spec.* | *_test.* | *_spec.*) return 0 ;;
+		*.bats | *.test.* | *.spec.* | *_test.* | *_spec.* | test_* | *Test.* | *Tests.*) return 0 ;;
 	esac
 	# Sentinel slashes so the first and last components match the same pattern
 	# as the interior ones. Matching on the whole path avoids splitting it into
 	# words, which would glob-expand a path containing [ or *.
 	case "/$1/" in
-		*/test/* | */tests/* | */spec/* | */specs/* | */__tests__/*) return 0 ;;
+		*/test/* | */tests/* | */spec/* | */specs/* | */__tests__/* | *.Test/* | *.Tests/*) return 0 ;;
 	esac
 	return 1
 }
@@ -148,14 +164,8 @@ any_test_path() {
 }
 
 cmd_verify_commit() {
-	local bead="" base=""
-	while [ $# -gt 0 ]; do
-		case "$1" in
-			--bead) bead="${2:-}"; shift 2 ;;
-			--base) base="${2:-}"; shift 2 ;;
-			*) shift ;;
-		esac
-	done
+	local bead="" beads_dir=""
+	parse_flags "$@" || return 2
 
 	local branch
 	branch="$(derive_branch "$bead")" || {
@@ -163,25 +173,30 @@ cmd_verify_commit() {
 		return 2
 	}
 
+	# origin/HEAD first: it names the branch a slice lands on, even where the
+	# local main is stale or the default branch has another name.
 	local resolved_base="" candidate
-	for candidate in "$base" origin/HEAD origin/main main; do
-		[ -n "$candidate" ] || continue
+	for candidate in origin/HEAD origin/main main; do
 		git rev-parse --verify --quiet "$candidate" >/dev/null 2>&1 || continue
 		resolved_base="$candidate"
 		break
 	done
 
-	local committed=false tests_touched=false verified=false sha="" reason=""
+	local committed=false tests_touched=false verified=false sha="" reason="" count paths
 	if [ -z "$resolved_base" ]; then
 		reason="cannot resolve a base ref"
 	elif ! git show-ref --verify --quiet "refs/heads/$branch"; then
 		reason="no branch $branch"
-	elif [ "$(git rev-list --count "$resolved_base..$branch")" -eq 0 ]; then
+	elif ! count="$(git rev-list --count "$resolved_base..$branch" 2>&1)"; then
+		reason="cannot count commits on $branch: $count"
+	elif [ "$count" -eq 0 ]; then
 		reason="no commit on $branch beyond $resolved_base"
 	else
 		committed=true
 		sha="$(git rev-parse "$branch")"
-		if git diff --name-only "$resolved_base..$branch" | any_test_path; then
+		if ! paths="$(git diff --name-only "$resolved_base..$branch" 2>&1)"; then
+			reason="cannot list the files changed on $branch: $paths"
+		elif printf '%s\n' "$paths" | any_test_path; then
 			tests_touched=true
 			verified=true
 		else

@@ -1,0 +1,25 @@
+# Build failed: `build` is left unstubbed, so it fails with a missing stub.
+# verify joins on all_done, so it still runs, and its false verdict lets
+# release hand the bead back. If verify ever lost all_done, it would be
+# skipped, release with it, and `reached` would go red.
+fixture:
+  expect: failed
+  fail-node: build
+  reached: [claim, verify, release]
+  inputs:
+    bead: demo-slice-1
+    beads_dir: /tmp/beads
+
+claim:
+  bead: demo-slice-1
+  beads_dir: /tmp/beads
+  branch: slice/demo-slice-1
+verify:
+  verified: false
+  committed: false
+  tests_touched: false
+  branch: slice/demo-slice-1
+  sha: ""
+  reason: "no commit on slice/demo-slice-1 beyond origin/HEAD"
+release:
+  released: true
