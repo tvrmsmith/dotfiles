@@ -1,0 +1,136 @@
+name: wayfinder-chart
+description: |
+  Chart a wayfinder map for a loose idea: grill out the destination, grill the
+  frontier breadth-first, create the map epic and its child tickets in bd, then
+  fan research tickets out to subagents.
+
+  Use when: an effort is too big for one session and has no map yet.
+  NOT for: resolving a ticket on an existing map (use wayfinder-ticket).
+
+interactive: true
+model: large
+
+inputs:
+  idea:
+    default: ""
+    description: The loose idea. When empty, the run's trigger message is the idea.
+
+nodes:
+  # ── Step 1: name the destination ────────────────────────────────────────
+  # loop_group, not `loop: {interactive: true}`: loop nodes silently discard
+  # `skills:`, and grilling/domain-modeling are load-bearing here. Body nodes
+  # are ordinary nodes, so they keep their skill selection.
+  - id: destination
+    loop_group:
+      until_bash: test "$destination-gate.output.decision" = "approve"
+      max_iterations: 8
+      fresh_context: false
+      nodes:
+        - id: grill-destination
+          skills: [grilling, domain-modeling]
+          prompt: |
+            Effort: $INPUTS.idea $USER_MESSAGE
+
+            Previous round's feedback from the human: $LOOP_PREV.destination-gate.output.text
+
+            Run a /grilling and /domain-modeling pass to pin down the DESTINATION
+            of this effort: the spec, decision, or change this map is finding its
+            way to. One or two lines, in the domain's own vocabulary.
+
+            Do not chart tickets yet. Do not answer your own questions: put them
+            to the human and stop.
+
+        - id: destination-gate
+          depends_on: [grill-destination]
+          approval:
+            message: "Answer the questions above, or say the destination is settled."
+            decisions:
+              - {id: approve, label: "Destination is settled"}
+              - {id: keep-grilling, label: "Keep grilling"}
+
+  # ── Step 2: map the frontier, breadth-first ─────────────────────────────
+  - id: frontier
+    depends_on: [destination]
+    loop_group:
+      until_bash: test "$frontier-gate.output.decision" != "keep-grilling"
+      max_iterations: 8
+      fresh_context: false
+      nodes:
+        - id: grill-frontier
+          skills: [grilling, domain-modeling]
+          prompt: |
+            Destination: $destination.output
+
+            Previous round's feedback: $LOOP_PREV.frontier-gate.output.text
+
+            Grill BREADTH-FIRST. Fan out across the whole space rather than deep
+            on one thread. Surface:
+              - the open decisions that are already sharp enough to ticket
+              - the first steps takeable now
+              - the fog: in-scope questions you cannot yet phrase sharply
+              - anything that sits past the destination (out of scope)
+
+            If this surfaces no fog, say so plainly. The journey may be small
+            enough for one session, in which case no map is needed.
+
+        - id: frontier-gate
+          depends_on: [grill-frontier]
+          approval:
+            message: "Answer, or say the frontier is charted and I should write the map."
+            decisions:
+              - {id: approve, label: "Charted, write the map"}
+              - {id: keep-grilling, label: "Keep grilling"}
+              - {id: no-map-needed, label: "No fog — skip the map"}
+
+  - id: stop-if-small
+    depends_on: [frontier]
+    cancel: "No fog surfaced — the way is already clear, so this effort does not need a map."
+    when: "$frontier.output.decision == 'no-map-needed'"
+
+  # ── Step 3+4: create the map, then wire blocking in a second pass ───────
+  - id: write-map
+    depends_on: [frontier]
+    when: "$frontier.output.decision == 'approve'"
+    skills: [wayfinder, bd-decision-records]
+    prompt: |
+      Destination: $destination.output
+      Frontier: $frontier.output
+
+      Create the map and its tickets in bd. Follow docs/agents/issue-tracker.md
+      for the exact commands; it is authoritative over anything you remember.
+
+      Two passes, in this order:
+        1. Create the map epic, then every ticket you can specify now.
+        2. Only once all ids exist, wire the blocking edges.
+
+      Report the map's id and title, and each ticket by NAME, never a bare id.
+    output_format:
+      type: object
+      properties:
+        map_id: {type: string}
+        map_title: {type: string}
+        research_tickets:
+          type: array
+          items: {type: string}
+      required: [map_id, map_title, research_tickets]
+
+  # Deterministic proof the map exists before we spend on research subagents.
+  - id: verify-map
+    depends_on: [write-map]
+    bash: |
+      bd show "$write-map.output.map_id" --json > "$ARTIFACTS_DIR/map.json" &&
+        echo '{"map":"created"}'
+
+  # ── Step 5: fire the research subagents (AFK tickets only) ──────────────
+  - id: research-fanout
+    depends_on: [verify-map]
+    when: "$write-map.output.research_tickets != []"
+    skills: [research]
+    prompt: |
+      Map: $write-map.output.map_title ($write-map.output.map_id)
+      Research tickets: $write-map.output.research_tickets
+
+      Resolve each research ticket in PARALLEL with one /research subagent each.
+      Capture findings on a throwaway research/<name> branch and leave a context
+      pointer on the ticket. Research is the one type that may resolve several
+      per session; resolve no ticket of any other type.

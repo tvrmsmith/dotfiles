@@ -1,0 +1,16 @@
+# Landed path: verify proves the slice's sha is an ancestor of origin/main,
+# so the run's authored outcome is a success.
+fixture:
+  expect: completed
+  reached: [claim, code, test, land, verify]
+  inputs:
+    bead: dotfiles-7sp
+    beads_dir: /tmp/beads
+
+claim: '{"claimed":true}'
+code: "wrote a failing test, then greened it"
+test: green
+land: "merged as deadbeef"
+verify:
+  landed: true
+  sha: deadbeef
