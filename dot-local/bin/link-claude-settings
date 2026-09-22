@@ -9,8 +9,6 @@
 #   - CLAUDE.local.md               (personal, gitignored Claude memory)
 #   - docs/agents/                  (Matt Pocock skills config: issue tracker,
 #                                     triage labels, domain docs)
-#   - CONTEXT-MAP.md                (personal domain-model map at repo root,
-#                                     gitignored; skipped until present)
 #   - mise.local.toml               (personal, gitignored mise repo config;
 #     .mise.local.toml                both spellings, whichever the repo uses)
 #   - .beads/PRIME.md               (bd prime override; see below)
@@ -61,7 +59,6 @@ LINK_PATHS=(
   ".claude/settings.local.json"
   "CLAUDE.local.md"
   "docs/agents"
-  "CONTEXT-MAP.md"
   "mise.local.toml"
   ".mise.local.toml"
   ".beads/PRIME.md"
