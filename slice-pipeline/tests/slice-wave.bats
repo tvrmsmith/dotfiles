@@ -119,6 +119,7 @@ teardown() {
     '{"bead":"foo","beads_dir":"/tmp/beads-foo","branch":"slice/foo"}'
 }
 
+# shellcheck disable=SC2030
 @test "claim exits non-zero and writes nothing to stdout when the tracker refuses the claim" {
   export BD_EXIT_CODE=1
   rc=0
@@ -166,6 +167,7 @@ teardown() {
   is_empty "$(cat "$BD_LOG")"
 }
 
+# shellcheck disable=SC2031
 @test "release exits non-zero and writes nothing to stdout when the tracker refuses" {
   export BD_EXIT_CODE=1
   rc=0; out="$("$HELPER" release --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err")" || rc=$?

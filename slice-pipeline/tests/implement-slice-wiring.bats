@@ -73,6 +73,7 @@ run_node_body() {
   # body, where it reaches sh as the empty string followed by a literal dot.
   for node in $EXEC_NODES; do
     body="$(bun "$NODE" body "$WORKFLOW" "$node")"
+    # shellcheck disable=SC2016
     lacks "$body" '$INPUTS.'
   done
 }
