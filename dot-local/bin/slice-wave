@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+#
+# The Archon slice pipeline's only test seam. Its workflow YAML has none of
+# its own: a shell body inlined in a workflow file can only be exercised by
+# running the workflow, so every non-trivial step for a slice lives here
+# instead, where bats can drive it directly.
+
+set -uo pipefail
+
+usage() {
+	echo "usage: slice-wave <branch-name|claim|release|verify-commit> ..." >&2
+}
+
+# Prints the branch git-check-ref-format accepts for $1, or returns 2 with
+# nothing on stdout. The refs/heads/ form validates without needing to run
+# inside a repository.
+derive_branch() {
+	local bead="$1" sanitized
+	sanitized="$(printf '%s' "$bead" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._-' '-')"
+
+	while [ -n "$sanitized" ]; do
+		case "$sanitized" in
+			.* | -* | _*) sanitized="${sanitized:1}" ;;
+			*) break ;;
+		esac
+	done
+	while [ -n "$sanitized" ]; do
+		case "$sanitized" in
+			*. | *- | *_) sanitized="${sanitized%?}" ;;
+			*) break ;;
+		esac
+	done
+	[ -n "$sanitized" ] || return 2
+
+	local candidate="slice/$sanitized"
+	git check-ref-format "refs/heads/$candidate" >/dev/null 2>&1 || return 2
+	printf '%s' "$candidate"
+}
+
+cmd_branch_name() {
+	local bead="${1:-}" branch
+	if ! branch="$(derive_branch "$bead")"; then
+		echo "slice-wave: cannot derive a branch name from bead '$bead'" >&2
+		return 2
+	fi
+	printf '%s\n' "$branch"
+}
+
+# Puts the current worktree on the branch derived from $1, creating it if
+# refs/heads/<branch> does not exist yet. Already being on it is a no-op.
+switch_to_branch() {
+	local branch="$1"
+	if git show-ref --verify --quiet "refs/heads/$branch"; then
+		git switch "$branch" >/dev/null 2>&1
+	else
+		git switch -c "$branch" >/dev/null 2>&1
+	fi
+}
+
+cmd_claim() {
+	local bead="" beads_dir=""
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			--bead) bead="${2:-}"; shift 2 ;;
+			--beads-dir) beads_dir="${2:-}"; shift 2 ;;
+			*) shift ;;
+		esac
+	done
+	[ -n "$bead" ] && [ -n "$beads_dir" ] || {
+		echo "slice-wave: claim needs --bead and --beads-dir" >&2
+		return 2
+	}
+
+	local branch
+	branch="$(derive_branch "$bead")" || {
+		echo "slice-wave: cannot derive a branch name from bead '$bead'" >&2
+		return 2
+	}
+
+	switch_to_branch "$branch" || {
+		echo "slice-wave: cannot switch to $branch" >&2
+		return 1
+	}
+
+	BEADS_DIR="$beads_dir" bd update "$bead" --claim >/dev/null 2>&1 || {
+		echo "slice-wave: tracker refused to claim $bead" >&2
+		return 1
+	}
+
+	jq -n --arg bead "$bead" --arg beads_dir "$beads_dir" --arg branch "$branch" \
+		'{bead: $bead, beads_dir: $beads_dir, branch: $branch}'
+}
+
+# An empty assignee plus an open status is how the tracker releases a claim:
+# it has no unassign flag, and this clears the assignee, the lease expiry and
+# the heartbeat in one unconditional field set.
+cmd_release() {
+	local bead="" beads_dir=""
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			--bead) bead="${2:-}"; shift 2 ;;
+			--beads-dir) beads_dir="${2:-}"; shift 2 ;;
+			*) shift ;;
+		esac
+	done
+	[ -n "$bead" ] && [ -n "$beads_dir" ] || {
+		echo "slice-wave: release needs --bead and --beads-dir" >&2
+		return 2
+	}
+
+	BEADS_DIR="$beads_dir" bd update "$bead" -a "" -s open >/dev/null 2>&1 || {
+		echo "slice-wave: tracker refused to release $bead" >&2
+		return 1
+	}
+
+	printf '%s\n' '{"released":true}'
+}
+
+# True when $1 is a test file: a path component named test/tests/spec/specs/
+# __tests__, a basename containing .test./.spec./_test./_spec., or a basename
+# ending in .bats. One-sided by design: nothing requires a non-test file to
+# have changed too, since a tests-only slice is legitimate work.
+is_test_path() {
+	local base="${1##*/}"
+	case "$base" in
+		*.bats | *.test.* | *.spec.* | *_test.* | *_spec.*) return 0 ;;
+	esac
+	# Sentinel slashes so the first and last components match the same pattern
+	# as the interior ones. Matching on the whole path avoids splitting it into
+	# words, which would glob-expand a path containing [ or *.
+	case "/$1/" in
+		*/test/* | */tests/* | */spec/* | */specs/* | */__tests__/*) return 0 ;;
+	esac
+	return 1
+}
+
+# Reads every line before returning, deliberately. Returning early would leave
+# the producer writing into a closed pipe, and with `pipefail` the SIGPIPE
+# becomes the pipeline's status, reading a found test file as "none found" on
+# any diff whose path list outgrows the pipe buffer.
+any_test_path() {
+	local path found=1
+	while IFS= read -r path; do
+		[ -n "$path" ] || continue
+		is_test_path "$path" && found=0
+	done
+	return "$found"
+}
+
+cmd_verify_commit() {
+	local bead="" base=""
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			--bead) bead="${2:-}"; shift 2 ;;
+			--base) base="${2:-}"; shift 2 ;;
+			*) shift ;;
+		esac
+	done
+
+	local branch
+	branch="$(derive_branch "$bead")" || {
+		echo "slice-wave: cannot derive a branch name from bead '$bead'" >&2
+		return 2
+	}
+
+	local resolved_base="" candidate
+	for candidate in "$base" origin/HEAD origin/main main; do
+		[ -n "$candidate" ] || continue
+		git rev-parse --verify --quiet "$candidate" >/dev/null 2>&1 || continue
+		resolved_base="$candidate"
+		break
+	done
+
+	local committed=false tests_touched=false verified=false sha="" reason=""
+	if [ -z "$resolved_base" ]; then
+		reason="cannot resolve a base ref"
+	elif ! git show-ref --verify --quiet "refs/heads/$branch"; then
+		reason="no branch $branch"
+	elif [ "$(git rev-list --count "$resolved_base..$branch")" -eq 0 ]; then
+		reason="no commit on $branch beyond $resolved_base"
+	else
+		committed=true
+		sha="$(git rev-parse "$branch")"
+		if git diff --name-only "$resolved_base..$branch" | any_test_path; then
+			tests_touched=true
+			verified=true
+		else
+			reason="no test file in the commits on $branch"
+		fi
+	fi
+
+	jq -n --arg branch "$branch" --arg sha "$sha" --arg reason "$reason" \
+		--argjson committed "$committed" --argjson tests_touched "$tests_touched" \
+		--argjson verified "$verified" \
+		'{verified: $verified, committed: $committed, tests_touched: $tests_touched,
+		  branch: $branch, sha: $sha, reason: $reason}'
+	return 0
+}
+
+case "${1:-}" in
+	branch-name)
+		shift
+		cmd_branch_name "$@"
+		exit $?
+		;;
+	claim)
+		shift
+		cmd_claim "$@"
+		exit $?
+		;;
+	release)
+		shift
+		cmd_release "$@"
+		exit $?
+		;;
+	verify-commit)
+		shift
+		cmd_verify_commit "$@"
+		exit $?
+		;;
+	*)
+		usage
+		exit 2
+		;;
+esac

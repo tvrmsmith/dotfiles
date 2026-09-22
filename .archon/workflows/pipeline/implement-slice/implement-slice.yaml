@@ -1,122 +1,101 @@
 name: implement-slice
 description: |
-  Build one vertical slice from its bead and land it on main. Done means the
-  slice's commit is an ancestor of origin/main, not that a branch exists.
+  Build one vertical slice from its bead and land its commit on the branch.
+  The slice's spec lives in the bead's `design` field, the wave's agreed seams
+  in its `notes` field. Verify reads the branch, not a model's self-report.
 
   Use when: a bead is ready and its spec lives in the bead. Run one per slice,
-  normally as a fan_out child with isolation: worktree.
+  normally as a fan_out child.
   NOT for: deciding what to build, or work that cannot land independently.
 
 model: large
 returns: verify
-outcome_field: landed
+outcome_field: verified
 
-# Pinned, not left to the caller. The driver fans out N of these at once, and
-# runs sharing one checkout serialize on the working-path lock: the younger
-# ones fail with "This worktree is in use". `enabled: true` also makes
-# `--no-worktree` a hard error rather than a silent stampede.
+# Pinned, not left to the caller. The driver fans out several of these at
+# once, and runs sharing one checkout serialize on the working-path lock,
+# where the younger ones fail outright. Pinning also turns a `--no-worktree`
+# dispatch into a load error rather than a stampede.
 worktree:
   enabled: true
 
 inputs:
   bead:
+    required: true
     description: The bead id for this slice. Its spec is in the bead, not here.
   beads_dir:
-    default: ""
+    required: true
     description: >-
-      Absolute path to the canonical .beads directory. Required because Archon
-      works from its own clone, where embeddeddolt/ is gitignored and absent.
-  test_cmd:
-    default: "bun test"
-    description: The project's test command. Must exit non-zero on failure.
+      Absolute path to the canonical beads directory. Required because Archon
+      works from its own clone, where the embedded database directory is
+      gitignored and therefore absent.
 
 nodes:
-  # script, not bash: `$INPUTS.*` is NOT substituted into a bash body. Only
-  # `with:` bindings reach it, as INPUTS_<UPPER_SNAKE> env vars, and `with:`
-  # is supported on script/command nodes only.
   - id: claim
-    runtime: bun
-    with:
-      bead: "$INPUTS.bead"
-      beads_dir: "$INPUTS.beads_dir"
-    script: |
-      const { $ } = await import("bun");
-      const env = { ...process.env, BEADS_DIR: process.env.INPUTS_BEADS_DIR };
-      await $`bd update ${process.env.INPUTS_BEAD} --claim`.env(env).quiet();
-      console.log(JSON.stringify({ claimed: true }));
-
-  # TDD until the suite is green. until_bash, not a prose sentinel: the test
-  # command is the authority on green, never the model's account of it.
-  - id: build
-    depends_on: [claim]
-    loop_group:
-      until_bash: test "$test.output" = "green"
-      max_iterations: 8
-      fresh_context: false
-      nodes:
-        - id: code
-          skills: [tdd, coding-standards, engineering-principles]
-          prompt: |
-            Slice: bead $INPUTS.bead. Read it for the spec and acceptance
-            criteria; everything you need is on the bead, not in this prompt.
-
-            Previous iteration's test output: $LOOP_PREV.test.output
-
-            Work test-first. One failing test, then the minimum code to green
-            it. Commit as you go on this worktree's branch.
-
-        - id: test
-          depends_on: [code]
-          runtime: bun
-          with:
-            test_cmd: "$INPUTS.test_cmd"
-          script: |
-            const { $ } = await import("bun");
-            const log = `${process.env.ARTIFACTS_DIR}/test.log`;
-            const r = await $`sh -c ${process.env.INPUTS_TEST_CMD + " > " + log + " 2>&1"}`.nothrow();
-            if (r.exitCode !== 0) console.error(await Bun.file(log).text());
-            process.stdout.write(r.exitCode === 0 ? "green" : "red");
-
-  # Land it. A worker is not done until its code is on main.
-  - id: land
-    depends_on: [build]
-    skills: [no-mistakes]
-    prompt: |
-      The slice is green on this worktree's branch. Land it on main:
-      push the branch, open a PR, wait for required checks, and squash-merge
-      once they pass. Do not admin-bypass a failing check. If the branch has
-      fallen behind main, sync it and let CI re-run.
-
-      Report the merge commit sha on main.
-
-  # The only statement of done that is not a model's self-report.
-  - id: verify
-    depends_on: [land]
-    runtime: bun
-    with:
-      bead: "$INPUTS.bead"
-      beads_dir: "$INPUTS.beads_dir"
-    script: |
-      const { $ } = await import("bun");
-      const bead = process.env.INPUTS_BEAD;
-      const env = { ...process.env, BEADS_DIR: process.env.INPUTS_BEADS_DIR };
-      await $`git fetch origin main --quiet`;
-      const sha = (await $`git rev-parse HEAD`.text()).trim();
-      const landed =
-        (await $`git merge-base --is-ancestor ${sha} origin/main`.nothrow()).exitCode === 0;
-      if (landed) {
-        // The bead outlives the worktree, and removing a worktree deletes its
-        // branch, so the sha in the close reason is the durable handle.
-        await $`bd close ${bead} --reason ${"landed on main as " + sha}`.env(env).quiet();
-      } else {
-        // Release the claim, or this bead vanishes from `bd ready --unassigned`
-        // while still being open work, and the driver's wave loop stalls silently.
-        await $`bd update ${bead} -a ${""} -s open`.env(env).quiet();
-      }
-      console.log(JSON.stringify({ landed, sha }));
+    timeout: 120000
+    bash: slice-wave claim --bead "$INPUTS_BEAD" --beads-dir "$INPUTS_BEADS_DIR"
     output_format:
       type: object
       properties:
-        landed: {type: boolean}
+        bead: {type: string}
+        beads_dir: {type: string}
+        branch: {type: string}
+      required: [bead, beads_dir, branch]
+
+  # Prompt node, not exec: this is the one node judgment lives in. Denies
+  # AskUserQuestion because Archon has no in-node human channel. The tool is
+  # permitted by default, and a node that calls it has no way for an answer to
+  # come back, so it hangs until a timeout. That denial is what makes the
+  # skill's unattended mode survivable. idle_timeout is raised to 90 minutes
+  # because this node's whole job is to sit behind subagents that each run for
+  # many minutes without the parent emitting a token; the 30-minute default
+  # would kill it mid-slice.
+  - id: build
+    depends_on: [claim]
+    idle_timeout: 5400000
+    skills: [implement-with-subagents]
+    denied_tools: [AskUserQuestion]
+    prompt: |
+      Build the slice on bead $INPUTS.bead. Run unattended.
+
+  # Joins on all_done, not the default: under the default, a failed `build`
+  # would skip `verify`, which would skip `release`, and the bead would stay
+  # claimed by a worker that is gone. all_done runs the commit check on every
+  # path out of build. verify reads none of build's output, so it never
+  # references a failed producer.
+  #
+  # Exits 0 on every verdict, landed or not, so the run completes and its
+  # artifacts survive either way. The verdict is the authored outcome
+  # (outcome_field: verified above), which is why any caller must read the
+  # authored outcome rather than the run status.
+  - id: verify
+    depends_on: [claim, build]
+    trigger_rule: all_done
+    timeout: 120000
+    bash: slice-wave verify-commit --bead "$INPUTS_BEAD"
+    output_format:
+      type: object
+      properties:
+        verified: {type: boolean}
+        committed: {type: boolean}
+        tests_touched: {type: boolean}
+        branch: {type: string}
         sha: {type: string}
-      required: [landed, sha]
+        reason: {type: string}
+      required: [verified, committed, tests_touched, branch, sha, reason]
+
+  # Depends on claim as well as verify, under the default trigger rule (not
+  # all_done): all_done on verify is permissive in both directions, so it also
+  # lets verify run after claim itself failed. Requiring claim to have
+  # succeeded is what stops this node from releasing a bead this run never
+  # claimed, which would clear the assignee of whoever actually holds it.
+  - id: release
+    depends_on: [claim, verify]
+    when: "$verify.output.verified == false"
+    timeout: 120000
+    bash: slice-wave release --bead "$INPUTS_BEAD" --beads-dir "$INPUTS_BEADS_DIR"
+    output_format:
+      type: object
+      properties:
+        released: {type: boolean}
+      required: [released]

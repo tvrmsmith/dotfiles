@@ -1,0 +1,38 @@
+# Nothing landed: build never got a commit onto the branch, so verify reports
+# verified: false and release runs to hand the bead back.
+#
+# `expect: completed` with a failed authored outcome is the point, not a
+# mistake: `verify` exits 0 on every verdict so its artifacts survive, and the
+# run completing while the outcome is failed is exactly what a caller must
+# tell apart by reading the authored outcome instead of the run status.
+#
+# `reached: [..., release]` is the other half of the guard assertion this
+# workflow has no dedicated key for: an unparseable `when:` is fail-closed and
+# silently skips the node, so a typo in the guard would still pass the landed
+# fixture above and only show up here.
+#
+# There is also no dedicated "never paused" key in the fixture language.
+# `expect: completed` on both fixtures in this directory IS that assertion: a
+# gate anywhere on this path would report the run's outcome as `paused`
+# instead, and fail both fixtures.
+fixture:
+  expect: completed
+  reached: [claim, build, verify, release]
+  inputs:
+    bead: demo-slice-1
+    beads_dir: /tmp/beads
+
+claim:
+  bead: demo-slice-1
+  beads_dir: /tmp/beads
+  branch: slice/demo-slice-1
+build: "the worker could not implement the slice"
+verify:
+  verified: false
+  committed: false
+  tests_touched: false
+  branch: slice/demo-slice-1
+  sha: ""
+  reason: "no commit on slice/demo-slice-1 beyond origin/main"
+release:
+  released: true
