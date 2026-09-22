@@ -36,6 +36,20 @@ teardown() {
   rm -rf "$STUB_BIN" "$REPO"
 }
 
+@test "an unknown subcommand prints the usage line to stderr and exits 2" {
+  rc=0; out="$("$HELPER" resurrect --bead foo 2>"$STUB_BIN/err")" || rc=$?
+  equals "$rc" 2
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "usage: slice-wave <branch-name|claim|release|verify-commit>"
+}
+
+@test "no subcommand at all prints the usage line to stderr and exits 2" {
+  rc=0; out="$("$HELPER" 2>"$STUB_BIN/err")" || rc=$?
+  equals "$rc" 2
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "usage: slice-wave"
+}
+
 @test "branch-name derives a branch from a bead id" {
   out="$("$HELPER" branch-name dotfiles-co3.4)"
   equals "$out" "slice/dotfiles-co3.4"
@@ -144,6 +158,22 @@ teardown() {
   equals "$out" '{"released":true}'
 }
 
+@test "release exits 2 without touching the tracker when a flag is missing" {
+  rc=0; out="$("$HELPER" release --bead foo 2>"$STUB_BIN/err")" || rc=$?
+  equals "$rc" 2
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "release needs --bead and --beads-dir"
+  is_empty "$(cat "$BD_LOG")"
+}
+
+@test "release exits non-zero and writes nothing to stdout when the tracker refuses" {
+  export BD_EXIT_CODE=1
+  rc=0; out="$("$HELPER" release --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err")" || rc=$?
+  [ "$rc" -ne 0 ] || { echo "expected non-zero exit, got 0" >&2; exit 1; }
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "tracker refused to release foo"
+}
+
 @test "verify-commit reports verified for a commit on the branch that touches a test file" {
   git -C "$REPO" switch --quiet -c slice/foo
   echo "@test x {}" > "$REPO/thing.bats"
@@ -183,6 +213,35 @@ teardown() {
   out="$( cd "$REPO" && "$HELPER" verify-commit --bead foo --base main )"
   equals "$(printf '%s' "$out" | jq -c .)" \
     '{"verified":false,"committed":false,"tests_touched":false,"branch":"slice/foo","sha":"","reason":"no branch slice/foo"}'
+}
+
+@test "verify-commit counts a plain file under a tests directory as a test file" {
+  # Every other verified case here is decided by the basename arm, so this is
+  # the only one that reaches the path-component arm.
+  git -C "$REPO" switch --quiet -c slice/foo
+  mkdir -p "$REPO/docs/tests"
+  echo "notes" > "$REPO/docs/tests/notes.txt"
+  git -C "$REPO" add -A
+  git -C "$REPO" -c user.email=t@example.com -c user.name=Test commit --quiet -m "add notes"
+
+  out="$( cd "$REPO" && "$HELPER" verify-commit --bead foo --base main )"
+  equals "$(printf '%s' "$out" | jq -r '.tests_touched')" "true"
+  equals "$(printf '%s' "$out" | jq -r '.verified')" "true"
+}
+
+@test "verify-commit matches a whole path component, not a word inside one" {
+  # 'my tests' is not a tests directory. Matching the path as one string is
+  # what tells the two apart: splitting the path into words to compare them
+  # turns this component into a bare 'tests' and reads the file as a test.
+  git -C "$REPO" switch --quiet -c slice/foo
+  mkdir -p "$REPO/my tests"
+  echo "notes" > "$REPO/my tests/notes.txt"
+  git -C "$REPO" add -A
+  git -C "$REPO" -c user.email=t@example.com -c user.name=Test commit --quiet -m "add notes"
+
+  out="$( cd "$REPO" && "$HELPER" verify-commit --bead foo --base main )"
+  equals "$(printf '%s' "$out" | jq -r '.tests_touched')" "false"
+  equals "$(printf '%s' "$out" | jq -r '.verified')" "false"
 }
 
 @test "verify-commit reports committed but not verified when no test file changed" {

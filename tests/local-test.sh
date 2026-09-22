@@ -73,6 +73,12 @@ cat "$fixture_log"
 # --- LCOV -------------------------------------------------------------------
 # Instrumentable lines are the non-blank, non-comment ones minus bare block
 # terminators, which bash never reports as executing.
+#
+# Function records are emitted as well as line records. A reader that asks
+# which functions a suite entered, rather than which lines it ran, sees nothing
+# in a report carrying only DA. A `name() {` line declares the function; its
+# call count is the hit count of the first instrumentable line of its body,
+# which bash reports once per entry.
 awk -v sf="$COV_SOURCE" '
 	FNR == NR { if ($0 ~ /^[0-9]+$/) hits[$0]++; next }
 	{
@@ -83,10 +89,30 @@ awk -v sf="$COV_SOURCE" '
 		if (line == "" || line ~ /^#/) next
 		if (line ~ /^(fi|done|esac|else|then|do|\{|\}|\)|;;)$/) next
 		da[FNR] = 1
+		if (line ~ /^[A-Za-z_][A-Za-z0-9_]*\(\)[ \t]*\{$/) {
+			name = line
+			sub(/\(\).*/, "", name)
+			fnname[++nfn] = name
+			fnline[nfn] = FNR
+		}
 	}
 	END {
 		print "TN:"
 		print "SF:" sf
+		for (f = 1; f <= nfn; f++) print "FN:" fnline[f] "," fnname[f]
+		fnh = 0
+		for (f = 1; f <= nfn; f++) {
+			calls = 0
+			for (i = fnline[f] + 1; i <= maxline; i++) {
+				if (!(i in da)) continue
+				calls = (i in hits) ? hits[i] : 0
+				break
+			}
+			print "FNDA:" calls "," fnname[f]
+			if (calls > 0) fnh++
+		}
+		print "FNF:" nfn
+		print "FNH:" fnh
 		lf = 0; lh = 0
 		for (i = 1; i <= maxline; i++) {
 			if (!(i in da) && !(i in hits)) continue
@@ -107,7 +133,17 @@ if [ "${covered:-0}" -eq 0 ]; then
 	exit 1
 fi
 
-printf 'local-test: bats rc=%s, fixtures rc=%s, %s lines covered in %s\n' \
-	"$bats_rc" "$fixture_rc" "$covered" "$COV_SOURCE"
+# Every function the file declares has to have been entered. A function no test
+# calls is the gap this report exists to expose, so it fails the run here rather
+# than passing a green report with a hole in it.
+uncalled="$(awk -F'[:,]' '/^FNDA:/ && $2 == 0 { printf " %s", $3 }' "$OUT/lcov.info")"
+if [ -n "$uncalled" ]; then
+	echo "local-test: no test entered these functions of $COV_SOURCE:$uncalled" >&2
+	exit 1
+fi
+
+fn_hit="$(awk -F: '/^FNH:/ { print $2 }' "$OUT/lcov.info")"
+printf 'local-test: bats rc=%s, fixtures rc=%s, %s lines and %s functions covered in %s\n' \
+	"$bats_rc" "$fixture_rc" "$covered" "$fn_hit" "$COV_SOURCE"
 
 [ "$bats_rc" -eq 0 ] && [ "$fixture_rc" -eq 0 ]
