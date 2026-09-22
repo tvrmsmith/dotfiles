@@ -8,6 +8,15 @@ HELPER="${BATS_TEST_DIRNAME}/../bin/slice-wave"
 setup() {
   command -v jq >/dev/null || skip "no jq"
 
+  # Scratch repos must not inherit the developer's git config. Signing is the
+  # one that bites: with commit.gpgsign=true and an SSH key, every `git commit`
+  # below blocks on the signing agent. An agent that prompts, or one the test
+  # harness cannot reach, never answers, so the suite hangs forever instead of
+  # failing. Passing -c user.email and -c user.name per commit is not enough,
+  # because signing is inherited separately.
+  export GIT_CONFIG_GLOBAL=/dev/null
+  export GIT_CONFIG_SYSTEM=/dev/null
+
   STUB_BIN="$(mktemp -d)"
   export BD_LOG="$STUB_BIN/bd.log"
   : > "$BD_LOG"

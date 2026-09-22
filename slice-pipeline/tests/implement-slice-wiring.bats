@@ -14,6 +14,11 @@ setup() {
   command -v bun >/dev/null || skip "no bun"
   command -v jq >/dev/null || skip "no jq"
 
+  # See slice-wave.bats: an inherited commit.gpgsign hangs the scratch-repo
+  # commit below rather than failing it.
+  export GIT_CONFIG_GLOBAL=/dev/null
+  export GIT_CONFIG_SYSTEM=/dev/null
+
   STUB_BIN="$(mktemp -d)"
   export BD_LOG="$STUB_BIN/bd.log"
   : > "$BD_LOG"
