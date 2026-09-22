@@ -9,7 +9,7 @@ Runs Matt Pocock's `implement` recipe with the actual work in **subagents**, bec
 
 ## Input
 
-One **slice**, given as a bead id, a path, or a description. Flag: `--solo`. §2 owns model choice.
+One **slice**, given as a bead id, a path, or a description. Flags: `--solo`, `--unattended`, and unattended-only `--model=<id>` and `--parallel-safe=<assignment ids>`. §2 owns model choice.
 
 ## Vocabulary
 
@@ -26,6 +26,22 @@ Each word sits at one level. Keep it there.
 - **guarded** (default). Anti-bias arm: the parent injects the expected values (mechanism in §4).
 - `**--solo**`. One worker takes the whole slice, every assignment, and derives its own expected values. §1's parallel tags don't apply and §2 picks one model for the slice. Cheaper/faster when bias isn't a concern, and doubles as the **metrics baseline** for comparing against guarded.
 
+## Unattended mode
+
+`--unattended` runs the whole skill with nobody in the room, so a workflow node can drive it. One rule governs it: **never call `AskUserQuestion` and never wait for a reply**. Every gate has a stated default here; take it, and name the ones you took in the §8 report. Orthogonal to guarded/`--solo`, which still picks the bias arm. Without the flag, every gate behaves exactly as its section says.
+
+| Gate | Unattended default |
+| --- | --- |
+| §1, adopting scenarios in a suite that has none | Skip the recommendation, take §1's no-scenario path. File a bead recommending adoption. |
+| §1, composition left unobserved by the union of scenarios | Write no cross-service test. File a bead naming the gap. |
+| §2, model selection | `sonnet` per assignment under guarded, `opus` for the one worker under `--solo`. The caller overrides with `--model=<id>`. |
+| §3 default, seam list | The parent confirms its own §1 seam list and moves on. |
+| §3 gate fired | Run the red-team reviewer (step 2) and revise, then proceed on the revised design. Every assumption is recorded in the §8 report rather than presented, and recorded is what §3's Done bar asks of it. |
+| §4, a worker escalates that the contract is wrong | Re-derive the expected values from the spec, revise the contract, redispatch once. A second escalation on the same assignment ends the run: leave the tree uncommitted and report the disagreement. |
+| §8, hand off | The §8 report, then stop. The workflow node drives `no-mistakes`, the parent never does. |
+
+**Parallel tags.** Unattended, every assignment is **sequential** unless the caller passes `--parallel-safe=<assignment ids>`, which declares those assignments' import graphs disjoint. The parent cannot establish disjointness from a ticket alone, and guessing it wrong reds a worker against a sibling's half-written code. Sequential costs wall-clock and nothing else.
+
 ## 1. Seams and assignments
 
 **Load `codebase-design` before anything else.** Its vocabulary and seam rules govern this section and §3: the interface is the test surface, and one adapter means a hypothetical seam. Placing a seam where no test can live is the failure this catches.
@@ -37,15 +53,15 @@ Parent reads the slice and the relevant code, then produces:
 - An **order**, so each assignment's cycles teach the next.
 - A **parallel tag** per assignment. **Parallel when truth is independent:** one assignment can proceed beside another exactly when its expected values come from outside the sibling work, the spec, an agreed contract, a worked example. An assignment whose correctness can only be judged against what another worker is producing is sequential. Disjoint files is not the test; parallel workers need disjoint **import graphs**, or a sibling's half-written code reds their run. A suite's shared step-definition file is one such graph: assignments landing in the same suite either run sequentially or each take their own step file.
 - A **fit check** per assignment: it must comfortably fit one worker context window. An assignment that doesn't fit splits, adding a seam if the split needs one. A *slice* that doesn't fit goes back to planning to be split there.
-- The **scenarios** per assignment, where the suite expresses its tests as scenarios. One glob for `**/*.feature` settles it, per suite, and hands §4 the file it matches against. Derived from the ticket's behavioural acceptance criteria, which are slice-wide and mechanism-free by construction: here each is realised at the seam that can observe it. A criterion spanning several assignments splits across the ones that can, plus a `@contract` scenario at each boundary it crosses, cited against the `contract-approval` record. A `@contract` scenario pins semantics the contract artifact cannot express: idempotent replay, retry thresholds, state transitions, ordering, emission obligations. One needing a mock response the artifact does not yet describe extends the artifact in the same slice. Where the union still leaves the composition itself unobserved, say so and raise it: that gap is the one thing earning a cross-service test, and it is the parent's call, not a worker's.
+- The **scenarios** per assignment, where the suite expresses its tests as scenarios. One glob for `**/*.feature` settles it, per suite, and hands §4 the file it matches against. Derived from the ticket's behavioural acceptance criteria, which are slice-wide and mechanism-free by construction: here each is realised at the seam that can observe it. A criterion spanning several assignments splits across the ones that can, plus a `@contract` scenario at each boundary it crosses, cited against the `contract-approval` record. A `@contract` scenario pins semantics the contract artifact cannot express: idempotent replay, retry thresholds, state transitions, ordering, emission obligations. One needing a mock response the artifact does not yet describe extends the artifact in the same slice. Where the union still leaves the composition itself unobserved, say so and raise it: that gap is the one thing earning a cross-service test, and it is the parent's call, not a worker's (unattended: *Unattended mode*).
 
-**A suite carrying no scenarios yet** keeps the repo's existing test idiom, and §4 runs plain cycles. Where the slice looks like a good place to adopt them, recommend it via `AskUserQuestion` and wait: on yes, the layout, runner wiring and shared step file become their own assignment, ordered first and sequential, since every later assignment reads the conventions it establishes. Once that lands the suite carries its own signal and later slices detect it.
+**A suite carrying no scenarios yet** keeps the repo's existing test idiom, and §4 runs plain cycles. Where the slice looks like a good place to adopt them, recommend it via `AskUserQuestion` and wait (unattended: *Unattended mode*): on yes, the layout, runner wiring and shared step file become their own assignment, ordered first and sequential, since every later assignment reads the conventions it establishes. Once that lands the suite carries its own signal and later slices detect it.
 
 Done when every seam has its assignments, and every assignment an order position, a parallel/sequential tag, a fit check, and its scenarios.
 
 ## 2. Model selection
 
-Judge the difficulty of the work and **recommend** an implementer model via `AskUserQuestion`, offering alternatives + Other, with your reasoning. Wait for the pick.
+Judge the difficulty of the work and **recommend** an implementer model via `AskUserQuestion`, offering alternatives + Other, with your reasoning. Wait for the pick (unattended: *Unattended mode*).
 
 Under **guarded**, recommend per assignment. Implementers lean cheaper, since they only make an existing expectation green, and assignments may run on different models. Re-recommend for one that turns out far harder or easier.
 
@@ -55,13 +71,13 @@ Under `**--solo**`, recommend once for the slice, a tier up: that worker designs
 
 Per `tdd`: a seam is confirmed before its first test. Parent's job, before any cycle. How much gets confirmed depends on how much design the slice carries.
 
-**Default**. Present the §1 seam list, confirm.
+**Default**. Present the §1 seam list, confirm (unattended: *Unattended mode*).
 
 **Design gate**. Fires when the slice does any of: introduces a **new module**; adds an **internal seam** (one `contract-approval` doesn't already gate); or spans **≥4 hops across ≥2 existing modules**. These are the decompositions TDD can't reach. It drives what an assignment contains, never where the seam goes.
 
 1. Parent drafts the design below.
 2. **Red-team**: dispatch one reviewer worker (Agent, `general-purpose`), instructed to **load `codebase-design` itself** (subagents don't inherit the parent's loaded skills): flag every hop that only forwards arguments, every seam nothing actually varies across ("one adapter means a hypothetical seam"), and every cited existing symbol it can't find in the repo. Parent revises.
-3. Present, and wait for the answer.
+3. Present, and wait for the answer (unattended: *Unattended mode*).
 
 The design carries:
 
@@ -83,7 +99,7 @@ The parent is the **loop driver**: it invokes the `tdd` skill itself to carry th
 **guarded**, per assignment:
 
 - Parent writes the contract and expected values (sourced from spec / worked example / known-good literal), the assignment's **scenario text** among them: it *is* an expected value, so a worker authoring its own would spend the anti-bias arm.
-- Dispatch one implementer worker (Agent, `general-purpose`, chosen model) given only: the assignment, the contract + expected values, and an instruction to **load `tdd` and `coding-standards` itself** (same reason as §3 step 2). It works in **cycles**, preserving every assertion and injected expected value as given. If it judges the contract wrong, it stops and escalates to the parent.
+- Dispatch one implementer worker (Agent, `general-purpose`, chosen model) given only: the assignment, the contract + expected values, and an instruction to **load `tdd` and `coding-standards` itself** (same reason as §3 step 2). It works in **cycles**, preserving every assertion and injected expected value as given. If it judges the contract wrong, it stops and escalates to the parent (unattended: *Unattended mode*).
 
 `**--solo**`. One worker, dispatched once with the whole slice and its confirmed seams, writing every contract, test and implementation itself; no parent expected-value injection.
 
@@ -112,6 +128,8 @@ Record one metrics line per run. See `METRICS.md` for the schema and the mutatio
 ## 8. Stop and hand off
 
 Stop at the commit. Review, lint, push, PR and CI belong to `no-mistakes`. Report in one line that the work is ready, naming the branch, and stop there. The user drives `no-mistakes` themselves; it has gates only they should answer.
+
+Unattended, the report also names the commit sha, every gate default taken, and every bead filed, so the workflow node has what it needs to drive `no-mistakes` next.
 
 ## Bias guard, three layers
 
