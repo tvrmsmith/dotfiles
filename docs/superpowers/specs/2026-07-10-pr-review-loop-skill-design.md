@@ -4,11 +4,8 @@
 **Status:** Implemented
 
 > This is the 2026-07-10 design snapshot, kept for the rationale below. It is not
-> the current contract. `dot-claude/skills/pr-review-loop/SKILL.md` owns that, and
-> has moved on: step numbering shifted (3h here is 3i there), a model preset was
-> added to the config parse, and an unattended mode now gives every interactive
-> gate a stated default and prints a JSON verdict. Read the skill for behaviour,
-> read this for why.
+> the current contract. `dot-claude/skills/pr-review-loop/SKILL.md` owns that and
+> has moved on since. Read the skill for behaviour, read this for why.
 
 ## Problem
 
