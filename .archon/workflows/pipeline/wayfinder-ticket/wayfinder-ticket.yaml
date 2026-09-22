@@ -1,0 +1,132 @@
+name: wayfinder-ticket
+description: |
+  Work ONE ticket on an existing wayfinder map: pick the next frontier ticket,
+  claim it, resolve it with the human in the loop, record the decision, and
+  graduate any fog the answer made specifiable.
+
+  Use when: a map exists and the next decision needs making.
+  NOT for: charting a new map (use wayfinder-chart), or building the thing.
+
+interactive: true
+model: large
+
+inputs:
+  map:
+    description: The map's bead id.
+  ticket:
+    default: ""
+    description: Optional ticket id. When empty, the first frontier ticket wins.
+
+nodes:
+  # The frontier is a deterministic query, so it is code, not a judgment call.
+  # A script node, not bash: `with:` binds inputs into INPUTS_<UPPER_SNAKE> env
+  # vars, and that binding is documented for script/command nodes only.
+  - id: pick
+    runtime: bun
+    with:
+      map: "$INPUTS.map"
+      ticket: "$INPUTS.ticket"
+    script: |
+      const { $ } = await import("bun");
+      const map = process.env.INPUTS_MAP ?? "";
+      let id = (process.env.INPUTS_TICKET ?? "").trim();
+      if (!id) {
+        const out = await $`bd ready --parent ${map} --unassigned --json`.text();
+        id = JSON.parse(out || "[]")[0]?.id ?? "";
+      }
+      console.log(JSON.stringify({ id, empty: id === "" }));
+    output_format:
+      type: object
+      properties:
+        id: {type: string}
+        empty: {type: boolean}
+      required: [id, empty]
+
+  - id: stop-if-clear
+    depends_on: [pick]
+    cancel: "No open, unblocked, unclaimed ticket on this map — the way to the destination is clear."
+    when: "$pick.output.empty == true"
+
+  # Claim is the session's first write, before any work, so concurrent
+  # sessions skip this ticket.
+  - id: claim
+    depends_on: [pick]
+    when: "$pick.output.empty == false"
+    bash: bd update "$pick.output.id" --claim && echo '{"claimed":true}'
+
+  - id: load
+    depends_on: [claim]
+    skills: [wayfinder]
+    prompt: |
+      Load the map $INPUTS.map at low resolution and the full body of ticket
+      $pick.output.id. Zoom into related or closed tickets only on demand.
+
+      Report: the destination, the ticket's question, its wayfinder:<type>
+      label, and which skills the map's Notes block says to consult.
+      Refer to every issue by NAME, never a bare id.
+    output_format:
+      type: object
+      properties:
+        ticket_type: {type: string}
+        question: {type: string}
+      required: [ticket_type, question]
+
+  # Resolve. HITL by default — a grilling agent that answers its own questions
+  # has broken the ticket, so the gate is the human's actual turn.
+  - id: resolve
+    depends_on: [load]
+    loop_group:
+      until_bash: test "$resolve-gate.output.decision" != "continue"
+      max_iterations: 10
+      fresh_context: false
+      nodes:
+        - id: work
+          skills: [grilling, domain-modeling, prototype, research]
+          prompt: |
+            Ticket: $load.output.question
+            Type: $load.output.ticket_type
+            Human's last input: $LOOP_PREV.resolve-gate.output.text
+
+            Resolve this ticket according to its type:
+              - grilling: /grilling and /domain-modeling. Conversation.
+              - prototype: build the cheap rough artifact via /prototype, link it.
+              - research: /research subagent, then report the fact.
+              - task: do the work where you can, else hand over a precise checklist.
+
+            Never stand in for the human's side of a HITL ticket. Ask and stop.
+            Decide, do not build the destination.
+
+        - id: resolve-gate
+          depends_on: [work]
+          approval:
+            message: "Respond, or say the decision is made."
+            decisions:
+              - {id: approve, label: "Decision made, record it"}
+              - {id: continue, label: "Keep going"}
+              - {id: out-of-scope, label: "This sits past the destination"}
+
+  - id: record
+    depends_on: [resolve]
+    skills: [wayfinder, bd-decision-records]
+    prompt: |
+      Decision: $resolve.output
+
+      Record it per docs/agents/issue-tracker.md:
+        - the answer goes in the ticket's `design` field, not a comment
+        - comments hold the trail (alternatives rejected, grilling, approval)
+        - close the ticket, then append a one-line gist to the map's
+          "Decisions so far" with a link
+
+      If the human ruled this out of scope, close it the same way but gist it
+      into the map's "Out of scope" section instead, not "Decisions so far".
+
+      Then: create any newly-surfaced tickets (create, then wire blocking in a
+      second pass), graduate any fog the answer made specifiable and clear that
+      patch from "Not yet specified", and update or delete tickets this decision
+      invalidated.
+
+  - id: verify-closed
+    depends_on: [record]
+    bash: |
+      status=$(bd show "$pick.output.id" --json | jq -r '.[0].status')
+      test "$status" = "closed" && echo '{"closed":true}'
