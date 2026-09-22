@@ -44,7 +44,7 @@ Unattended means no human is in the room, so the loop takes a documented default
 {
   "clean": false,
   "verdict": "deferred-only",
-  "pr": "https://github.com/<owner>/<repo>/pull/<n>",
+  "pr": "<the PR URL, or null when no open PR was found>",
   "head_sha": "<short sha of the last pushed commit, or null>",
   "iterations": 2,
   "fixed": 7,
@@ -69,15 +69,17 @@ Unattended means no human is in the room, so the loop takes a documented default
 - `blocked`, the loop could not run, from no open PR or a push that `git-ssh-fix` and a retry did not fix.
 - `failed`, the loop reached a state it cannot proceed from.
 
-**The verdict rule.** Unattended, evaluate this at 3j against the finding set 3b parsed for the current iteration, first match winning. It replaces section 4's unordered conditions, which stay as written for attended runs. Unattended, it also overrides 3i's and 3j's routing. A review that lands at 3i is parsed at 3b and triaged at 3c, and the verdict rules are then evaluated at 3j before any further iteration starts, so the final review before the cap is always the one the verdict reflects.
+**The verdict rule.** Unattended, evaluate this at 3j against the finding set 3b parsed for the current iteration, first match winning. The deferred set throughout is the running set section 4 maintains across iterations, not the findings deferred during the current iteration alone. The rule replaces section 4's unordered conditions, which stay as written for attended runs. Unattended, it also overrides 3i's and 3j's routing. A review that lands at 3i is parsed at 3b and triaged at 3c, and the verdict rules are then evaluated at 3j before any further iteration starts, so the final review before the cap is always the one the verdict reflects.
 
 1. A terminal `failed`, `blocked` or `no-review` happened, wherever in the loop it happened, including before the run ever reaches 3j.
-2. The parsed set minus the deferred set is empty AND the deferred set is empty → `clean`.
-3. The parsed set minus the deferred set is empty AND the deferred set is not → `deferred-only`. This is also how a bot that quietly drops a deferred item lands, rather than burning the cap.
+2. The parsed set minus the running deferred set is empty AND the running deferred set is empty → `clean`.
+3. The parsed set minus the running deferred set is empty AND the running deferred set is not → `deferred-only`. This is also how a bot that quietly drops a deferred item lands, rather than burning the cap.
 4. The poll was exhausted per 3i → `timed-out`.
 5. The iteration count reached max → `max-iterations`.
 
-**Tool failures are never domain outcomes.** Any `gh` or `git` command that still fails after one retry ends the run with verdict `failed`. Never read a non-zero exit as an empty result, so a failed `gh api` is not "no bot post qualifies" and a failed `gh pr comment` is not a review that never landed. Every unattended exit path, including one you did not plan for, prints the verdict object as its last output. Two exits are not failures. `gh pr view` exiting because no pull request was found for the branch is the `blocked` condition, and 3i's poll tick has its own rule.
+When no rule fires, print 3j's iteration summary for the iteration just completed, using that iteration's own fix and push counts rather than the freshly parsed review's, then resume the next iteration at 3d with the review already parsed at 3b and triaged at 3c, skipping the 3a re-fetch and the 3b re-parse.
+
+**Tool failures are never domain outcomes.** Any `gh` or `git` command that still fails after one retry ends the run with verdict `failed`. Never read a non-zero exit as an empty result, so a failed `gh api` is not "no bot post qualifies" and a failed `gh pr comment` is not a review that never landed. Every unattended exit path, including one you did not plan for, prints the verdict object as its last output. Where a step documents its own terminal verdict for a failure, that verdict wins over this blanket rule, which covers everything else. The document carries four such cases. Section 2's `gh pr view` finding no PR and 3f's unfixable push both give `blocked`; 3i's poll tick and its post-timeout `gh run list` query both give `timed-out`.
 
 Write the same object to `$ARTIFACTS_DIR/pr-review-loop.json` once, at exit, when that variable is set, so the verdict survives the node's output being truncated. Run `mkdir -p "$ARTIFACTS_DIR"` first; if the write still fails, print a one-line warning before the JSON and carry on.
 
@@ -85,7 +87,7 @@ Write the same object to `$ARTIFACTS_DIR/pr-review-loop.json` once, at exit, whe
 
 Follow the global git/`gh` rules in `~/.claude/CLAUDE.md`. If a push fails with `Permission denied`, invoke the `git-ssh-fix` skill and retry.
 
-**Unattended:** when there is no open PR to converge against, stop before iteration 1 with verdict `blocked`.
+**Unattended:** when there is no open PR to converge against, stop before iteration 1 with verdict `blocked`, `pr` null and `iterations` 0.
 
 Resolve `<owner>/<repo>` and the PR number once up front (`gh pr view --json number,headRefName,url,headRepositoryOwner,headRepository`). Reuse them for every `gh` / `gh api` call in the loop.
 
@@ -104,7 +106,7 @@ Pull the newest Claude-bot review on the PR from **both** sources:
 
 **Bot author detection.** Match the author login against `claude[bot]` or `github-actions[bot]` (author type `Bot`). On the first iteration, if no author matches or the match is ambiguous, inspect the PR once and confirm the correct bot author with the user via `AskUserQuestion` before proceeding. Remember the confirmed author for the rest of the run.
 
-**Unattended default:** take the newest `Bot` author whose login is `claude[bot]` or `github-actions[bot]`, and remember it for the rest of the run. When neither login posted on iteration 1, stop with verdict `no-review` rather than converging against a human's comment or another tool's findings. When a known login has posted on iteration 1 but no post of theirs carries review structure, the first review is still in flight; wait for one poll timeout at the poll interval for one to appear, applying 3i's landed-vs-acknowledgment heuristic with the run's start time in place of a trigger timestamp, and stop with verdict `no-review` if that timeout expires with still no review-structured post. On later iterations the remembered author is the only one eligible, so a post from anyone else is not the review.
+**Unattended default:** take the newest `Bot` author whose login is `claude[bot]` or `github-actions[bot]`, and remember it for the rest of the run. When neither login posted on iteration 1, stop with verdict `no-review` rather than converging against a human's comment or another tool's findings. When a known login has posted on iteration 1 but no post of theirs carries review structure, the first review is still in flight; wait for one poll timeout at the poll interval for one to appear, applying 3i's landed-vs-acknowledgment heuristic with the run's start time in place of a trigger timestamp. Match the post's `updatedAt` as well as its `createdAt` here, since the bot commonly edits its acknowledgment comment into the review in place and 3i's newer-than-trigger filter alone misses that. Stop with verdict `no-review` if that timeout expires with still no review-structured post. On later iterations the remembered author is the only one eligible, so a post from anyone else is not the review.
 
 **Iteration 1** uses the review already on the PR — the automatic one; no trigger is needed. Later iterations use the review that landed in step 3i.
 
@@ -198,9 +200,9 @@ Poll for a **new** bot review/comment whose `createdAt` (or review `submittedAt`
 - Review lands → return to 3b to parse it for the next iteration.
 - **Poll timeout** → present `AskUserQuestion`: (a) keep waiting — extend by the timeout again, (b) stop and report, (c) check the Actions run (`gh run list` / `gh run watch`), then re-present this gate once the run finishes. Interactive; never silently abort.
 
-**Unattended default:** a poll tick that fails logs one line and counts as no review yet, since a laptop drops coverage mid-run. The poll path never produces `failed`. Whatever went wrong, the caller learns the bot did not answer inside the budget, so a window of failing ticks ends the same way the timeout does, with verdict `timed-out`.
+**Unattended default (poll tick):** a poll tick that fails logs one line and counts as no review yet, since a laptop drops coverage mid-run. The poll path never produces `failed`. Whatever went wrong, the caller learns the bot did not answer inside the budget, so a window of failing ticks ends the same way the timeout does, with verdict `timed-out`.
 
-On the timeout, check the Actions runs once with `gh run list -R <owner>/<repo> --event issue_comment --limit 100 --json databaseId,status,createdAt`, reusing the repo section 2 resolved. The match is the newest run whose `createdAt` is at or after 3h's trigger timestamp; when its `status` is `queued` or `in_progress` it buys one extension of the poll timeout. Anything else (no run matches, the matching run already finished without posting a review, or the query itself failed) stops the loop with verdict `timed-out`. One extension per iteration, never two, so a stuck bot costs the pipeline a bounded wait.
+**Unattended default (poll timeout):** on the timeout, check the Actions runs once with `gh run list -R <owner>/<repo> --event issue_comment --limit 100 --json databaseId,status,createdAt`, reusing the repo section 2 resolved. The match is the newest run whose `createdAt` is at or after 3h's trigger timestamp; when its `status` is `queued` or `in_progress` it buys one extension of the poll timeout. Anything else (no run matches, the matching run already finished without posting a review, or the query itself failed) stops the loop with verdict `timed-out`. One extension per iteration, never two, so a stuck bot costs the pipeline a bounded wait.
 
 ### 3j. Iteration summary
 
