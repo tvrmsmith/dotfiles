@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # Line-coverage probe for a bash script under test, sourced through BASH_ENV by
-# every non-interactive bash the suite starts. `tests/local-test.sh` sets it up.
+# every non-interactive bash the suite starts. `tests/local-test.sh` arms it.
 #
 # macOS ships bash 3.2, which has no BASH_XTRACEFD, so `set -x` would put the
 # trace on stderr that several tests assert on. A DEBUG trap writing $LINENO to

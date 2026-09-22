@@ -290,6 +290,38 @@ setup_dotfiles() {
 	ln -sfn "$SCRIPT_DIR/dot-claude/skills" "$HOME/.agents/skills"
 }
 
+# slice-pipeline/ is a self-contained subproject, stow-ignored, whose two
+# consumers both look in machine-wide locations rather than in whatever repo is
+# the current directory:
+#
+#   ~/.local/bin/slice-wave    the workflow shells out to a bare name
+#   ~/.archon/workflows/...    Archon's global discovery scope
+#
+# The global scope is the point. Archon also reads .archon/workflows/ from the
+# current repo, but a workflow parked there is invisible from every other repo,
+# and this pipeline is meant to run against any of them.
+#
+# Verified on Archon 0.10.1. The extra `slice-pipeline/` pack level is
+# required: a workflow directory placed directly under workflows/ makes archon
+# read the fixtures/ dir beside it as a second packaged workflow, which then
+# fails to load for holding two .yaml files.
+link_slice_pipeline() {
+	src="$SCRIPT_DIR/slice-pipeline"
+	[ -d "$src" ] || return 0
+
+	mkdir -p "$HOME/.local/bin" "$HOME/.archon/workflows/slice-pipeline"
+	ln -sfn "$src/bin/slice-wave" "$HOME/.local/bin/slice-wave"
+	# Directory symlinks go here rather than through stow: stow 2.4.1 --dotfiles
+	# descends into one and aborts the whole install (the same trap documented
+	# for dot-agents/skills in .stow-local-ignore).
+	#
+	# Running the workflow works through this link. `archon workflow test` does
+	# not, because fixture discovery alone refuses to follow a symlink; the
+	# suite in slice-pipeline/tests copies the tree instead.
+	ln -sfn "$src/workflows/implement-slice" \
+		"$HOME/.archon/workflows/slice-pipeline/implement-slice"
+}
+
 # bd reads .beads/PRIME.md and prints it INSTEAD of its generated prime output,
 # which is how this machine keeps bd's memory list out of every session. A
 # DANGLING link is the dangerous state: bd reports no error, silently falls back
@@ -327,6 +359,7 @@ main() {
 	install_tuicr
 	setup_dotfiles
 	unlink_brew_gh
+	link_slice_pipeline
 	link_beads_prime
 	echo "Dot files installed."
 }

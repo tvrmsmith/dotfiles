@@ -3,7 +3,7 @@ load helpers/assert
 # slice-wave is the only test seam the Archon slice pipeline has: the workflow
 # YAML shells out to it directly, with no seam of its own, so every
 # non-trivial rule lives here instead of behind a workflow run.
-HELPER="${BATS_TEST_DIRNAME}/../dot-local/bin/slice-wave"
+HELPER="${BATS_TEST_DIRNAME}/../bin/slice-wave"
 
 setup() {
   command -v jq >/dev/null || skip "no jq"

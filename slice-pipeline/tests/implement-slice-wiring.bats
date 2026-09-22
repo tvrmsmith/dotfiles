@@ -6,7 +6,7 @@ load helpers/assert
 # command line the workflow actually declares, run it the way the engine runs
 # it, and hold the real output to the real declared output_format.
 
-WORKFLOW="${BATS_TEST_DIRNAME}/../.archon/workflows/pipeline/implement-slice/implement-slice.yaml"
+WORKFLOW="${BATS_TEST_DIRNAME}/../workflows/implement-slice/implement-slice.yaml"
 NODE="${BATS_TEST_DIRNAME}/helpers/workflow-node.ts"
 EXEC_NODES="claim verify release"
 
@@ -25,10 +25,11 @@ EOF
   chmod +x "$STUB_BIN/bd"
 
   OLD_PATH="$PATH"
-  # The workflow invokes a bare `slice-wave`, so the worktree's copy has to be
-  # the one that resolves. Putting it here rather than relying on the installed
-  # symlink is also what keeps this suite testing the tree it ships with.
-  export PATH="${BATS_TEST_DIRNAME}/../dot-local/bin:$STUB_BIN:$PATH"
+  # The workflow invokes a bare `slice-wave`, so this tree's copy has to be the
+  # one that resolves. Putting it here rather than relying on the link
+  # install.sh makes is also what keeps this suite testing the tree it ships
+  # with, not whatever version is currently installed on the machine.
+  export PATH="${BATS_TEST_DIRNAME}/../bin:$STUB_BIN:$PATH"
 
   REPO="$(mktemp -d)"
   git -C "$REPO" init --quiet --initial-branch=main
