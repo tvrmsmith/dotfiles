@@ -128,10 +128,14 @@ def human(count: int) -> str:
 
 
 def short_model(model: str) -> str:
-    """"claude-opus-5-20260101" -> "opus". Ids without a hyphen stay whole:
-    <synthetic>, and the bare opus/sonnet/inherit a transcript can carry."""
-    parts = model.split("-")
-    return parts[1] if len(parts) > 1 else model
+    """"claude-opus-5-5" -> "opus-5-5", "claude-haiku-4-5-20251001" -> "haiku-4-5".
+
+    The version stays because cc-review-ab splits its results by it. Ids without
+    the claude- prefix stay whole: <synthetic>, and the bare opus/sonnet/inherit
+    a transcript can carry."""
+    name = model.removeprefix("claude-")
+    head, _, tail = name.rpartition("-")
+    return head if len(tail) == 8 and tail.isdigit() else name
 
 
 def summarize(path: Path, skips: "Counter"):
@@ -208,17 +212,17 @@ def main():
     cols = ["in", "cw", "cr", "out", "think"]
     width = max(len(r["name"]) for r in rows)
     print(f"{len(rows)} subagents, {span:.0f}s wall from first start to last finish\n")
-    header = f"{'agent'.ljust(width)}  {'secs':>6}  {'+start':>6}  {'model':<8} {'tools':>5}"
+    header = f"{'agent'.ljust(width)}  {'secs':>6}  {'+start':>6}  {'model':<10} {'tools':>5}"
     print(header + "".join(f"  {c:>7}" for c in cols) + "  prompt")
     for row in rows:
         offset = (row["start"] - t0).total_seconds()
         cells = "".join(f"  {human(row['tokens'][c]):>7}" for c in cols)
         print(f"{row['name'].ljust(width)}  {row['seconds']:6.0f}  {offset:6.0f}  "
-              f"{row['model']:<8} {row['tools']:5d}{cells}  {row['label'][:40]}")
+              f"{row['model']:<10} {row['tools']:5d}{cells}  {row['label'][:40]}")
 
     totals = {c: sum(r["tokens"][c] for r in rows) for c in cols}
     print(f"{'total'.ljust(width)}  {sum(r['seconds'] for r in rows):6.0f}  {'':6}  "
-          f"{'':<8} {sum(r['tools'] for r in rows):5d}"
+          f"{'':<10} {sum(r['tools'] for r in rows):5d}"
           + "".join(f"  {human(totals[c]):>7}" for c in cols))
 
     slowest = rows[0]
