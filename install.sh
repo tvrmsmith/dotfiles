@@ -201,6 +201,10 @@ setup_dotfiles() {
 	# dot-agents/.agents and aborting the entire install.
 	mkdir -p "$HOME/.agents"
 
+	# ~/.local/bin too. Folded, ~/.local links to dot-local/, and
+	# link_slice_pipeline's slice-wave link lands inside this checkout.
+	mkdir -p "$HOME/.local/bin"
+
 	# ~/.ssh holds far more runtime state than config — known_hosts, agent
 	# sockets, the ControlMaster sockets dot-ssh/config points at — so it must
 	# never fold into a link to dot-ssh/. Creating the sockets subdir forces the
