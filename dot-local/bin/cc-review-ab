@@ -4,12 +4,19 @@
   cc-review-ab assign <aspect>...    -> run id + "aspect<TAB>agent[/model]" per aspect
                                         bare id randomizes; "id=agent[/model]" pins it
   cc-review-ab record <run> <aspect>[=agent[/model]] <critical> <important> <suggestion>
-                      [--agent NAME | --in N --cw N --cr N --out N --think N --seconds S]
-  cc-review-ab report [--totals]     -> per-aspect findings and cost by arm
+                      [--agent NAME | --in N --cw N --cr N --out N --think N --seconds S
+                       --model M]
+  cc-review-ab report [--totals] [--model M]
+                                     -> per-aspect findings and cost by arm, one section
+                                        per model the reviews ran on, newest first
 
-`record --agent NAME` reads the cost off that subagent's transcript via
-`cc-agent-times`. NAME is the name the agent was spawned under. The explicit
-flags override it.
+`record --agent NAME` reads the cost and the model off that subagent's
+transcript via `cc-agent-times`. NAME is the name the agent was spawned under.
+The explicit flags override it.
+
+Results are split by model because both arms inherit the session's model, so a
+model upgrade moves every arm at once. Rows logged without one report as
+"unknown" rather than joining a model they may not have run on.
 
 Tokens are logged per billing class: in, cw (cache write), cr (cache read),
 out, think (a subset of out).
@@ -35,6 +42,7 @@ ARMS = ["general-purpose", "low-effort"]
 UNKNOWN = "unknown"
 # How logs written before arms stored a bare null spelled "no model pinned".
 LEGACY_ABSENT = "-"
+UNKNOWN_MODEL = "unknown"
 # Token classes, in report column order. Logs written before the split carry a
 # single "tokens" field, which was output only; report() maps it onto "out".
 TOKEN_COLS = ["in", "cw", "cr", "out", "think"]
@@ -97,7 +105,7 @@ def repo_name():
 
 
 def usage_for(name):
-    """Cost for the subagent spawned as NAME, read off its transcript.
+    """Cost and model for the subagent spawned as NAME, read off its transcript.
 
     Exits rather than logging zeros, which would read as a free run.
     """
@@ -114,7 +122,7 @@ def usage_for(name):
         sys.exit(f"cc-review-ab: {name} matched {len(rows)} subagents, need exactly 1: "
                  f"{[r['name'] for r in rows]}")
     row = rows[0]
-    return {c: row.get(c, 0) for c in TOKEN_COLS}, row.get("seconds")
+    return {c: row.get(c, 0) for c in TOKEN_COLS}, row.get("seconds"), row.get("model")
 
 
 def assign(args):
@@ -165,20 +173,22 @@ def record(args):
     if not arm:
         sys.exit(f"no arm for run {args.run} aspect {aspect}; pass {aspect}=<agent[/model]>")
 
-    tokens, seconds = ({c: None for c in TOKEN_COLS}, None)
+    tokens, seconds, model = ({c: None for c in TOKEN_COLS}, None, None)
     if args.agent:
-        tokens, seconds = usage_for(args.agent)
+        tokens, seconds, model = usage_for(args.agent)
     for col in TOKEN_COLS:
         override = getattr(args, col.replace("-", "_"))
         if override is not None:
             tokens[col] = override
     if args.seconds is not None:
         seconds = args.seconds
+    if args.model is not None:
+        model = args.model
 
     append({
         "kind": "result", "run": args.run, "ts": time.time(), "aspect": aspect, "arm": arm,
         "critical": args.critical, "important": args.important, "suggestion": args.suggestion,
-        "tokens": tokens, "seconds": seconds,
+        "tokens": tokens, "seconds": seconds, "model": model,
     })
 
 
@@ -230,12 +240,28 @@ def separation(agg, key="important"):
 def report(args):
     if not LOG.exists():
         sys.exit("no log yet")
-    agg = defaultdict(lambda: defaultdict(list))
+    by_model = defaultdict(list)
     for line in LOG.read_text().splitlines():
         r = json.loads(line)
         if r.get("kind") == "result":
-            agg[r["aspect"]][r["arm"]].append(r)
-    if args.totals:
+            by_model[r.get("model") or UNKNOWN_MODEL].append(r)
+    if args.model:
+        if args.model not in by_model:
+            sys.exit(f"no results for model {args.model}; have {', '.join(sorted(by_model))}")
+        by_model = {args.model: by_model[args.model]}
+    newest_first = sorted(by_model, key=lambda m: max(r["ts"] for r in by_model[m]), reverse=True)
+    for i, model in enumerate(newest_first):
+        if i:
+            print()
+        print(f"== {model} ({len(by_model[model])} results)\n")
+        report_section(by_model[model], args.totals)
+
+
+def report_section(results, totals):
+    agg = defaultdict(lambda: defaultdict(list))
+    for r in results:
+        agg[r["aspect"]][r["arm"]].append(r)
+    if totals:
         agg = {"ALL": {arm: [r for aspect in agg.values() for r in aspect.get(arm, [])]
                        for arm in {a for v in agg.values() for a in v}}}
 
@@ -292,10 +318,12 @@ def main():
     for col in TOKEN_COLS:
         p_record.add_argument(f"--{col}", type=int, help=f"{col} tokens, overrides --agent")
     p_record.add_argument("--seconds", type=float, help="wall seconds, overrides --agent")
+    p_record.add_argument("--model", help="model the agent ran on, overrides --agent")
     p_record.set_defaults(func=record)
 
     p_report = sub.add_parser("report", help="findings and cost by arm")
     p_report.add_argument("--totals", action="store_true", help="collapse aspects into one row per arm")
+    p_report.add_argument("--model", help="report only this model, e.g. opus-5-5")
     p_report.set_defaults(func=report)
 
     args = parser.parse_args()
