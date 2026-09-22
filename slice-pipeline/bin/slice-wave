@@ -87,13 +87,8 @@ cmd_claim() {
 		return 2
 	}
 
-	switch_to_branch "$branch" || {
-		echo "slice-wave: cannot switch to $branch" >&2
-		return 1
-	}
-
-	# Built before the claim, so a failure here cannot strand a claimed bead
-	# with no release to follow it.
+	# Built before the switch and the claim, so a failure here strands neither
+	# a checked-out branch nor a claimed bead.
 	local claimed
 	claimed="$(jq -n --arg bead "$bead" --arg beads_dir "$beads_dir" --arg branch "$branch" \
 		'{bead: $bead, beads_dir: $beads_dir, branch: $branch}')" || {
@@ -101,8 +96,17 @@ cmd_claim() {
 		return 1
 	}
 
+	switch_to_branch "$branch" || {
+		echo "slice-wave: cannot switch to $branch" >&2
+		return 1
+	}
+
+	# Detaches on refusal because release never runs after a failed claim, and
+	# a kept worktree still on the branch would block every retry's switch.
+	# It also keeps verify-commit from crediting a branch this run never claimed.
 	BEADS_DIR="$beads_dir" bd update "$bead" --claim >/dev/null || {
 		echo "slice-wave: tracker refused to claim $bead" >&2
+		git switch --quiet --detach || echo "slice-wave: cannot detach, so $branch stays checked out here" >&2
 		return 1
 	}
 
@@ -134,8 +138,9 @@ cmd_release() {
 
 # True when $1 is a test file: a path component named test/tests/spec/specs/
 # __tests__ or ending in .Test/.Tests, a basename containing .test./.spec./
-# _test./_spec./Test./Tests., a basename starting test_, or one ending in .bats. One-sided by design: nothing requires a non-test file to
-# have changed too, since a tests-only slice is legitimate work.
+# _test./_spec./Test./Tests., a basename starting test_, or one ending in
+# .bats. One-sided by design: nothing requires a non-test file to have changed
+# too, since a tests-only slice is legitimate work.
 is_test_path() {
 	local base="${1##*/}"
 	case "$base" in
@@ -187,6 +192,8 @@ cmd_verify_commit() {
 		reason="cannot resolve a base ref"
 	elif ! git show-ref --verify --quiet "refs/heads/$branch"; then
 		reason="no branch $branch"
+	elif [ "$(git symbolic-ref --quiet --short HEAD)" != "$branch" ]; then
+		reason="this worktree is not on $branch, so this run never claimed it"
 	elif ! count="$(git rev-list --count "$resolved_base..$branch" 2>&1)"; then
 		reason="cannot count commits on $branch: $count"
 	elif [ "$count" -eq 0 ]; then
@@ -194,7 +201,7 @@ cmd_verify_commit() {
 	else
 		committed=true
 		sha="$(git rev-parse "$branch")"
-		if ! paths="$(git diff --name-only "$resolved_base..$branch" 2>&1)"; then
+		if ! paths="$(git diff --name-only "$resolved_base...$branch" 2>&1)"; then
 			reason="cannot list the files changed on $branch: $paths"
 		elif printf '%s\n' "$paths" | any_test_path; then
 			tests_touched=true

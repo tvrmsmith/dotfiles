@@ -67,7 +67,9 @@ nodes:
   # would skip `verify`, which would skip `release`, and the bead would stay
   # claimed by a worker that is gone. all_done runs the commit check on every
   # path out of build. verify reads none of build's output, so it never
-  # references a failed producer.
+  # references a failed producer. all_done also runs verify after a failed
+  # claim; verify-commit credits the slice branch only while this worktree
+  # has it checked out, which a failed claim never leaves behind.
   #
   # Exits 0 on every verdict, landed or not, so the run completes and its
   # artifacts survive either way. The verdict is the authored outcome

@@ -4,6 +4,10 @@
 # never claimed the bead must not release it. Archon tolerates an unstubbed
 # all_done join, so this guard holds only while release keeps the default
 # trigger rule.
+#
+# verify still runs under all_done, and its verdict is pinned false: a run
+# that never claimed the bead is never on its branch, so verify-commit
+# credits nothing.
 fixture:
   expect: failed
   fail-node: claim
@@ -18,4 +22,4 @@ verify:
   tests_touched: false
   branch: slice/demo-slice-1
   sha: ""
-  reason: "no branch slice/demo-slice-1"
+  reason: "this worktree is not on slice/demo-slice-1, so this run never claimed it"

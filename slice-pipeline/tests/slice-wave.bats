@@ -174,6 +174,20 @@ teardown() {
   contains "$(cat "$STUB_BIN/err")" "tracked"
 }
 
+# shellcheck disable=SC2030,SC2031
+@test "claim detaches the worktree when the tracker refuses, so a retry can take the branch" {
+  export BD_EXIT_CODE=1
+  ( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" ) >/dev/null 2>&1 || true
+  unset BD_EXIT_CODE
+
+  rc=0; git -C "$REPO" symbolic-ref --quiet HEAD >/dev/null || rc=$?
+  [ "$rc" -ne 0 ] || { echo "expected a detached HEAD, got $(git -C "$REPO" symbolic-ref HEAD)" >&2; exit 1; }
+  retry="$STUB_BIN/retry"
+  git -C "$REPO" worktree add --quiet "$retry" main
+  ( cd "$retry" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" ) >/dev/null
+  equals "$(git -C "$retry" symbolic-ref --short HEAD)" "slice/foo"
+}
+
 @test "claim does not claim the bead when it cannot build its output" {
   printf '#!/bin/sh\nexit 1\n' > "$STUB_BIN/jq"
   chmod +x "$STUB_BIN/jq"
@@ -184,6 +198,7 @@ teardown() {
   [ "$rc" -ne 0 ] || { echo "expected non-zero exit, got 0" >&2; exit 1; }
   is_empty "$out"
   is_empty "$(cat "$BD_LOG")"
+  equals "$(git -C "$REPO" symbolic-ref --short HEAD)" "main"
 }
 
 @test "release unclaims the bead through the tracker with the beads directory supplied" {
@@ -294,11 +309,41 @@ EOF
 }
 
 @test "verify-commit reports not committed when the branch has nothing beyond its base" {
-  git -C "$REPO" branch slice/foo
+  git -C "$REPO" switch --quiet -c slice/foo
 
   out="$( cd "$REPO" && "$HELPER" verify-commit --bead foo )"
   equals "$(printf '%s' "$out" | jq -c .)" \
     '{"verified":false,"committed":false,"tests_touched":false,"branch":"slice/foo","sha":"","reason":"no commit on slice/foo beyond main"}'
+}
+
+@test "verify-commit does not credit a branch this worktree does not have checked out" {
+  # Another run's worktree holds slice/foo with a landed test, and this run's
+  # claim never got onto it.
+  git -C "$REPO" switch --quiet -c slice/foo
+  echo "@test x {}" > "$REPO/thing.bats"
+  git -C "$REPO" add thing.bats
+  git -C "$REPO" -c user.email=t@example.com -c user.name=Test commit --quiet -m "add test"
+  git -C "$REPO" switch --quiet main
+
+  out="$( cd "$REPO" && "$HELPER" verify-commit --bead foo )"
+  equals "$(printf '%s' "$out" | jq -c .)" \
+    '{"verified":false,"committed":false,"tests_touched":false,"branch":"slice/foo","sha":"","reason":"this worktree is not on slice/foo, so this run never claimed it"}'
+}
+
+@test "verify-commit ignores a test file that landed on the base after the branch point" {
+  git -C "$REPO" switch --quiet -c slice/foo
+  echo "code" > "$REPO/thing.sh"
+  git -C "$REPO" add thing.sh
+  git -C "$REPO" -c user.email=t@example.com -c user.name=Test commit --quiet -m "add code"
+  git -C "$REPO" switch --quiet main
+  echo "@test x {}" > "$REPO/sibling.bats"
+  git -C "$REPO" add sibling.bats
+  git -C "$REPO" -c user.email=t@example.com -c user.name=Test commit --quiet -m "sibling test"
+  git -C "$REPO" switch --quiet slice/foo
+
+  out="$( cd "$REPO" && "$HELPER" verify-commit --bead foo )"
+  equals "$(printf '%s' "$out" | jq -r '.tests_touched')" "false"
+  equals "$(printf '%s' "$out" | jq -r '.reason')" "no test file in the commits on slice/foo"
 }
 
 @test "verify-commit reports not committed when the derived branch does not exist" {
