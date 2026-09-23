@@ -1,4 +1,5 @@
 load helpers/assert
+load helpers/stubs
 
 # Binds the two halves of every exec node together. `slice-wave.bats` runs the
 # script with the workflow absent and `archon workflow test` stubs the bodies
@@ -8,7 +9,7 @@ load helpers/assert
 
 WORKFLOW="${BATS_TEST_DIRNAME}/../workflows/implement-slice/implement-slice.yaml"
 NODE="${BATS_TEST_DIRNAME}/helpers/workflow-node.ts"
-EXEC_NODES="claim verify release"
+EXEC_NODES="claim verify release validate"
 
 setup() {
   command -v bun >/dev/null || skip "no bun"
@@ -19,15 +20,9 @@ setup() {
   export GIT_CONFIG_GLOBAL=/dev/null
   export GIT_CONFIG_SYSTEM=/dev/null
 
-  STUB_BIN="$(mktemp -d)"
-  export BD_LOG="$STUB_BIN/bd.log"
-  : > "$BD_LOG"
-  cat > "$STUB_BIN/bd" <<'EOF'
-#!/bin/bash
-printf '%s\t%s\n' "${BEADS_DIR:-}" "$*" >> "$BD_LOG"
-exit "${BD_EXIT_CODE:-0}"
-EOF
-  chmod +x "$STUB_BIN/bd"
+  export STUB_BIN="$(mktemp -d)"
+  export FIXTURES_DIR="${BATS_TEST_DIRNAME}/fixtures/axi"
+  install_stubs
 
   OLD_PATH="$PATH"
   # The workflow invokes a bare `slice-wave`, so this tree's copy has to be the
@@ -48,10 +43,16 @@ teardown() {
 }
 
 # Runs $1's declared body the way the engine does: under `sh`, with the run's
-# declared inputs arriving as INPUTS_<UPPER_SNAKE> environment variables.
+# declared inputs arriving as INPUTS_<UPPER_SNAKE> environment variables and
+# every $<node>.output.<field> token pre-substituted, the way Archon
+# substitutes a producer node's declared output into a downstream body before
+# running it. `true` stands in as the representative value: every such token
+# in this workflow today names a boolean, and this suite only needs a body sh
+# can execute, not a truthful one.
 run_node_body() {
   local body
   body="$(bun "$NODE" body "$WORKFLOW" "$1")" || return 2
+  body="$(printf '%s' "$body" | sed -E 's/\$[A-Za-z_][A-Za-z0-9_]*\.output\.[A-Za-z_][A-Za-z0-9_]*/true/g')"
   ( cd "$REPO" && env INPUTS_BEAD=foo INPUTS_BEADS_DIR="$STUB_BIN" sh -c "$body" )
 }
 
@@ -71,6 +72,12 @@ run_node_body() {
   rc=0; out="$(run_node_body release)" || rc=$?
   equals "$rc" 0
   printf '%s' "$out" | bun "$NODE" check-output "$WORKFLOW" release
+}
+
+@test "the validate node prints what the workflow declares it prints" {
+  rc=0; out="$(run_node_body validate)" || rc=$?
+  equals "$rc" 0
+  printf '%s' "$out" | bun "$NODE" check-output "$WORKFLOW" validate
 }
 
 @test "every exec node reads its inputs as env vars, not the prompt-only form" {
