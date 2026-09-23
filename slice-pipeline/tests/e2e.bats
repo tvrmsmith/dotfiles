@@ -6,8 +6,8 @@ load helpers/assert
 # wiring suite the model), so only this one shows that `build` produces a
 # commit at all and that the four nodes hand off to each other for real.
 #
-# Opt-in, because a run spends model tokens, takes tens of minutes, and can go
-# red on a bad model run rather than on broken code:
+# Opt-in, because a run spends model tokens and can go red
+# on a bad model run rather than on broken code:
 #
 #   SLICE_E2E=1 bats slice-pipeline/tests/e2e.bats
 #

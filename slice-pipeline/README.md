@@ -38,7 +38,7 @@ SLICE_E2E=1 bats tests/e2e.bats
 Runs the real pipeline once: a scratch repo and tracker, one small bead, this
 tree's workflow under the real engine, and a real model building it. Then it
 checks the branch, the committed code and the bead directly. It spends model
-tokens and takes a few minutes, so it skips unless `SLICE_E2E=1`.
+tokens and can go red on a bad model run, so it skips unless `SLICE_E2E=1`.
 `SLICE_E2E_KEEP=1` keeps the scratch repo and Archon's worktree for inspection.
 An Archon run from source needs `CLAUDE_BIN_PATH` pointing at an up-to-date
 `claude`, or its prompt nodes fail on the older copy bundled in its SDK.
