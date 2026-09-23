@@ -137,3 +137,18 @@ teardown() { _install_test_teardown; }
     [ "$target" -ef "$FAKE_REPO/$rel" ]
   done
 }
+
+@test "installing into a HOME with no ~/.local writes nothing into the repo" {
+  # Folded, ~/.local links to dot-local/, and link_slice_pipeline's slice-wave
+  # link then lands inside the checkout as an untracked file.
+  mkdir -p "$FAKE_REPO/dot-local/bin" "$FAKE_REPO/slice-pipeline/bin"
+  printf '#!/bin/sh\n' > "$FAKE_REPO/dot-local/bin/gh"
+  printf '#!/bin/sh\n' > "$FAKE_REPO/slice-pipeline/bin/slice-wave"
+
+  run env HOME="$FAKE_HOME" PATH="$PATH" bash -c \
+    "source '$INSTALL_SH' && SCRIPT_DIR='$FAKE_REPO' && setup_dotfiles && link_slice_pipeline"
+  [ "$status" -eq 0 ]
+  [ ! -L "$FAKE_HOME/.local" ]
+  [ ! -e "$FAKE_REPO/dot-local/bin/slice-wave" ]
+  [ "$FAKE_HOME/.local/bin/slice-wave" -ef "$FAKE_REPO/slice-pipeline/bin/slice-wave" ]
+}

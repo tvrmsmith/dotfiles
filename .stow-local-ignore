@@ -27,6 +27,17 @@
 # bats suite for install.sh
 ^/tests
 
+# Self-contained subproject, not a dotfile. Its two consumers are machine-wide
+# paths that stow cannot express: ~/.local/bin/slice-wave and an Archon global
+# workflow directory. install.sh links both, the same way it links
+# dot-agents/skills. Keeping the tree out of stow is also what lets
+# `git subtree split --prefix=slice-pipeline` lift it into its own repo intact.
+^/slice-pipeline
+
+# Archon project scope, written by the CLI when run from this repo. Workflows
+# meant for every repo live in the global scope install.sh populates, not here.
+^/\.archon
+
 # Version control
 ^/\.git
 ^/\.gitignore$
