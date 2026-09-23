@@ -6,7 +6,7 @@ shells out to, self-contained so it runs against any repo, not just this one.
 ```
 bin/slice-wave                     every non-trivial rule, driven by bats
 workflows/implement-slice/         the workflow and its offline fixtures
-tests/                             both suites, their helpers, and the runner
+tests/                             the suites, their helpers, and the runner
 ```
 
 ## Run it
