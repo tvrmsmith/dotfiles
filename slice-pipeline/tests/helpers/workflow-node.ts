@@ -25,7 +25,9 @@ interface WorkflowNode {
   output_format?: unknown;
 }
 
-const SCALAR_TYPES = new Set(["string", "boolean", "number", "integer"]);
+// "array" is checkable only because a property carries nothing but `type`: an
+// `items` schema would go unchecked, and is refused below.
+const CHECKABLE_TYPES = new Set(["string", "boolean", "number", "integer", "array"]);
 
 /** Exit 2: this harness cannot judge the node, which is never a verdict on it. */
 function unusable(message: string): never {
@@ -41,7 +43,7 @@ function mismatch(message: string): never {
 
 /**
  * Refuses a schema using anything past `{type: object, properties, required}`
- * over scalars. An unrecognised construct has to stop the run rather than go
+ * over bare-typed properties. An unrecognised construct has to stop the run rather than go
  * unchecked, or this helper reports a pass it never established.
  */
 function asOutputFormat(schema: unknown, nodeId: string): OutputFormat {
@@ -71,7 +73,11 @@ function asOutputFormat(schema: unknown, nodeId: string): OutputFormat {
 
   for (const [name, spec] of Object.entries(properties)) {
     const propertyType = (spec as Record<string, unknown>)?.type;
-    if (typeof propertyType !== "string" || !SCALAR_TYPES.has(propertyType)) {
+    const extraKeys = Object.keys(spec ?? {}).filter((key) => key !== "type");
+    if (extraKeys.length > 0) {
+      unusable(`node '${nodeId}' property '${name}' uses ${extraKeys.join(", ")}, which this helper cannot check`);
+    }
+    if (typeof propertyType !== "string" || !CHECKABLE_TYPES.has(propertyType)) {
       unusable(
         `node '${nodeId}' property '${name}' has type '${String(propertyType)}', which this helper cannot check`,
       );

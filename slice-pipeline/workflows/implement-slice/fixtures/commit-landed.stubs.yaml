@@ -23,3 +23,5 @@ verify:
   branch: slice/demo-slice-1
   sha: 1f0c6a4e2b7d9c3a5e8f10b2d4c6a8e0f2b4d6c8
   reason: ""
+  waivers: []
+  waivers_error: ""

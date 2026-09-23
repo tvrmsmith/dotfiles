@@ -168,6 +168,23 @@ any_test_path() {
 	return "$found"
 }
 
+# Prints, as a JSON array, every lint waiver whose spend record names the tree
+# of a commit in $1..$2. The personal coding-standards gate keys each spend on
+# the index tree it let through, so this reads what the commit actually used
+# rather than what the build agent says it used. An unattended build records a
+# waiver without asking, and this list is where Trevor reviews it before merge.
+# An absent log is no waivers; an unreadable one prints nothing and returns 1.
+spent_waivers() {
+	local log="${TVRMSMITH_WAIVERS:-${XDG_STATE_HOME:-$HOME/.local/state}/coding-standards/waivers.jsonl}"
+	[ -e "$log" ] || { echo "[]"; return 0; }
+	local trees
+	trees="$(git log --format=%T "$1..$2" | jq -Rn '[inputs]')" || return 1
+	jq -cs --argjson trees "$trees" '
+		([.[] | select(.kind == "spend" and (.tree | IN($trees[]))) | .id] | unique) as $ids
+		| [.[] | select(.kind == "waiver" and (.id | IN($ids[])))
+		  | {id, language, path, rule, reason}]' "$log"
+}
+
 cmd_verify_commit() {
 	local bead="" beads_dir=""
 	parse_flags "$@" || return 2
@@ -187,7 +204,7 @@ cmd_verify_commit() {
 		break
 	done
 
-	local committed=false tests_touched=false verified=false sha="" reason="" count paths
+	local committed=false tests_touched=false verified=false sha="" reason="" count paths waivers="[]" waivers_error=""
 	if [ -z "$resolved_base" ]; then
 		reason="cannot resolve a base ref"
 	elif ! git show-ref --verify --quiet "refs/heads/$branch"; then
@@ -201,6 +218,10 @@ cmd_verify_commit() {
 	else
 		committed=true
 		sha="$(git rev-parse "$branch")"
+		waivers="$(spent_waivers "$resolved_base" "$branch")" || {
+			waivers="[]"
+			waivers_error="cannot read the waiver log, so the waivers behind $branch are unknown"
+		}
 		if ! paths="$(git diff --name-only "$resolved_base...$branch" 2>&1)"; then
 			reason="cannot list the files changed on $branch: $paths"
 		elif printf '%s\n' "$paths" | any_test_path; then
@@ -213,9 +234,11 @@ cmd_verify_commit() {
 
 	jq -n --arg branch "$branch" --arg sha "$sha" --arg reason "$reason" \
 		--argjson committed "$committed" --argjson tests_touched "$tests_touched" \
-		--argjson verified "$verified" \
+		--argjson verified "$verified" --argjson waivers "$waivers" \
+		--arg waivers_error "$waivers_error" \
 		'{verified: $verified, committed: $committed, tests_touched: $tests_touched,
-		  branch: $branch, sha: $sha, reason: $reason}'
+		  branch: $branch, sha: $sha, reason: $reason, waivers: $waivers,
+		  waivers_error: $waivers_error}'
 	return 0
 }
 

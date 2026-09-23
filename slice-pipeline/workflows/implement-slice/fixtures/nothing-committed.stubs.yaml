@@ -34,5 +34,7 @@ verify:
   branch: slice/demo-slice-1
   sha: ""
   reason: "no commit on slice/demo-slice-1 beyond origin/main"
+  waivers: []
+  waivers_error: ""
 release:
   released: true

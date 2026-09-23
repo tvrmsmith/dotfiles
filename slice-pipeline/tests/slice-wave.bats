@@ -19,6 +19,8 @@ setup() {
 
   STUB_BIN="$(mktemp -d)"
   export BD_LOG="$STUB_BIN/bd.log"
+  # Absent unless a test writes it, so no run ever reads the machine's real log.
+  export TVRMSMITH_WAIVERS="$STUB_BIN/waivers.jsonl"
   : > "$BD_LOG"
 
   # Logs argv and BEADS_DIR so a test can assert on the call the module made,
@@ -255,7 +257,7 @@ teardown() {
   out="$( cd "$REPO" && "$HELPER" verify-commit --bead foo )"
   equals "$(printf '%s' "$out" | jq -c .)" \
     "$(jq -nc --arg sha "$expected_sha" \
-      '{verified:true,committed:true,tests_touched:true,branch:"slice/foo",sha:$sha,reason:""}')"
+      '{verified:true,committed:true,tests_touched:true,branch:"slice/foo",sha:$sha,reason:"",waivers:[],waivers_error:""}')"
 }
 
 @test "verify-commit measures the branch against origin/HEAD before main" {
@@ -279,7 +281,7 @@ teardown() {
   rc=0; out="$( cd "$REPO" && "$HELPER" verify-commit --bead foo )" || rc=$?
   equals "$rc" 0
   equals "$(printf '%s' "$out" | jq -c .)" \
-    '{"verified":false,"committed":false,"tests_touched":false,"branch":"slice/foo","sha":"","reason":"cannot resolve a base ref"}'
+    '{"verified":false,"committed":false,"tests_touched":false,"branch":"slice/foo","sha":"","reason":"cannot resolve a base ref","waivers":[],"waivers_error":""}'
 }
 
 @test "verify-commit reports a failed file listing instead of a missing test file" {
@@ -313,7 +315,7 @@ EOF
 
   out="$( cd "$REPO" && "$HELPER" verify-commit --bead foo )"
   equals "$(printf '%s' "$out" | jq -c .)" \
-    '{"verified":false,"committed":false,"tests_touched":false,"branch":"slice/foo","sha":"","reason":"no commit on slice/foo beyond main"}'
+    '{"verified":false,"committed":false,"tests_touched":false,"branch":"slice/foo","sha":"","reason":"no commit on slice/foo beyond main","waivers":[],"waivers_error":""}'
 }
 
 @test "verify-commit does not credit a branch this worktree does not have checked out" {
@@ -327,7 +329,7 @@ EOF
 
   out="$( cd "$REPO" && "$HELPER" verify-commit --bead foo )"
   equals "$(printf '%s' "$out" | jq -c .)" \
-    '{"verified":false,"committed":false,"tests_touched":false,"branch":"slice/foo","sha":"","reason":"this worktree is not on slice/foo, so this run never claimed it"}'
+    '{"verified":false,"committed":false,"tests_touched":false,"branch":"slice/foo","sha":"","reason":"this worktree is not on slice/foo, so this run never claimed it","waivers":[],"waivers_error":""}'
 }
 
 @test "verify-commit ignores a test file that landed on the base after the branch point" {
@@ -349,7 +351,7 @@ EOF
 @test "verify-commit reports not committed when the derived branch does not exist" {
   out="$( cd "$REPO" && "$HELPER" verify-commit --bead foo )"
   equals "$(printf '%s' "$out" | jq -c .)" \
-    '{"verified":false,"committed":false,"tests_touched":false,"branch":"slice/foo","sha":"","reason":"no branch slice/foo"}'
+    '{"verified":false,"committed":false,"tests_touched":false,"branch":"slice/foo","sha":"","reason":"no branch slice/foo","waivers":[],"waivers_error":""}'
 }
 
 @test "verify-commit counts test files in C#, pytest and JUnit layouts" {
@@ -406,7 +408,7 @@ EOF
   out="$( cd "$REPO" && "$HELPER" verify-commit --bead foo )"
   equals "$(printf '%s' "$out" | jq -c .)" \
     "$(jq -nc --arg sha "$expected_sha" \
-      '{verified:false,committed:true,tests_touched:false,branch:"slice/foo",sha:$sha,reason:"no test file in the commits on slice/foo"}')"
+      '{verified:false,committed:true,tests_touched:false,branch:"slice/foo",sha:$sha,reason:"no test file in the commits on slice/foo",waivers:[],waivers_error:""}')"
 }
 
 @test "verify-commit finds a test file in a diff too wide for the pipe buffer" {
@@ -425,6 +427,49 @@ EOF
 
   out="$( cd "$REPO" && "$HELPER" verify-commit --bead foo )"
   equals "$(printf '%s' "$out" | jq -r '.tests_touched')" "true"
+  equals "$(printf '%s' "$out" | jq -r '.verified')" "true"
+}
+
+# Commits a test file on slice/foo and prints the commit's tree, the key a
+# lint waiver's spend record carries.
+commit_slice() {
+  git -C "$REPO" switch --quiet -c slice/foo
+  echo "@test x {}" > "$REPO/thing.bats"
+  git -C "$REPO" add thing.bats
+  git -C "$REPO" -c user.email=t@example.com -c user.name=Test commit --quiet -m "add test"
+  git -C "$REPO" rev-parse 'slice/foo^{tree}'
+}
+
+# Appends a waiver record and its spend against tree $2 to the log.
+spend_waiver() {
+  jq -nc --arg id "$1" '{kind:"waiver",id:$id,language:"go",path:"a.go",rule:"R1",reason:"false positive",recorded:"t"}' >> "$TVRMSMITH_WAIVERS"
+  jq -nc --arg id "$1" --arg tree "$2" '{kind:"spend",id:$id,tree:$tree,spent:"t"}' >> "$TVRMSMITH_WAIVERS"
+}
+
+@test "verify-commit lists the waivers spent on the slice's commits and no others" {
+  tree="$(commit_slice)"
+  spend_waiver mine "$tree"
+  spend_waiver elsewhere 0000000000000000000000000000000000000000
+
+  out="$( cd "$REPO" && "$HELPER" verify-commit --bead foo )"
+  equals "$(printf '%s' "$out" | jq -c '.waivers')" \
+    '[{"id":"mine","language":"go","path":"a.go","rule":"R1","reason":"false positive"}]'
+  equals "$(printf '%s' "$out" | jq -r '.verified')" "true"
+}
+
+@test "verify-commit reports no waivers when the log does not exist" {
+  commit_slice >/dev/null
+  out="$( cd "$REPO" && "$HELPER" verify-commit --bead foo )"
+  equals "$(printf '%s' "$out" | jq -c '.waivers')" "[]"
+  is_empty "$(printf '%s' "$out" | jq -r '.waivers_error')"
+}
+
+# An empty list alone would claim no waiver went unreviewed, which nobody checked.
+@test "verify-commit reports waivers as unknown when the log cannot be parsed" {
+  commit_slice >/dev/null
+  echo "not json" > "$TVRMSMITH_WAIVERS"
+  out="$( cd "$REPO" && "$HELPER" verify-commit --bead foo 2>/dev/null )"
+  contains "$(printf '%s' "$out" | jq -r '.waivers_error')" "cannot read the waiver log"
   equals "$(printf '%s' "$out" | jq -r '.verified')" "true"
 }
 
