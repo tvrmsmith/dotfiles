@@ -63,6 +63,11 @@ nodes:
       `BEADS_DIR=$INPUTS.beads_dir` the same way on every other bd command,
       including any bead you file.
 
+      Leave bead $INPUTS.bead open and claimed when you finish, even once the
+      slice is committed. Closing it releases every slice that depends on it,
+      so this pipeline closes it itself, only after the work has merged. That
+      overrides the usual rule to close finished work.
+
   # Joins on all_done, not the default: under the default, a failed `build`
   # would skip `verify`, which would skip `release`, and the bead would stay
   # claimed by a worker that is gone. all_done runs the commit check on every
