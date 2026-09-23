@@ -52,8 +52,13 @@ update_vendored_skills() {
 	# vendor/update is idempotent — no-op when subtrees are already current.
 	if [ -x "$SCRIPT_DIR/vendor/update" ]; then
 		echo "Updating vendored subtrees..."
-		"$SCRIPT_DIR/vendor/update"
-		echo "Vendored subtrees up to date."
+		if "$SCRIPT_DIR/vendor/update"; then
+			echo "Vendored subtrees up to date."
+		else
+			# Non-fatal: a dirty tree is the common cause, and the rest of the
+			# install does not depend on fresh vendored content.
+			echo "install.sh: vendored subtrees NOT updated (see above); continuing." >&2
+		fi
 	fi
 }
 
@@ -186,6 +191,34 @@ live_target() {
 	printf '%s\n' "$HOME/.${1#dot-}"
 }
 
+relative_link() {
+	# Stow only recognises links spelled relative to the package. Fails
+	# without python3, so callers decide what to do then.
+	command -v python3 >/dev/null 2>&1 || return 1
+	python3 -c \
+		'import os,sys; print(os.path.relpath(sys.argv[1], os.path.dirname(sys.argv[2])))' \
+		"$1" "$2"
+}
+
+respell_absolute_self_links() {
+	# A hand-made `ln -s /abs/path/to/repo/file` points at the right file, but
+	# stow owns only the relative links it writes, so it reports "not owned by
+	# stow" and aborts the entire install. Ask stow which targets it would
+	# reject, and respell each one that is a symlink to its own source. The
+	# link resolves to the same file before and after, so there is no window
+	# where the target is missing.
+	local target rel src link
+	stow -n --dotfiles -d "$SCRIPT_DIR" -t "$HOME" . 2>&1 |
+		sed -n 's/^  \* existing target is not owned by stow: //p' |
+		while IFS= read -r target; do
+			rel=$(printf '%s\n' "$target" | sed -E 's#(^|/)\.#\1dot-#g')
+			src="$SCRIPT_DIR/$rel"
+			[ -L "$HOME/$target" ] && [ "$HOME/$target" -ef "$src" ] || continue
+			link=$(relative_link "$src" "$HOME/$target") || continue
+			ln -sfn "$link" "$HOME/$target"
+		done
+}
+
 setup_dotfiles() {
 	# ~/.warp must exist as a real directory before stow runs: Warp writes
 	# runtime data into it (worktrees/, typescript-language-server/, generated
@@ -241,6 +274,8 @@ setup_dotfiles() {
 	# those patterns do anything at all. See dotfiles-2ft.
 	mkdir -p "$HOME/.config/gh" "$HOME/.config/1Password" "$HOME/.config/glow"
 
+	respell_absolute_self_links
+
 	# Reconcile the live-writer files (see LIVE_WRITER_FILES) before stow: drop
 	# the live copy when it's already a link to our file, or a regular file
 	# byte-identical to it. Anything with real drift is left alone so stow
@@ -275,13 +310,7 @@ setup_dotfiles() {
 		for rel in "${reconciled[@]}"; do
 			src="$SCRIPT_DIR/$rel"
 			target=$(live_target "$rel")
-			restore_link="$src"
-			if command -v python3 >/dev/null 2>&1; then
-				# Stow only recognises links spelled relative to the package.
-				restore_link=$(python3 -c \
-					'import os,sys; print(os.path.relpath(sys.argv[1], os.path.dirname(sys.argv[2])))' \
-					"$src" "$target") || restore_link="$src"
-			fi
+			restore_link=$(relative_link "$src" "$target") || restore_link="$src"
 			ln -sfn "$restore_link" "$target" ||
 				echo "install.sh: could not restore $target -> $restore_link; recreate it by hand before the writer does." >&2
 		done

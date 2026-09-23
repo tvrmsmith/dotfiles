@@ -152,3 +152,20 @@ teardown() { _install_test_teardown; }
   [ ! -e "$FAKE_REPO/dot-local/bin/slice-wave" ]
   [ "$FAKE_HOME/.local/bin/slice-wave" -ef "$FAKE_REPO/slice-pipeline/bin/slice-wave" ]
 }
+
+@test "an absolute symlink to the repo's own file is respelled relative, not a conflict" {
+  # Hand-made links (ln -s with an absolute path) point at the right file but
+  # stow only owns links spelled relative to the package, so it aborted the
+  # whole install on them.
+  local rel="dot-config/glow/beads.json" target
+  mkdir -p "$FAKE_REPO/dot-config/glow" "$FAKE_HOME/.config/glow"
+  echo 'style' > "$FAKE_REPO/$rel"
+  target="$(home_target "$rel")"
+  ln -s "$FAKE_REPO/$rel" "$target"
+
+  run_setup_dotfiles
+  [ "$status" -eq 0 ]
+  [ -L "$target" ]
+  [[ "$(readlink "$target")" != /* ]]
+  [ "$target" -ef "$FAKE_REPO/$rel" ]
+}
