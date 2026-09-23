@@ -9,8 +9,8 @@ description: |
   NOT for: deciding what to build, or work that cannot land independently.
 
 model: large
-returns: verify
-outcome_field: verified
+returns: validate
+outcome_field: delivered
 
 # Pinned, not left to the caller. The driver fans out several of these at
 # once, and runs sharing one checkout serialize on the working-path lock,
@@ -31,8 +31,11 @@ inputs:
       gitignored and therefore absent.
 
 nodes:
+  # Timeout covers real network calls, not a bare `bd update`: claim now
+  # checks the target repo through gh and no-mistakes and can drive up to 3
+  # branch-sync rounds through no-mistakes before it claims the bead.
   - id: claim
-    timeout: 120000
+    timeout: 600000
     bash: slice-wave claim --bead "$INPUTS_BEAD" --beads-dir "$INPUTS_BEADS_DIR"
     output_format:
       type: object
@@ -69,17 +72,19 @@ nodes:
       overrides the usual rule to close finished work.
 
   # Joins on all_done, not the default: under the default, a failed `build`
-  # would skip `verify`, which would skip `release`, and the bead would stay
-  # claimed by a worker that is gone. all_done runs the commit check on every
-  # path out of build. verify reads none of build's output, so it never
-  # references a failed producer. all_done also runs verify after a failed
-  # claim; verify-commit credits the slice branch only while this worktree
-  # has it checked out, which a failed claim never leaves behind.
+  # would skip `verify`, which would skip `validate` and `release` behind it,
+  # and the bead would stay claimed by a worker that is gone. all_done runs
+  # the commit check on every path out of build. verify reads none of build's
+  # output, so it never references a failed producer. all_done also runs
+  # verify after a failed claim; verify-commit credits the slice branch only
+  # while this worktree has it checked out, which a failed claim never leaves
+  # behind.
   #
   # Exits 0 on every verdict, landed or not, so the run completes and its
-  # artifacts survive either way. The verdict is the authored outcome
-  # (outcome_field: verified above), which is why any caller must read the
-  # authored outcome rather than the run status.
+  # artifacts survive either way. Its `verified` field only feeds validate's
+  # --verified flag below; the run's authored outcome is `delivered`, read
+  # from validate (outcome_field above), since a landed commit is not by
+  # itself a shipped slice.
   - id: verify
     depends_on: [claim, build]
     trigger_rule: all_done
@@ -98,14 +103,43 @@ nodes:
         waivers_error: {type: string}
       required: [verified, committed, tests_touched, branch, sha, reason, waivers, waivers_error]
 
-  # Depends on claim as well as verify, under the default trigger rule (not
-  # all_done): all_done on verify is permissive in both directions, so it also
-  # lets verify run after claim itself failed. Requiring claim to have
-  # succeeded is what stops this node from releasing a bead this run never
-  # claimed, which would clear the assignee of whoever actually holds it.
+  # The returns node: no `when:`, since a skipped returns node persists no
+  # authored outcome, and the script's own --verified false short-circuit
+  # already handles the unverified path with no external call. depends_on
+  # verify alone, under the default trigger rule (not all_done): verify
+  # itself exits 0 on every verdict (see its comment above), so it never
+  # fails this dependency. The long timeout covers a real no-mistakes drive:
+  # a review, fix rounds and CI, which routinely outruns Archon's 2-minute
+  # default.
+  - id: validate
+    depends_on: [verify]
+    timeout: 14400000
+    bash: slice-wave validate --bead "$INPUTS_BEAD" --beads-dir "$INPUTS_BEADS_DIR" --verified $verify.output.verified
+    output_format:
+      type: object
+      properties:
+        delivered: {type: boolean}
+        outcome: {type: string}
+        pr_number: {type: integer}
+        pr_url: {type: string}
+        repo: {type: string}
+        fix_rounds: {type: integer}
+        record_posted: {type: boolean}
+        reason: {type: string}
+      required: [delivered, outcome, pr_number, pr_url, repo, fix_rounds, record_posted, reason]
+
+  # Depends on claim as well as validate, under the default trigger rule (not
+  # all_done): validate always resolves (it is the returns node and exits 0
+  # on every path, same as verify), so requiring it to succeed costs nothing;
+  # its `delivered` field, not its own success, is what the `when` reads.
+  # Requiring claim to have succeeded is what stops this node from releasing a
+  # bead this run never claimed, which would clear the assignee of whoever
+  # actually holds it. An unverified run still lands here: validate's
+  # --verified false short-circuit reports delivered false without
+  # contacting anything, and that false is what this `when` catches.
   - id: release
-    depends_on: [claim, verify]
-    when: "$verify.output.verified == false"
+    depends_on: [claim, validate]
+    when: "$validate.output.delivered == false"
     timeout: 120000
     bash: slice-wave release --bead "$INPUTS_BEAD" --beads-dir "$INPUTS_BEADS_DIR"
     output_format:

@@ -1,4 +1,5 @@
 load helpers/assert
+load helpers/stubs
 
 # slice-wave is the only test seam the Archon slice pipeline has: the workflow
 # YAML shells out to it directly, with no seam of its own, so every
@@ -17,24 +18,14 @@ setup() {
   export GIT_CONFIG_GLOBAL=/dev/null
   export GIT_CONFIG_SYSTEM=/dev/null
 
-  STUB_BIN="$(mktemp -d)"
-  export BD_LOG="$STUB_BIN/bd.log"
+  export STUB_BIN="$(mktemp -d)"
+  export FIXTURES_DIR="${BATS_TEST_DIRNAME}/fixtures/axi"
   # Absent unless a test writes it, so no run ever reads the machine's real log.
   export TVRMSMITH_WAIVERS="$STUB_BIN/waivers.jsonl"
-  : > "$BD_LOG"
-
-  # Logs argv and BEADS_DIR so a test can assert on the call the module made,
-  # and returns whatever exit code the test set beforehand.
-  cat > "$STUB_BIN/bd" <<'EOF'
-#!/bin/bash
-printf '%s\t%s\n' "${BEADS_DIR:-}" "$*" >> "$BD_LOG"
-exit "${BD_EXIT_CODE:-0}"
-EOF
-  chmod +x "$STUB_BIN/bd"
+  install_stubs
 
   OLD_PATH="$PATH"
   export PATH="$STUB_BIN:$PATH"
-  unset BD_EXIT_CODE
 
   REPO="$(mktemp -d)"
   git -C "$REPO" init --quiet --initial-branch=main
@@ -51,7 +42,7 @@ teardown() {
   rc=0; out="$("$HELPER" resurrect --bead foo 2>"$STUB_BIN/err")" || rc=$?
   equals "$rc" 2
   is_empty "$out"
-  contains "$(cat "$STUB_BIN/err")" "usage: slice-wave <branch-name|claim|release|verify-commit>"
+  contains "$(cat "$STUB_BIN/err")" "usage: slice-wave <branch-name|claim|release|verify-commit|validate>"
 }
 
 @test "no subcommand at all prints the usage line to stderr and exits 2" {
@@ -146,6 +137,107 @@ teardown() {
   out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "/tmp/beads-foo" )"
   equals "$(printf '%s' "$out" | jq -c .)" \
     '{"bead":"foo","beads_dir":"/tmp/beads-foo","branch":"slice/foo"}'
+}
+
+# shellcheck disable=SC2030
+@test "claim exits 1 without touching the tracker when gh cannot see a forge remote" {
+  export GH_EXIT_CODE=1
+  rc=0
+  out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err" )" || rc=$?
+  equals "$rc" 1
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "no forge remote you can open pull requests on"
+  is_empty "$(cat "$BD_LOG")"
+  equals "$(git -C "$REPO" symbolic-ref --short HEAD)" "main"
+}
+
+# shellcheck disable=SC2030
+@test "claim exits 1 without touching the tracker when gh reports read-only access" {
+  export GH_VIEWER_PERMISSION=READ
+  rc=0
+  out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err" )" || rc=$?
+  equals "$rc" 1
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "no forge remote you can open pull requests on"
+  contains "$(cat "$STUB_BIN/err")" "READ"
+  is_empty "$(cat "$BD_LOG")"
+}
+
+# shellcheck disable=SC2030
+@test "claim exits 1 without touching the tracker when no-mistakes is not initialized" {
+  export NO_MISTAKES_AXI_EXIT=1
+  export NO_MISTAKES_AXI_FIXTURE="$FIXTURES_DIR/not-initialized.toon"
+  rc=0
+  out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err" )" || rc=$?
+  equals "$rc" 1
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "no-mistakes init"
+  contains "$(cat "$STUB_BIN/err")" "repo not initialized (run 'no-mistakes init' first)"
+  is_empty "$(cat "$BD_LOG")"
+  equals "$(git -C "$REPO" symbolic-ref --short HEAD)" "main"
+}
+
+@test "claim proceeds to the tracker when branch sync reports run_pipeline" {
+  export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/status-run-pipeline.toon"
+  ( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" ) >/dev/null
+  contains "$(cat "$CALL_LOG" | cut -f2)" "axi status"
+  lacks "$(cat "$CALL_LOG" | cut -f2)" "axi sync"
+  contains "$(cat "$BD_LOG")" "update foo --claim"
+}
+
+@test "claim runs the reported sync then claims once a re-read finds no branch_sync" {
+  export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/status-sync.toon"
+  export NO_MISTAKES_SYNC_NEXT_STATUS_FIXTURE="$FIXTURES_DIR/sync-then-clean.toon"
+  ( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" ) >/dev/null
+  sequence="$(awk -F'\t' '$2 == "axi status" || $2 == "axi sync" || $1 == "bd" { print $2 }' "$CALL_LOG")"
+  equals "$sequence" "$(printf 'axi status\naxi sync\naxi status\nupdate foo --claim')"
+}
+
+@test "claim refuses and detaches when branch sync reports a code it does not reconcile" {
+  export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/status-continue-active-run.toon"
+  rc=0
+  out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err" )" || rc=$?
+  equals "$rc" 1
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "continue_active_run"
+  contains "$(cat "$STUB_BIN/err")" "no-mistakes axi status"
+  is_empty "$(cat "$BD_LOG")"
+  rc=0; git -C "$REPO" symbolic-ref -q HEAD >/dev/null || rc=$?
+  [ "$rc" -ne 0 ] || { echo "expected a detached HEAD, got $(git -C "$REPO" symbolic-ref HEAD)" >&2; exit 1; }
+}
+
+@test "claim refuses a sync code whose reported command is not a no-mistakes sync" {
+  export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/status-sync-bad-command.toon"
+  # origin/x resolves to the pre-sentinel commit, so if the reported
+  # `git reset --hard origin/x` actually ran, HEAD would move there and the
+  # sentinel file would disappear. Proves the command claim refuses never
+  # actually runs, rather than just asserting on stderr text.
+  base_sha="$(git -C "$REPO" rev-parse HEAD)"
+  git -C "$REPO" update-ref refs/remotes/origin/x "$base_sha"
+  echo sentinel > "$REPO/sentinel"
+  git -C "$REPO" add sentinel
+  git -C "$REPO" -c user.email=t@example.com -c user.name=Test commit --quiet -m sentinel
+
+  rc=0
+  out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err" )" || rc=$?
+  equals "$rc" 1
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "git reset --hard origin/x"
+  is_empty "$(cat "$BD_LOG")"
+  equals "$(cat "$REPO/sentinel")" "sentinel"
+}
+
+@test "claim gives up after 3 sync rounds when branch sync still reports sync" {
+  export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/status-sync.toon"
+  # No NO_MISTAKES_SYNC_NEXT_STATUS_FIXTURE: the stub keeps returning the same
+  # sync-reporting fixture after every `axi sync` call.
+  rc=0
+  out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>/dev/null )" || rc=$?
+  equals "$rc" 1
+  is_empty "$out"
+  is_empty "$(cat "$BD_LOG")"
+  sync_calls="$(awk -F'\t' '$2 == "axi sync"' "$CALL_LOG" | wc -l | tr -d ' ')"
+  equals "$sync_calls" "3"
 }
 
 # shellcheck disable=SC2030

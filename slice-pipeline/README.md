@@ -1,7 +1,8 @@
 # slice-pipeline
 
-Takes a ready ticket to a verified commit. An Archon workflow plus the script it
-shells out to, self-contained so it runs against any repo, not just this one.
+Takes a ready ticket to a landed pull request that no-mistakes has checked. An
+Archon workflow plus the script it shells out to, self-contained so it runs
+against any repo, not just this one.
 
 ```
 bin/slice-wave                     every non-trivial rule, driven by bats
@@ -18,8 +19,14 @@ archon workflow run implement-slice \
 ```
 
 Both inputs are required and the engine rejects the run without them. Read the
-authored outcome (`verified`), not the run status: `verify` exits 0 on every
-verdict so the run completes and keeps its artifacts either way.
+authored outcome (`delivered`), not the run status: `verify` and `validate` both
+exit 0 on every verdict so the run completes and keeps its artifacts either way.
+`delivered` is only true once a commit landed, no-mistakes drove it to a
+checks-passed pull request, and the findings record posted on that PR.
+
+The target repo needs a GitHub remote you can push to and an initialized
+no-mistakes; `claim` checks both before it touches the branch or the tracker,
+and fails the run with what to fix if either is missing.
 
 Review `waivers` before merging a slice. The build runs unattended, so it records
 personal coding-standards lint waivers without asking, and this lists each one
@@ -33,7 +40,7 @@ not to be trusted.
 NO_MISTAKES_COVERAGE_DIR=$(mktemp -d) tests/local-test.sh
 ```
 
-Runs both bats suites under a line-coverage probe, replays the workflow
+Runs the bats suites under a line-coverage probe, replays the workflow
 fixtures through `archon workflow test`, and fails if any function in
 `bin/slice-wave` went unentered. Needs `bats`, `archon`, `bun`, and `jq`.
 
