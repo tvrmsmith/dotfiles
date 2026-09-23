@@ -8,8 +8,8 @@ user-invocable: true
 
 Drive `no-mistakes` through the `no-mistakes axi` command family: it prints
 machine-readable [TOON](https://toonformat.dev) to stdout and progress to stderr.
-The pipeline validates committed history through intent, rebase, review, test,
-document, lint, push, PR, and CI before it reaches the configured push target.
+The pipeline validates committed history through intent, rebase, format, lint,
+test, metrics, document, review, push, PR, and CI before it reaches the configured push target.
 
 ## Active validation-step boundary
 
@@ -43,9 +43,15 @@ committed, carry out the task first and come back to this loop - see
    ```
    `axi run` and every `axi respond` block synchronously - the review, test,
    and CI steps can each take **several minutes**, so a single call may not
-   return for a while. That is normal; allow a long timeout and do not cancel
-   or re-issue the command because it seems slow. To check progress without
-   disturbing the run, use `no-mistakes axi status` from a separate call.
+   return for a while. That is normal; do not cancel or re-issue the command
+   because it seems slow. Both commands default to `--wait 8m` so a harness
+   with a 10-minute tool cap gets a structured return instead of an unbounded
+   hang. If the command returns because that wait elapsed, it is not a failed
+   run and does not mean the daemon is dead: inspect with `no-mistakes axi status`
+   and re-run `axi run` or `axi respond` to reattach. A slow live daemon is
+   retried after a health probe rather than treated as I/O failure. To check
+   progress without disturbing the run, use `no-mistakes axi status` from a
+   separate call.
    A long-running call is working, not stalled - background it if your harness
    needs to, but the run **never advances past a gate on its own**. Read every
    return; on a `gate:`, respond; loop until an `outcome:`. Never idle-wait
@@ -103,9 +109,10 @@ committed, carry out the task first and come back to this loop - see
    abort or rerun while a gate awaits your response or a step is actively
    working, unless you are deliberately discarding that run.
 
-   Each `respond` blocks until the next `gate:`, `checks-passed` decision point, or final outcome.
+   Each `respond` blocks until the next `gate:`, `checks-passed` decision point, or final outcome, subject to the same default `--wait 8m` hold.
 
-   Two extra flags are available on `respond` when you need them:
+   Extra flags on `respond`:
+   - `--wait` bounds the hold (default 8m).
    - `--add-finding '<json>'` (with `--action fix`) folds a finding you
      spotted yourself - one the pipeline did not surface - into the fix round,
      as a JSON finding object. Use it for a problem you noticed that is not in
@@ -130,8 +137,14 @@ committed, carry out the task first and come back to this loop - see
      green. no-mistakes keeps monitoring the PR in the background until it is
      merged, closed, or its configured idle timeout elapses, so a human can watch
      it in the TUI.
-   - `passed` - the changes cleared the gate and the PR was merged or closed.
+   - `passed` - the pipeline completed under the requested steps, including any
+     explicit per-run skips. This alone is not evidence that a PR was merged.
+   - `passed-with-skips` - publication or CI verification automatically skipped.
+     Report the missing evidence and its cause from `run.automatic_skips`,
+     bound to the full `run.head_sha`. This is neither CI readiness nor a
+     failing code verdict. Explicit per-run skips retain their existing behavior.
    - `failed` or `cancelled` - they did not; read the output and address it.
+     Follow the custody guidance in [sync-recovery.md](sync-recovery.md) before you fix anything.
      Fix whatever the output points at (a failing test, a lint error, a finding
      you skipped), commit the fix on the same feature branch, then start a fresh
      run with `no-mistakes axi run --intent "..."`, which validates the new
@@ -146,16 +159,16 @@ Because that background monitor stays live, a PR that falls behind the default b
 hits a merge conflict after checks pass - commonly because another PR merged
 first - needs **no command from you**: leave it to the live monitor and
 never hand-rebase it yourself. When the CI monitor sees an actual conflict it
-**rebases onto the base, resolves it, revalidates from Review because
+**rebases onto the base, resolves it, revalidates from Format because
 rebasing cannot prove continuity with the reviewed head, and re-pushes the
 branch through Push**; a PR
 that is merely behind but still clean needs nothing either, since the platform
 merges it. The one
 exception is when that monitor is no longer running - the PR was closed, the run
 was aborted or superseded, it idle-timed-out, or its auto-fix attempts were
-exhausted - in which case recover with `no-mistakes rerun`, which cancels the
-stale monitor and re-runs the full pipeline including a deterministic rebase
-step. If the dead run left auto-fix or CI-rebase commits your clone lacks, take
+exhausted - in which case recover with `no-mistakes rerun`, subject to the
+clean-head check above. An accepted rerun cancels the stale monitor and re-runs
+the full pipeline including a deterministic rebase step. If the dead run left auto-fix or CI-rebase commits your clone lacks, take
 them with the offered `branch_sync` `sync` action **before the rerun,
 not after**: the rerun's own pending run carries no push binding, so it owns
 the branch (`pipeline_owned`) and `no-mistakes axi sync` then refuses.
@@ -174,6 +187,17 @@ the running monitor and returns its output without rebasing.
 Before any post-pipeline local commit or fresh run, read the structured
 `branch_sync` object returned by AXI home, status, or a drive result and act
 on its `next_action.code` as [sync-recovery.md](sync-recovery.md) describes.
+
+`no-mistakes rerun` selects the gate head, or the latest terminal run's
+verified unpublished preserved head while custody remains outstanding. If a
+known clean caller `HEAD` differs from that selected head, it refuses before
+starting or superseding any run and reports both full SHAs. It never
+substitutes the caller head or moves either branch to make them match. On
+refusal, inspect `no-mistakes axi status`, run its exact
+`branch_sync.next_action.command` for custody or synchronization, and follow
+the custody guidance in
+[sync-recovery.md](sync-recovery.md). Dirty callers and callers
+without clean-head evidence retain existing selection behavior.
 
 On a successful outcome (`checks-passed` or `passed`), close the loop with the
 user. If the output includes a `fixes` table, the pipeline fixed findings your
@@ -295,15 +319,15 @@ it to the user before you respond:
   `respond` call: `--action fix` (pass their guidance through
   `--instructions`), `--action approve`, or `--action skip`.
 
-The one exception is
+The exception is
 [`--yes`](#drive-unattended-with---yes): it is the user's standing consent to
-drive every gate unattended, so under `--yes` you resolve `ask-user`
-findings automatically instead of stopping to ask.
+drive eligible gates unattended, so under `--yes` you resolve ordinary
+`ask-user` findings automatically instead of stopping to ask.
 
 ## Drive unattended with `--yes`
 
 If you have clear consent to drive the run automatically, pass `--yes` to `axi run`
-or `axi respond`. It treats every actionable finding - `auto-fix` and
+or `axi respond`. For eligible gates, it treats actionable findings - `auto-fix` and
 `ask-user` alike - as consent to fix it, selects every current finding for one
 fix round, accepts the resulting fix review, and approves gates with only
 `no-op` findings. Only use it when the user has asked you to drive the whole
@@ -314,6 +338,13 @@ once, so if the rereview of that fix still reports blocking findings, `--yes`
 approves the gate and the run moves on rather than looping. A run driven this
 way can therefore reach a successful outcome with findings still outstanding -
 report them to the user.
+
+A `protected-path-refusal` gate still requires an explicit operator response
+under `--yes`. Relay its path and rule; do not automatically fix, approve,
+or skip it. Approval is rejected. Have the operator inspect and resolve the
+reported edit, then send `--action fix` to retry the unfinished step.
+The [protected-path reference](https://kunchenguid.github.io/no-mistakes/reference/repo-config/#protected_paths)
+owns the staging guard's scope and limitations.
 
 ## Inspecting state
 
