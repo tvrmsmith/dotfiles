@@ -21,6 +21,12 @@ Both inputs are required and the engine rejects the run without them. Read the
 authored outcome (`verified`), not the run status: `verify` exits 0 on every
 verdict so the run completes and keeps its artifacts either way.
 
+Review `waivers` before merging a slice. The build runs unattended, so it records
+personal coding-standards lint waivers without asking, and this lists each one
+spent on the slice's commits, read from the waiver log rather than the model's
+report. A non-empty `waivers_error` means the log was unreadable and the list is
+not to be trusted.
+
 ## Test it
 
 ```sh

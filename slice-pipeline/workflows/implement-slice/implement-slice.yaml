@@ -94,7 +94,9 @@ nodes:
         branch: {type: string}
         sha: {type: string}
         reason: {type: string}
-      required: [verified, committed, tests_touched, branch, sha, reason]
+        waivers: {type: array}
+        waivers_error: {type: string}
+      required: [verified, committed, tests_touched, branch, sha, reason, waivers, waivers_error]
 
   # Depends on claim as well as verify, under the default trigger rule (not
   # all_done): all_done on verify is permissive in both directions, so it also
