@@ -1,0 +1,113 @@
+name: implement-slice
+description: |
+  Build one vertical slice from its bead and land its commit on the branch.
+  The slice's spec lives in the bead's `design` field, the wave's agreed seams
+  in its `notes` field. Verify reads the branch, not a model's self-report.
+
+  Use when: a bead is ready and its spec lives in the bead. Run one per slice,
+  normally as a fan_out child.
+  NOT for: deciding what to build, or work that cannot land independently.
+
+model: large
+returns: verify
+outcome_field: verified
+
+# Pinned, not left to the caller. The driver fans out several of these at
+# once, and runs sharing one checkout serialize on the working-path lock,
+# where the younger ones fail outright. Pinning also turns a `--no-worktree`
+# dispatch into a load error rather than a stampede.
+worktree:
+  enabled: true
+
+inputs:
+  bead:
+    required: true
+    description: The bead id for this slice. Its spec is in the bead, not here.
+  beads_dir:
+    required: true
+    description: >-
+      Absolute path to the canonical beads directory. Required because Archon
+      works from its own clone, where the embedded database directory is
+      gitignored and therefore absent.
+
+nodes:
+  - id: claim
+    timeout: 120000
+    bash: slice-wave claim --bead "$INPUTS_BEAD" --beads-dir "$INPUTS_BEADS_DIR"
+    output_format:
+      type: object
+      properties:
+        bead: {type: string}
+        beads_dir: {type: string}
+        branch: {type: string}
+      required: [bead, beads_dir, branch]
+
+  # Prompt node, not exec: this is the one node judgment lives in. Denies
+  # AskUserQuestion because Archon has no in-node human channel. The tool is
+  # permitted by default, and a node that calls it has no way for an answer to
+  # come back, so it hangs until a timeout. That denial is what makes the
+  # skill's unattended mode survivable. idle_timeout is raised to 90 minutes
+  # because this node's whole job is to sit behind subagents that each run for
+  # many minutes without the parent emitting a token; the 30-minute default
+  # would kill it mid-slice.
+  - id: build
+    depends_on: [claim]
+    idle_timeout: 5400000
+    skills: [implement-with-subagents]
+    denied_tools: [AskUserQuestion]
+    prompt: |
+      Build the slice on bead $INPUTS.bead. Run unattended.
+
+      This checkout has no beads database of its own. Read the bead with
+      `BEADS_DIR=$INPUTS.beads_dir bd show $INPUTS.bead`, and set
+      `BEADS_DIR=$INPUTS.beads_dir` the same way on every other bd command,
+      including any bead you file.
+
+      Leave bead $INPUTS.bead open and claimed when you finish, even once the
+      slice is committed. Closing it releases every slice that depends on it,
+      so this pipeline closes it itself, only after the work has merged. That
+      overrides the usual rule to close finished work.
+
+  # Joins on all_done, not the default: under the default, a failed `build`
+  # would skip `verify`, which would skip `release`, and the bead would stay
+  # claimed by a worker that is gone. all_done runs the commit check on every
+  # path out of build. verify reads none of build's output, so it never
+  # references a failed producer. all_done also runs verify after a failed
+  # claim; verify-commit credits the slice branch only while this worktree
+  # has it checked out, which a failed claim never leaves behind.
+  #
+  # Exits 0 on every verdict, landed or not, so the run completes and its
+  # artifacts survive either way. The verdict is the authored outcome
+  # (outcome_field: verified above), which is why any caller must read the
+  # authored outcome rather than the run status.
+  - id: verify
+    depends_on: [claim, build]
+    trigger_rule: all_done
+    timeout: 120000
+    bash: slice-wave verify-commit --bead "$INPUTS_BEAD"
+    output_format:
+      type: object
+      properties:
+        verified: {type: boolean}
+        committed: {type: boolean}
+        tests_touched: {type: boolean}
+        branch: {type: string}
+        sha: {type: string}
+        reason: {type: string}
+      required: [verified, committed, tests_touched, branch, sha, reason]
+
+  # Depends on claim as well as verify, under the default trigger rule (not
+  # all_done): all_done on verify is permissive in both directions, so it also
+  # lets verify run after claim itself failed. Requiring claim to have
+  # succeeded is what stops this node from releasing a bead this run never
+  # claimed, which would clear the assignee of whoever actually holds it.
+  - id: release
+    depends_on: [claim, verify]
+    when: "$verify.output.verified == false"
+    timeout: 120000
+    bash: slice-wave release --bead "$INPUTS_BEAD" --beads-dir "$INPUTS_BEADS_DIR"
+    output_format:
+      type: object
+      properties:
+        released: {type: boolean}
+      required: [released]

@@ -1,0 +1,247 @@
+#!/usr/bin/env bash
+#
+# The Archon slice pipeline's only test seam. Its workflow YAML has none of
+# its own: a shell body inlined in a workflow file can only be exercised by
+# running the workflow, so every non-trivial step for a slice lives here
+# instead, where bats can drive it directly.
+
+set -uo pipefail
+
+usage() {
+	echo "usage: slice-wave <branch-name|claim|release|verify-commit> ..." >&2
+}
+
+# Prints the branch git-check-ref-format accepts for $1, or returns 2 with
+# nothing on stdout. The refs/heads/ form validates without needing to run
+# inside a repository.
+derive_branch() {
+	local bead="$1" sanitized
+	sanitized="$(printf '%s' "$bead" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._-' '-')"
+
+	while [ -n "$sanitized" ]; do
+		case "$sanitized" in
+			.* | -* | _*) sanitized="${sanitized:1}" ;;
+			*) break ;;
+		esac
+	done
+	while [ -n "$sanitized" ]; do
+		case "$sanitized" in
+			*. | *- | *_) sanitized="${sanitized%?}" ;;
+			*) break ;;
+		esac
+	done
+	[ -n "$sanitized" ] || return 2
+
+	local candidate="slice/$sanitized"
+	git check-ref-format "refs/heads/$candidate" >/dev/null 2>&1 || return 2
+	printf '%s' "$candidate"
+}
+
+cmd_branch_name() {
+	local bead="${1:-}" branch
+	if ! branch="$(derive_branch "$bead")"; then
+		echo "slice-wave: cannot derive a branch name from bead '$bead'" >&2
+		return 2
+	fi
+	printf '%s\n' "$branch"
+}
+
+# Sets the caller's `bead` and `beads_dir` locals from --bead and --beads-dir.
+# Returns 2 on an unknown flag or a flag with no value after it.
+parse_flags() {
+	while [ $# -gt 0 ]; do
+		[ $# -ge 2 ] || { echo "slice-wave: $1 needs a value" >&2; return 2; }
+		case "$1" in
+			--bead) bead="$2" ;;
+			--beads-dir) beads_dir="$2" ;;
+			*) echo "slice-wave: unknown flag $1" >&2; return 2 ;;
+		esac
+		shift 2
+	done
+}
+
+# Puts the current worktree on the branch derived from $1, creating it if
+# refs/heads/<branch> does not exist yet. Already being on it is a no-op.
+# git's own error reaches stderr, since a dirty tree and a branch held by
+# another worktree need different fixes.
+switch_to_branch() {
+	local branch="$1"
+	if git show-ref --verify --quiet "refs/heads/$branch"; then
+		git switch --quiet "$branch"
+	else
+		git switch --quiet -c "$branch"
+	fi
+}
+
+cmd_claim() {
+	local bead="" beads_dir=""
+	parse_flags "$@" || return 2
+	[ -n "$bead" ] && [ -n "$beads_dir" ] || {
+		echo "slice-wave: claim needs --bead and --beads-dir" >&2
+		return 2
+	}
+
+	local branch
+	branch="$(derive_branch "$bead")" || {
+		echo "slice-wave: cannot derive a branch name from bead '$bead'" >&2
+		return 2
+	}
+
+	# Built before the switch and the claim, so a failure here strands neither
+	# a checked-out branch nor a claimed bead.
+	local claimed
+	claimed="$(jq -n --arg bead "$bead" --arg beads_dir "$beads_dir" --arg branch "$branch" \
+		'{bead: $bead, beads_dir: $beads_dir, branch: $branch}')" || {
+		echo "slice-wave: cannot build the claim output, so $bead was not claimed" >&2
+		return 1
+	}
+
+	switch_to_branch "$branch" || {
+		echo "slice-wave: cannot switch to $branch" >&2
+		return 1
+	}
+
+	# Detaches on refusal because release never runs after a failed claim, and
+	# a kept worktree still on the branch would block every retry's switch.
+	# It also keeps verify-commit from crediting a branch this run never claimed.
+	BEADS_DIR="$beads_dir" bd update "$bead" --claim >/dev/null || {
+		echo "slice-wave: tracker refused to claim $bead" >&2
+		git switch --quiet --detach || echo "slice-wave: cannot detach, so $branch stays checked out here" >&2
+		return 1
+	}
+
+	printf '%s\n' "$claimed"
+}
+
+# Detaches first: Archon keeps a finished run's worktree, and while it still
+# has the slice branch checked out, a retry's claim cannot switch to it. A
+# failed detach does not stop the unclaim, because a bead left claimed by a
+# gone worker is the worse outcome. `bd unclaim` refuses to clear a claim
+# held by a different actor.
+cmd_release() {
+	local bead="" beads_dir=""
+	parse_flags "$@" || return 2
+	[ -n "$bead" ] && [ -n "$beads_dir" ] || {
+		echo "slice-wave: release needs --bead and --beads-dir" >&2
+		return 2
+	}
+
+	git switch --quiet --detach || echo "slice-wave: cannot detach, so the slice branch stays checked out here" >&2
+
+	BEADS_DIR="$beads_dir" bd unclaim "$bead" >/dev/null || {
+		echo "slice-wave: tracker refused to release $bead" >&2
+		return 1
+	}
+
+	printf '%s\n' '{"released":true}'
+}
+
+# True when $1 is a test file: a path component named test/tests/spec/specs/
+# __tests__ or ending in .Test/.Tests, a basename containing .test./.spec./
+# _test./_spec./Test./Tests., a basename starting test_, or one ending in
+# .bats. One-sided by design: nothing requires a non-test file to have changed
+# too, since a tests-only slice is legitimate work.
+is_test_path() {
+	local base="${1##*/}"
+	case "$base" in
+		*.bats | *.test.* | *.spec.* | *_test.* | *_spec.* | test_* | *Test.* | *Tests.*) return 0 ;;
+	esac
+	# Sentinel slashes so the first and last components match the same pattern
+	# as the interior ones. Matching on the whole path avoids splitting it into
+	# words, which would glob-expand a path containing [ or *.
+	case "/$1/" in
+		*/test/* | */tests/* | */spec/* | */specs/* | */__tests__/* | *.Test/* | *.Tests/*) return 0 ;;
+	esac
+	return 1
+}
+
+# Reads every line before returning, deliberately. Returning early would leave
+# the producer writing into a closed pipe, and with `pipefail` the SIGPIPE
+# becomes the pipeline's status, reading a found test file as "none found" on
+# any diff whose path list outgrows the pipe buffer.
+any_test_path() {
+	local path found=1
+	while IFS= read -r path; do
+		[ -n "$path" ] || continue
+		is_test_path "$path" && found=0
+	done
+	return "$found"
+}
+
+cmd_verify_commit() {
+	local bead="" beads_dir=""
+	parse_flags "$@" || return 2
+
+	local branch
+	branch="$(derive_branch "$bead")" || {
+		echo "slice-wave: cannot derive a branch name from bead '$bead'" >&2
+		return 2
+	}
+
+	# origin/HEAD first: it names the branch a slice lands on, even where the
+	# local main is stale or the default branch has another name.
+	local resolved_base="" candidate
+	for candidate in origin/HEAD origin/main main; do
+		git rev-parse --verify --quiet "$candidate" >/dev/null 2>&1 || continue
+		resolved_base="$candidate"
+		break
+	done
+
+	local committed=false tests_touched=false verified=false sha="" reason="" count paths
+	if [ -z "$resolved_base" ]; then
+		reason="cannot resolve a base ref"
+	elif ! git show-ref --verify --quiet "refs/heads/$branch"; then
+		reason="no branch $branch"
+	elif [ "$(git symbolic-ref --quiet --short HEAD)" != "$branch" ]; then
+		reason="this worktree is not on $branch, so this run never claimed it"
+	elif ! count="$(git rev-list --count "$resolved_base..$branch" 2>&1)"; then
+		reason="cannot count commits on $branch: $count"
+	elif [ "$count" -eq 0 ]; then
+		reason="no commit on $branch beyond $resolved_base"
+	else
+		committed=true
+		sha="$(git rev-parse "$branch")"
+		if ! paths="$(git diff --name-only "$resolved_base...$branch" 2>&1)"; then
+			reason="cannot list the files changed on $branch: $paths"
+		elif printf '%s\n' "$paths" | any_test_path; then
+			tests_touched=true
+			verified=true
+		else
+			reason="no test file in the commits on $branch"
+		fi
+	fi
+
+	jq -n --arg branch "$branch" --arg sha "$sha" --arg reason "$reason" \
+		--argjson committed "$committed" --argjson tests_touched "$tests_touched" \
+		--argjson verified "$verified" \
+		'{verified: $verified, committed: $committed, tests_touched: $tests_touched,
+		  branch: $branch, sha: $sha, reason: $reason}'
+	return 0
+}
+
+case "${1:-}" in
+	branch-name)
+		shift
+		cmd_branch_name "$@"
+		exit $?
+		;;
+	claim)
+		shift
+		cmd_claim "$@"
+		exit $?
+		;;
+	release)
+		shift
+		cmd_release "$@"
+		exit $?
+		;;
+	verify-commit)
+		shift
+		cmd_verify_commit "$@"
+		exit $?
+		;;
+	*)
+		usage
+		exit 2
+		;;
+esac

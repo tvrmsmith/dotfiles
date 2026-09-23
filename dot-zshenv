@@ -48,6 +48,10 @@ hoist_shim_path() {
 export OMP_MODEL="anthropic-vertex/claude-opus-4-7"
 export ENABLE_LSP_TOOL=1
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+# Archon runs from source, so without this it spawns the Claude Code bundled in
+# its agent SDK, which lags the installed one and rejects newer models outright.
+# The installer-managed symlink tracks auto-updates, so this cannot fall behind.
+export CLAUDE_BIN_PATH="$HOME/.local/bin/claude"
 
 # Node carries its own CA store and never consults the macOS keychain, so on the
 # TLS-intercepting corporate network every registry fetch dies with
