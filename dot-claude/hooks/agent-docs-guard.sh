@@ -62,7 +62,8 @@ deny() {
 # The instruction files, the subset of the agent-facing set that steers every
 # later agent in the repository rather than describing one thing. A no-mistakes
 # gate agent amending one of these rewrites the standing orders of the steps
-# behind it, inside a run nobody is watching; Trevor keeps them hand-edited.
+# behind it, inside a run nobody is watching; Trevor reviews every change to
+# them, and an unattended run skips that review.
 # Narrower than AGENT_DOC_RE on purpose: a SKILL.md is agent-facing craft the
 # gate may still fix.
 AGENT_INSTRUCTION_RE='(^|/)(AGENTS?\.md|CLAUDE(\.local)?\.md|GEMINI\.md|\.cursorrules)$'
@@ -73,7 +74,7 @@ AGENT_INSTRUCTION_RE='(^|/)(AGENTS?\.md|CLAUDE(\.local)?\.md|GEMINI\.md|\.cursor
 # ends the same way (`MY-CLAUDE.md`).
 AGENT_INSTRUCTION_CMD_RE='(^|[^[:alnum:]_.-])([^[:space:]'"'"'";|&<>]*/)?(AGENTS?\.md|CLAUDE(\.local)?\.md|GEMINI\.md|\.cursorrules)([^[:alnum:]_-]|$)'
 
-GATE_DENY='Blocked: no-mistakes gate agents leave agent instruction files as they stand. AGENTS.md, CLAUDE.md and their siblings are the standing orders every later step reads, so Trevor writes them by hand, in a session he is watching. Report what you wanted to record as a finding instead, naming the file and the exact text you would add, and let it reach him. Every other file in the repository is yours to edit as usual.'
+GATE_DENY='Blocked: no-mistakes gate agents leave agent instruction files as they stand. AGENTS.md, CLAUDE.md and their siblings are the standing orders every later step reads, so every change to them goes past Trevor'"'"'s review, and an unattended gate run skips that review. Report what you wanted to record as a finding instead, naming the file and the exact text you would add, and let it reach him. Every other file in the repository is yours to edit as usual.'
 
 if [ "$tool" = "Bash" ]; then
   [ "${NM_GATE:-}" = 1 ] || exit 0

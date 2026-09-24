@@ -165,7 +165,7 @@ WRITE_GUIDANCE='ADR directory. An accepted ADR changes two ways. Amend it, with 
 
 RENUMBER_GUIDANCE='ADR renumber. A rename, or an edit that only moves digits, changes no decision, so it goes through here. Carry the new number across the whole set in this same pass: the filename, the number in the title, the index line in the ADR README, and every link naming the old number. Leave every other word of the file as written.'
 
-GATE_DENY='Blocked: no-mistakes gate agents do not write ADRs. An ADR is a decision the user already made; changing it is the user'"'"'s call, not a review fix. Both paths are human-initiated: amend for a correction, supersede with a new numbered ADR when the decision changes. If the diff genuinely contradicts an accepted ADR, report that as a finding against the CODE and let it reach the user. Leave every file under docs/adr/ exactly as it stands. One exception passes: a renumber after a number clash, which is a `mv` within the ADR directory plus edits that alter digits and nothing else.'
+GATE_DENY='Blocked: no-mistakes gate agents leave ADRs as they stand. Every ADR change goes past the user'"'"'s review, and an unattended gate run skips that review. The change belongs in an attended session, as an amendment for a correction or a new numbered ADR superseding it when the decision changes. If the diff genuinely contradicts an accepted ADR, report that as a finding against the CODE and let it reach the user. Leave every file under docs/adr/ exactly as it stands. One exception passes: a renumber after a number clash, which is a `mv` within the ADR directory plus edits that alter digits and nothing else.'
 
 if [ "$access" = "write" ] && [ "${NM_GATE:-}" = 1 ]; then
   deny "$GATE_DENY"
