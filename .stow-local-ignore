@@ -10,6 +10,7 @@
 
 # Installation and scripts
 ^/install\.sh$
+^/greet\.sh$
 
 # Vendored third-party content (subtrees). Pulled into ~/.claude via
 # symlinks under dot-claude/skills/, not stowed directly.
