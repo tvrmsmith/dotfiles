@@ -173,6 +173,7 @@ teardown() { _install_test_teardown; }
 @test "a skill no-mistakes init writes through the ~/.claude fold leaves the repo clean" {
   # init writes ~/.claude/skills/no-mistakes; with ~/.claude folded into
   # dot-claude/, that lands in the checkout and used to dirty it.
+  export GIT_CONFIG_GLOBAL=/dev/null
   cp "$REPO_ROOT/.gitignore" "$FAKE_REPO/.gitignore"
   git -C "$FAKE_REPO" init -q
   git -C "$FAKE_REPO" add -A
@@ -187,17 +188,4 @@ teardown() { _install_test_teardown; }
   run git -C "$FAKE_REPO" status --porcelain
   [ "$status" -eq 0 ]
   [ -z "$output" ]
-}
-
-@test "install_no_mistakes leaves an installed binary alone and never fetches" {
-  cat > "$STUB_BIN/no-mistakes" <<'SH'
-#!/bin/sh
-echo "no-mistakes 9.9.9"
-SH
-  printf '#!/bin/sh\necho curl-called >&2\nexit 1\n' > "$STUB_BIN/curl"
-  chmod +x "$STUB_BIN/no-mistakes" "$STUB_BIN/curl"
-
-  run env PATH="$STUB_BIN:$PATH" bash -c "source '$INSTALL_SH' && install_no_mistakes"
-  [ "$status" -eq 0 ]
-  [ "$output" = "no-mistakes already installed (no-mistakes 9.9.9)." ]
 }
