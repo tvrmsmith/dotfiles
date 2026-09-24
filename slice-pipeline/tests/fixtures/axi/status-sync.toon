@@ -1,0 +1,40 @@
+run:
+  id: "01RUNPRIOR"
+  branch: slice/foo
+  status: failed
+  head: abcdef12
+  head_sha: abcdef1234567890abcdef1234567890abcdef12
+  pr: "https://github.com/owner/repo/pull/42"
+  findings: none
+outcome: failed
+branch_sync:
+  state: behind
+  changed: false
+  local:
+    branch: ""
+    head: ""
+    clean: false
+  pipeline:
+    run: ""
+    status: ""
+    phase: ""
+    submitted_head: ""
+    current_head: ""
+    pushed_head: ""
+    pushed_at: 0
+    push_generation: 0
+  target:
+    kind: ""
+    remote: ""
+    url: ""
+    ref: ""
+  remote:
+    observed_head: ""
+    freshness: ""
+    observed_at: 0
+  relation: behind
+  safety: fast_forward
+  pr_state: open
+  next_action:
+    code: sync
+    command: no-mistakes axi sync

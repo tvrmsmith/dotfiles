@@ -1,0 +1,41 @@
+# Landed and shipped: verify sees a commit and a green suite, validate drives
+# it through no-mistakes to a checks-passed PR, and the authored outcome
+# (`delivered`) is a success. Folds what used to be commit-landed.stubs.yaml:
+# that fixture's landed-commit setup is this one's setup too, now carried one
+# node further to where the run actually decides whether the slice shipped.
+#
+# `release` is deliberately left unstubbed: the fixture language has no
+# negative `reached` assertion, so an unstubbed node that gets reached fails
+# the fixture with a missing-stub error. The omission IS the guard assertion.
+# If `$validate.output.delivered == false` ever let `release` through on a
+# delivered slice, this fixture goes red.
+fixture:
+  expect: completed
+  reached: [claim, build, verify, validate]
+  inputs:
+    bead: demo-slice-1
+    beads_dir: /tmp/beads
+
+claim:
+  bead: demo-slice-1
+  beads_dir: /tmp/beads
+  branch: slice/demo-slice-1
+build: "the slice is built and committed"
+verify:
+  verified: true
+  committed: true
+  tests_touched: true
+  branch: slice/demo-slice-1
+  sha: 1f0c6a4e2b7d9c3a5e8f10b2d4c6a8e0f2b4d6c8
+  reason: ""
+  waivers: []
+  waivers_error: ""
+validate:
+  delivered: true
+  outcome: checks-passed
+  pr_number: 42
+  pr_url: https://github.com/owner/repo/pull/42
+  repo: owner/repo
+  fix_rounds: 1
+  record_posted: true
+  reason: ""

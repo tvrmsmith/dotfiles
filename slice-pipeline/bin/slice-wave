@@ -8,7 +8,7 @@
 set -uo pipefail
 
 usage() {
-	echo "usage: slice-wave <branch-name|claim|release|verify-commit> ..." >&2
+	echo "usage: slice-wave <branch-name|claim|release|verify-commit|validate> ..." >&2
 }
 
 # Prints the branch git-check-ref-format accepts for $1, or returns 2 with
@@ -46,15 +46,23 @@ cmd_branch_name() {
 	printf '%s\n' "$branch"
 }
 
-# Sets the caller's `bead` and `beads_dir` locals from --bead and --beads-dir.
-# Returns 2 on an unknown flag or a flag with no value after it.
+# Sets the caller's `bead`, `beads_dir` and `verified` locals from --bead,
+# --beads-dir and --verified, accepting only the flags named in the
+# space-separated list $1. Returns 2 on any other flag or a flag with no value
+# after it.
 parse_flags() {
+	local accepted=" $1 "
+	shift
 	while [ $# -gt 0 ]; do
 		[ $# -ge 2 ] || { echo "slice-wave: $1 needs a value" >&2; return 2; }
+		case "$accepted" in
+			*" $1 "*) ;;
+			*) echo "slice-wave: unknown flag $1" >&2; return 2 ;;
+		esac
 		case "$1" in
 			--bead) bead="$2" ;;
 			--beads-dir) beads_dir="$2" ;;
-			*) echo "slice-wave: unknown flag $1" >&2; return 2 ;;
+			--verified) verified="$2" ;;
 		esac
 		shift 2
 	done
@@ -73,9 +81,147 @@ switch_to_branch() {
 	fi
 }
 
+# Fails a claim on a target repository that cannot host the pull request the
+# rest of the pipeline exists to open: no forge remote claim can push a
+# branch to and have write access on, checked with `gh` in the cwd. Runs
+# before any branch switch or bd call, so a refusal here leaves the worktree
+# exactly where it started.
+check_target_forge() {
+	local view perm
+	if ! view="$(gh repo view --json nameWithOwner,viewerPermission 2>&1)"; then
+		echo "slice-wave: no forge remote you can open pull requests on (add a GitHub remote you can push to, then check 'gh auth status'). gh said: $view" >&2
+		return 1
+	fi
+
+	perm="$(printf '%s' "$view" | jq -r '.viewerPermission // empty' 2>/dev/null)"
+	case "$perm" in
+		ADMIN | MAINTAIN | WRITE) return 0 ;;
+	esac
+	echo "slice-wave: no forge remote you can open pull requests on (viewer permission is $perm; add a GitHub remote you can push to, then check 'gh auth status')" >&2
+	return 1
+}
+
+# Fails a claim on a target repository no-mistakes cannot validate: `axi`
+# (the home view) is the cheapest call that proves the gate is initialized,
+# and it starts no run. Runs before any branch switch or bd call, same as
+# check_target_forge.
+check_target_no_mistakes() {
+	local home rc error_line
+	home="$(no-mistakes axi 2>&1)"
+	rc=$?
+	error_line="$(printf '%s\n' "$home" | grep '^error:' | head -1)"
+	if [ "$rc" -ne 0 ] || [ -n "$error_line" ]; then
+		echo "slice-wave: no-mistakes is not ready on this target; run 'no-mistakes init'. ${error_line:-$home}" >&2
+		return 1
+	fi
+}
+
+# Strips the double quotes TOON puts around a value that needs them, e.g. an
+# empty string or one containing a colon, and undoes its escapes (see
+# toon_quoted). Plain barewords like a next_action code or an ordinary shell
+# command pass through unchanged, as does a quoted value that never closes.
+toon_unquote() {
+	local s="$1" field rest
+	case "$s" in
+		\"*\")
+			rest="${s:1}"
+			if toon_quoted && [ -z "$rest" ]; then
+				s="$field"
+			fi
+			;;
+	esac
+	printf '%s' "$s"
+}
+
+# Decodes the TOON quoted string the caller's `rest` opens with, its opening
+# quote already stripped, into the caller's `field`, and leaves in `rest`
+# whatever follows the closing quote. `\"`, `\\`, `\n`, `\r` and `\t` are
+# TOON's escapes and a bare `"` closes the string. Returns 1 when the string
+# never closes.
+toon_quoted() {
+	field=""
+	while :; do
+		# shellcheck disable=SC1003 # '\\' is a literal two-backslash TOON escape
+		case "$rest" in
+			'\"'*) field="$field\""; rest="${rest:2}" ;;
+			'\\'*) field="$field\\"; rest="${rest:2}" ;;
+			'\n'*) field="$field"$'\n'; rest="${rest:2}" ;;
+			'\r'*) field="$field"$'\r'; rest="${rest:2}" ;;
+			'\t'*) field="$field"$'\t'; rest="${rest:2}" ;;
+			'"'*) rest="${rest:1}"; return 0 ;;
+			'') return 1 ;;
+			*) field="$field${rest:0:1}"; rest="${rest:1}" ;;
+		esac
+	done
+}
+
+# Detaches HEAD the same way a refused claim always has: a failure past this
+# point must not leave the worktree squatting on $1, since that would block
+# every retry's switch. A failed detach only warns, since a worktree stuck on
+# the branch is the worse outcome next to a missing warning.
+detach_worktree() {
+	local branch="$1"
+	git switch --quiet --detach || echo "slice-wave: cannot detach, so $branch stays checked out here" >&2
+}
+
+# Reads no-mistakes' cached branch_sync state before any local commit and, if
+# it names a sync to run, runs it and re-reads before claiming. A slice
+# dispatched again after a failed validation can land on a branch no-mistakes
+# already pushed fix commits to, so this has to see that before the build step
+# commits again. Runs after the branch switch: it is reading this branch's
+# custody, not the one this worktree started on.
+#
+# Never runs anything besides one of the `no-mistakes axi sync` forms
+# no-mistakes reports, matched exactly and run as argv. An unrecognised code,
+# any other reported command, or a sync that fails, all stop here and leave
+# the recovery to no-mistakes or a human, per its own custody rules. The
+# caller detaches on failure.
+reconcile_branch_sync() {
+	local branch="$1" rounds=0 status rc error_line code command output
+	while :; do
+		status="$(no-mistakes axi status 2>&1)"
+		rc=$?
+		error_line="$(printf '%s\n' "$status" | grep '^error:' | head -1)"
+		if [ "$rc" -ne 0 ] || [ -n "$error_line" ]; then
+			echo "slice-wave: cannot read no-mistakes axi status for $branch. ${error_line:-$status}" >&2
+			return 1
+		fi
+		code="$(toon_value "$status" branch_sync.next_action.code)"
+		command="$(toon_value "$status" branch_sync.next_action.command)"
+
+		case "$code" in
+			"" | run_pipeline) return 0 ;;
+			sync | check_sync | retry | recover_custody)
+				case "$command" in
+					"no-mistakes axi sync" | "no-mistakes axi sync --check" | \
+						"no-mistakes axi sync --recover" | "no-mistakes axi sync --recover --keep-local") ;;
+					*)
+						echo "slice-wave: no-mistakes reported $code with command '$command' on $branch, which is not a sync command; refusing to run it" >&2
+						return 1
+						;;
+				esac
+				if [ "$rounds" -ge 3 ]; then
+					echo "slice-wave: no-mistakes still reports $code on $branch after 3 sync attempts" >&2
+					return 1
+				fi
+				# shellcheck disable=SC2086 # an allowlisted flag list, split into argv on purpose
+				if ! output="$(no-mistakes axi sync ${command#no-mistakes axi sync} 2>&1)"; then
+					echo "slice-wave: '$command' failed while reconciling $branch. $output" >&2
+					return 1
+				fi
+				rounds=$((rounds + 1))
+				;;
+			*)
+				echo "slice-wave: no-mistakes reports $code (command: $command) on $branch, which claim does not know how to reconcile" >&2
+				return 1
+				;;
+		esac
+	done
+}
+
 cmd_claim() {
 	local bead="" beads_dir=""
-	parse_flags "$@" || return 2
+	parse_flags "--bead --beads-dir" "$@" || return 2
 	[ -n "$bead" ] && [ -n "$beads_dir" ] || {
 		echo "slice-wave: claim needs --bead and --beads-dir" >&2
 		return 2
@@ -96,8 +242,16 @@ cmd_claim() {
 		return 1
 	}
 
+	check_target_forge || return 1
+	check_target_no_mistakes || return 1
+
 	switch_to_branch "$branch" || {
 		echo "slice-wave: cannot switch to $branch" >&2
+		return 1
+	}
+
+	reconcile_branch_sync "$branch" || {
+		detach_worktree "$branch"
 		return 1
 	}
 
@@ -106,7 +260,7 @@ cmd_claim() {
 	# It also keeps verify-commit from crediting a branch this run never claimed.
 	BEADS_DIR="$beads_dir" bd update "$bead" --claim >/dev/null || {
 		echo "slice-wave: tracker refused to claim $bead" >&2
-		git switch --quiet --detach || echo "slice-wave: cannot detach, so $branch stays checked out here" >&2
+		detach_worktree "$branch"
 		return 1
 	}
 
@@ -120,7 +274,7 @@ cmd_claim() {
 # held by a different actor.
 cmd_release() {
 	local bead="" beads_dir=""
-	parse_flags "$@" || return 2
+	parse_flags "--bead --beads-dir" "$@" || return 2
 	[ -n "$bead" ] && [ -n "$beads_dir" ] || {
 		echo "slice-wave: release needs --bead and --beads-dir" >&2
 		return 2
@@ -187,7 +341,7 @@ spent_waivers() {
 
 cmd_verify_commit() {
 	local bead="" beads_dir=""
-	parse_flags "$@" || return 2
+	parse_flags "--bead --beads-dir" "$@" || return 2
 
 	local branch
 	branch="$(derive_branch "$bead")" || {
@@ -242,6 +396,428 @@ cmd_verify_commit() {
 	return 0
 }
 
+# Prints the value no-mistakes' TOON $1 gives the dotted key path $2,
+# unquoted, or nothing when it is absent. TOON nests two spaces per level, and
+# a line starts a block only when nothing follows its colon, so each segment
+# but the last names a block header at its depth and the last names a
+# `key: value` line one level inside it. Leaving a block before the key shows
+# up means the key is absent.
+toon_value() {
+	local input="$1" path="$2" raw
+	raw="$(awk -v path="$path" '
+		BEGIN { n = split(path, seg, "."); depth = 1; indent = "" }
+		depth > 1 && index($0, indent) != 1 { exit }
+		depth < n && $0 == indent seg[depth] ":" { depth++; indent = indent "  "; next }
+		depth == n && index($0, indent seg[n] ": ") == 1 { print substr($0, length(indent seg[n]) + 3); exit }
+	' <<<"$input")"
+	toon_unquote "$raw"
+}
+
+# Prints each row of the TOON `fixes[N]{step,summary}:` table in $1 as
+# `step: summary`, one per line, nothing when the run fixed nothing.
+toon_fixes() {
+	local input="$1" row
+	awk '
+		/^fixes\[[0-9]+\]\{step,summary\}:$/ { inside = 1; next }
+		inside && /^  / { print substr($0, 3); next }
+		inside { exit }
+	' <<<"$input" | while IFS= read -r row; do
+		printf '%s: %s\n' "${row%%,*}" "$(toon_unquote "${row#*,}")"
+	done
+}
+
+# Splits one row of a TOON tabular table into its fields, printed joined by
+# $FINDING_HISTORY_SEP and ended by $FINDING_HISTORY_RS, quoting and
+# backslash-escapes undone. A naive split on `,` breaks on a quoted field that
+# itself contains a comma, colon or escaped quote (TOON's own reason for
+# quoting it), so this walks the row instead: toon_quoted reads a quoted
+# field, and outside one, `,` ends the field. Prints nothing for a row that
+# does not split into exactly $2 fields with a non-empty first one, or whose
+# quoted field never closes or runs into text before the next `,`.
+toon_row_fields() {
+	local rest="$1" want="$2" field out="" sep="" count=0
+	while :; do
+		if [ "${rest:0:1}" = '"' ]; then
+			rest="${rest:1}"
+			toon_quoted || return 0
+		else
+			field="${rest%%,*}"
+			rest="${rest:${#field}}"
+		fi
+		[ "$count" -gt 0 ] || [ -n "$field" ] || return 0
+		out="$out$sep$field"
+		sep="$FINDING_HISTORY_SEP"
+		count=$((count + 1))
+		case "$rest" in
+			,*) rest="${rest:1}" ;;
+			'') break ;;
+			*) return 0 ;;
+		esac
+	done
+	[ "$count" -eq "$want" ] || return 0
+	printf '%s%s' "$out" "$FINDING_HISTORY_RS"
+}
+
+# The field separator toon_finding_history joins on. Not a tab: bash `read`
+# treats IFS whitespace (space, tab, newline) as a run that collapses and
+# trims, which would silently drop an empty field such as a row with no file.
+# 0x1F (ASCII unit separator) is not IFS whitespace, so an empty field between
+# two of them survives both the awk join and the caller's `read`.
+FINDING_HISTORY_SEP="$(printf '\037')"
+readonly FINDING_HISTORY_SEP
+
+# The record separator toon_finding_history ends each row with. Not a
+# newline, since a description's decoded `\n` escape is one. 0x1E is ASCII
+# record separator.
+FINDING_HISTORY_RS="$(printf '\036')"
+readonly FINDING_HISTORY_RS
+
+# The finding_history columns validate reads, in the order no-mistakes sends
+# them. A table under any other header is one validate cannot read.
+FINDING_HISTORY_COLUMNS="step,round,id,severity,action,source,selected,file,line,description"
+readonly FINDING_HISTORY_COLUMNS
+
+# Prints each row of the TOON finding_history table in $1, whose header
+# history_state_of has already checked names $FINDING_HISTORY_COLUMNS, each
+# row ended by $FINDING_HISTORY_RS with its columns joined by
+# $FINDING_HISTORY_SEP in that order, quoting and escapes undone. A row that
+# does not parse prints nothing.
+toon_finding_history() {
+	local input="$1" row width
+	width="$(awk -F, '{ print NF }' <<<"$FINDING_HISTORY_COLUMNS")"
+	awk '
+		/^finding_history\[[0-9]+\]\{/ { inside = 1; next }
+		inside && /^  / { print substr($0, 3); next }
+		inside { exit }
+	' <<<"$input" | while IFS= read -r row; do
+		toon_row_fields "$row" "$width"
+	done
+}
+
+# Sets the caller's `history_state` from no-mistakes' TOON $1 to one of:
+#   rows    finding_history has $FINDING_HISTORY_COLUMNS under its header;
+#           `history_count` carries its row count, read them with
+#           toon_finding_history
+#   empty   finding_history[0]: - the run found nothing
+#   error   finding_history_error is set, or the header names other columns;
+#           `history_error` carries the reason
+#   absent  no finding_history key beside an outcome - an older no-mistakes
+#           never sent it
+#   unfinished  no finding_history key and no outcome - no-mistakes sends the
+#           history only with a final result
+history_state_of() {
+	local input="$1" header
+	history_error="$(toon_value "$input" finding_history_error)"
+	header="$(grep -m 1 '^finding_history\[' <<<"$input")"
+	history_count="${header#finding_history[}"
+	history_count="${history_count%%]*}"
+	if [ -n "$history_error" ]; then
+		history_state=error
+	elif [ -z "$header" ] && [ -n "$(toon_value "$input" outcome)" ]; then
+		history_state=absent
+	elif [ -z "$header" ]; then
+		history_state=unfinished
+	elif [ "$header" = 'finding_history[0]:' ]; then
+		history_state=empty
+	elif [ "$header" = "finding_history[$history_count]{$FINDING_HISTORY_COLUMNS}:" ]; then
+		history_state=rows
+	else
+		history_state=error
+		history_error="unrecognised finding_history columns: $header"
+	fi
+}
+
+# Prints the findings-history part of the record from no-mistakes' TOON $1:
+# every ask-user finding verbatim plus a per-step tally of every finding when
+# the run carries a history, or one of the sentences standing in for a
+# history validate could not read, found empty, an older no-mistakes never
+# sent, or a run with no final result has yet to send.
+findings_history_section() {
+	local toon="$1" history_state history_error="" history_count rows
+	history_state_of "$toon"
+	if [ "$history_state" = rows ]; then
+		rows="$(toon_finding_history "$toon")"
+		if [ "$(printf '%s' "$rows" | tr -cd "$FINDING_HISTORY_RS" | wc -c | tr -d ' ')" != "$history_count" ]; then
+			history_state=error
+			history_error="finding_history declares $history_count rows but validate could not read them all"
+		fi
+	fi
+	case "$history_state" in
+		error)
+			printf 'Findings history: unknown (%s)\n' "$history_error"
+			return
+			;;
+		empty)
+			printf 'Findings history: none\n'
+			return
+			;;
+		absent)
+			printf '%s\n' 'This no-mistakes version does not expose findings history, so this record lists only what it reports at the end of the run.'
+			return
+			;;
+		unfinished)
+			printf 'Findings history: not available, no-mistakes sends it only with a final result\n'
+			return
+			;;
+	esac
+
+	local step round id severity action file line description loc ask_line ask_lines=""
+	while IFS="$FINDING_HISTORY_SEP" read -r -d "$FINDING_HISTORY_RS" step round id severity action _ _ file line description; do
+		[ "$action" = ask-user ] || continue
+		loc="$file"
+		if [ -n "$line" ] && [ "$line" != 0 ]; then
+			loc="${loc:+$loc:}$line"
+		fi
+		printf -v ask_line -- '- %s round %s %s %s%s: %s\n' \
+			"$step" "$round" "$id" "$severity" "${loc:+ $loc}" "$description"
+		ask_lines="${ask_lines}${ask_line}"
+	done <<<"$rows"
+
+	if [ -n "$ask_lines" ]; then
+		printf 'Ask-user findings:\n%s' "$ask_lines"
+	else
+		printf 'Ask-user findings: none\n'
+	fi
+
+	printf '\nAll findings:\n'
+	printf '%s' "$rows" | awk -F"$FINDING_HISTORY_SEP" -v RS="$FINDING_HISTORY_RS" '
+		{
+			step = $1
+			if (!(step in seen)) { seen[step] = 1; order[n++] = step }
+			count[step]++
+			detail[step] = detail[step] (detail[step] == "" ? "" : ", ") \
+				$3 " " ($7 == "true" ? "selected" : "not selected")
+		}
+		END {
+			for (i = 0; i < n; i++) {
+				step = order[i]
+				plural = (count[step] == 1) ? "finding" : "findings"
+				printf "- %s: %d %s (%s)\n", step, count[step], plural, detail[step]
+			}
+		}
+	'
+}
+
+# Prints bd's record of bead $1 as the one intent text no-mistakes takes:
+# every non-empty field a slice's goal lives in, separated by blank lines.
+# Prints nothing when every field is empty.
+bead_intent() {
+	local bead="$1" beads_dir="$2" show
+	show="$(BEADS_DIR="$beads_dir" bd show "$bead" --json)" || return 1
+	printf '%s' "$show" | jq -r '.[0]
+		| [.title, .description, .design, .acceptance_criteria, .notes]
+		| map(select(. != null and . != "")) | join("\n\n")'
+}
+
+# Drives one no-mistakes run of the current branch to its end under --yes and
+# prints the TOON of how it ended. Never reruns, rebases, merges or closes
+# anything: recovering a dead run is custody no-mistakes or a human owns.
+#
+# A drive holds for a bounded wait, then returns an `elapsed` error while the
+# run carries on. Reattaching omits --intent on purpose: passed when no run is
+# active, it starts a new one. So a reattach refused for want of an intent
+# means the run ended between calls, and its outcome is read from status: by
+# the last run id seen, else the branch's latest run, since an elapsed error
+# carries no run block.
+#
+# Stops reattaching once $SLICE_WAVE_DRIVE_LIMIT_SECONDS (3.5 hours) have
+# passed since validate started, prints the last TOON and returns 1, leaving
+# the run to carry on. That keeps validate reporting ahead of its node's 4 h
+# timeout, whose kill would persist no outcome and so skip release.
+drive_run() {
+	local intent="$1" toon run_id="" id limit="${SLICE_WAVE_DRIVE_LIMIT_SECONDS:-12600}"
+	toon="$(no-mistakes axi run --yes --intent "$intent" 2>&1)"
+	while :; do
+		id="$(toon_value "$toon" run.id)"
+		[ -z "$id" ] || run_id="$id"
+		case "$(toon_value "$toon" error)" in
+			*"elapsed while driving the run"*)
+				if [ "$SECONDS" -ge "$limit" ]; then
+					printf '%s\n' "$toon"
+					return 1
+				fi
+				toon="$(no-mistakes axi run --yes 2>&1)"
+				;;
+			*"--intent is required"*)
+				if [ -n "$run_id" ]; then
+					toon="$(no-mistakes axi status --run "$run_id" 2>&1)"
+				else
+					toon="$(no-mistakes axi status 2>&1)"
+				fi
+				break
+				;;
+			*) break ;;
+		esac
+	done
+	printf '%s\n' "$toon"
+}
+
+# Prints why the drive whose final TOON is $1 and outcome $2 stopped short of
+# an outcome, or failed with one: a gate --yes cannot pass, an error, or
+# output carrying neither. Prints nothing for a clean outcome.
+run_problem() {
+	local toon="$1" outcome="$2" step error
+	step="$(toon_value "$toon" gate.step)"
+	error="$(toon_value "$toon" error)"
+	if [ -n "$step" ]; then
+		printf 'no-mistakes stopped at the %s gate: %s\n' "$step" "$(toon_value "$toon" gate.summary)"
+	elif [ -n "$error" ]; then
+		printf 'no-mistakes reported: %s\n' "$error"
+	elif [ -z "$outcome" ]; then
+		printf 'no-mistakes reported no outcome: %s\n' "$(printf '%s\n' "$toon" | head -1)"
+	fi
+}
+
+# True when no-mistakes outcome $1 is green: checks-passed from a live drive,
+# or passed, which a finished run's status reports for a run whose CI step
+# completed cleanly. Overrides, automatic skips and an interrupted monitor
+# all fall short.
+green_outcome() {
+	case "$1" in
+		checks-passed | passed) return 0 ;;
+	esac
+	return 1
+}
+
+# Appends $1 to the caller's `reason`, joining several with "; ".
+add_reason() {
+	reason="${reason:+$reason; }$1"
+}
+
+# Sets the caller's pr_number and pr_url from the one open pull request gh
+# lists in repo $1 for the current branch. Zero or several add a reason
+# instead, since commenting on a guess would file the record on the wrong PR.
+find_open_pr() {
+	local repo="$1" branch prs count
+	branch="$(git symbolic-ref --quiet --short HEAD)" || {
+		add_reason "HEAD is detached, so no pull request could be looked up and no findings record was posted"
+		return
+	}
+	if ! prs="$(gh pr list --head "$branch" --state open --json number,url -R "$repo")" ||
+		! count="$(printf '%s' "$prs" | jq length)"; then
+		add_reason "cannot list the open pull requests for $branch, so no findings record was posted"
+		return
+	fi
+	case "$count" in
+		1)
+			pr_number="$(printf '%s' "$prs" | jq -r '.[0].number')"
+			pr_url="$(printf '%s' "$prs" | jq -r '.[0].url')"
+			;;
+		0) add_reason "no open pull request for $branch, so no findings record was posted" ;;
+		*) add_reason "$count open pull requests for $branch, so no findings record was posted" ;;
+	esac
+}
+
+# Prints the markdown comment that records a drive on its pull request, from
+# the outcome $1, the fix count $2 and its `step: summary` lines $3, the
+# outstanding findings $4, the error or gate text $5, and the run's full TOON
+# $6, whose finding_history closes the record (see findings_history_section).
+findings_record() {
+	local outcome="$1" fix_rounds="$2" fixes="$3" findings="$4" problem="$5" toon="$6"
+	printf '%s\n' '<!-- slice-pipeline:findings-record -->' '## slice-pipeline findings record' ''
+	printf 'Drive mode: yes\nOutcome: %s\nFix rounds: %s\n' "${outcome:-none reported}" "$fix_rounds"
+	[ -z "$fixes" ] || printf '%s\n' "$fixes" | sed 's/^/- /'
+	printf '\nOutstanding findings: %s\n' "${findings:-none reported}"
+	[ -z "$problem" ] || printf '\nError: %s\n' "$problem"
+	printf '\n'
+	findings_history_section "$toon"
+}
+
+# Sets the caller's outcome, pr_number, pr_url, repo, fix_rounds,
+# record_posted and reason locals from one no-mistakes drive of bead $1's
+# committed slice, and posts the findings record on its pull request.
+validate_slice() {
+	local bead="$1" beads_dir="$2" intent toon problem="" fixes findings still_running=false
+	intent="$(bead_intent "$bead" "$beads_dir")" || {
+		add_reason "cannot read bead $bead with bd show, so no-mistakes never ran"
+		return
+	}
+	[ -n "$intent" ] || {
+		add_reason "bead $bead has no title, description, design, acceptance criteria or notes to give no-mistakes as its intent, so no-mistakes never ran"
+		return
+	}
+
+	toon="$(drive_run "$intent")" || still_running=true
+	outcome="$(toon_value "$toon" outcome)"
+	fixes="$(toon_fixes "$toon")"
+	[ -z "$fixes" ] || fix_rounds="$(printf '%s\n' "$fixes" | wc -l | tr -d ' ')"
+	findings="$(toon_value "$toon" run.findings)"
+	if [ "$still_running" = true ]; then
+		problem="the no-mistakes drive was still running when validate reached its time limit, so it was left to carry on"
+	else
+		problem="$(run_problem "$toon" "$outcome")"
+	fi
+	if [ -n "$problem" ]; then
+		add_reason "$problem"
+	elif ! green_outcome "$outcome"; then
+		add_reason "no-mistakes ended $outcome, not checks-passed or passed"
+	fi
+
+	# The run's PR URL names its own repo, which in a fork checkout can differ
+	# from the one gh resolves by default, so gh repo view is only the fallback.
+	pr_url="$(toon_value "$toon" run.pr)"
+	case "${pr_url##*/pull/}" in
+		"" | *[!0-9]*) ;;
+		*)
+			pr_number="${pr_url##*/pull/}"
+			repo="${pr_url#*://*/}"
+			repo="${repo%/pull/*}"
+			;;
+	esac
+
+	if [ "$pr_number" -eq 0 ]; then
+		repo="$(gh repo view --json nameWithOwner | jq -r '.nameWithOwner // empty')" || repo=""
+		[ -n "$repo" ] || {
+			add_reason "gh repo view named no repository, so no findings record was posted"
+			return
+		}
+		find_open_pr "$repo"
+		[ "$pr_number" -gt 0 ] || return
+	fi
+
+	if findings_record "$outcome" "$fix_rounds" "$fixes" "$findings" "$problem" "$toon" \
+		| gh pr comment "$pr_url" --body-file - >/dev/null; then
+		record_posted=true
+	else
+		add_reason "cannot post the findings record on pull request $pr_url"
+	fi
+}
+
+# The workflow's returns node, so once --verified is true or false it exits 0
+# on every path and reports through the JSON object, never through its exit
+# status.
+cmd_validate() {
+	local bead="" beads_dir="" verified=""
+	parse_flags "--bead --beads-dir --verified" "$@" || { usage; return 2; }
+	[ -n "$bead" ] && [ -n "$beads_dir" ] && [ -n "$verified" ] || {
+		echo "slice-wave: validate needs --bead, --beads-dir and --verified" >&2
+		usage
+		return 2
+	}
+
+	local outcome="" pr_number=0 pr_url="" repo="" fix_rounds=0 record_posted=false reason=""
+	case "$verified" in
+		true) validate_slice "$bead" "$beads_dir" ;;
+		false) reason="verification did not pass, so validation was skipped" ;;
+		*)
+			echo "slice-wave: --verified must be true or false, not '$verified'" >&2
+			usage
+			return 2
+			;;
+	esac
+
+	local delivered=false
+	green_outcome "$outcome" && [ "$pr_number" -gt 0 ] && [ "$record_posted" = true ] && delivered=true
+	jq -n --argjson delivered "$delivered" --arg outcome "$outcome" \
+		--argjson pr_number "$pr_number" --arg pr_url "$pr_url" --arg repo "$repo" \
+		--argjson fix_rounds "$fix_rounds" --argjson record_posted "$record_posted" \
+		--arg reason "$reason" \
+		'{delivered: $delivered, outcome: $outcome, pr_number: $pr_number,
+		  pr_url: $pr_url, repo: $repo, fix_rounds: $fix_rounds,
+		  record_posted: $record_posted, reason: $reason}'
+	return 0
+}
+
 case "${1:-}" in
 	branch-name)
 		shift
@@ -261,6 +837,11 @@ case "${1:-}" in
 	verify-commit)
 		shift
 		cmd_verify_commit "$@"
+		exit $?
+		;;
+	validate)
+		shift
+		cmd_validate "$@"
 		exit $?
 		;;
 	*)
