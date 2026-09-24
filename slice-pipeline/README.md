@@ -22,7 +22,7 @@ Both inputs are required and the engine rejects the run without them. Read the
 authored outcome (`delivered`), not the run status: `verify` and `validate` both
 exit 0 on every verdict so the run completes and keeps its artifacts either way.
 `delivered` is only true once a commit landed, no-mistakes drove it to a
-checks-passed pull request, and the findings record posted on that PR.
+checks-passed or passed pull request, and the findings record posted on that PR.
 
 The target repo needs a GitHub remote you can push to and an initialized
 no-mistakes; `claim` checks both before it touches the branch or the tracker,

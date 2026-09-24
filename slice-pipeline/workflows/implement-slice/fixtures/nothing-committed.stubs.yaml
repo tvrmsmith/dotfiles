@@ -3,8 +3,9 @@
 # runs to hand the bead back.
 #
 # `expect: completed` with a failed authored outcome is the point, not a
-# mistake: verify and validate both exit 0 on every verdict so their
-# artifacts survive, and the run completing while the outcome is failed is
+# mistake: verify and validate (given a true or false --verified) both exit
+# 0 on every verdict so their artifacts survive, and the run completing
+# while the outcome is failed is
 # exactly what a caller must tell apart by reading the authored outcome
 # (`delivered`) instead of the run status.
 #
