@@ -31,6 +31,12 @@ load helpers/assert
 # leaves the target repository exactly as it found it, aside from a closed,
 # branch-deleted pull request.
 #
+# SLICE_E2E_CLONE_URL, when set, is the URL the suite clones SLICE_E2E_REPO
+# from instead of gh's default, for a machine whose git credential for that
+# URL belongs to a different account than gh's, which makes no-mistakes' push
+# fail. gh still reaches the repository through SLICE_E2E_REPO, via GH_REPO
+# and -R, so the clone URL can use any host alias git knows.
+#
 # SLICE_E2E_KEEP=1 keeps the scratch clone, the run log and Archon's worktree
 # for inspection instead of removing them, and leaves the pull request and its
 # branch open too - the live artifacts are more useful than a clean target
@@ -66,7 +72,12 @@ setup_file() {
   export SCRATCH
   export REPO="$SCRATCH/repo" SOURCE="$SCRATCH/source" RUN_LOG="$SCRATCH/run.log"
 
-  gh repo clone "$SLICE_E2E_REPO" "$REPO" -- --quiet >"$RUN_LOG" 2>&1 || {
+  export GH_REPO="$SLICE_E2E_REPO"
+  if [ -n "${SLICE_E2E_CLONE_URL:-}" ]; then
+    git clone --quiet "$SLICE_E2E_CLONE_URL" "$REPO" >"$RUN_LOG" 2>&1
+  else
+    gh repo clone "$SLICE_E2E_REPO" "$REPO" -- --quiet >"$RUN_LOG" 2>&1
+  fi || {
     echo "# cannot clone $SLICE_E2E_REPO; see $RUN_LOG" >&3
     exit 1
   }
@@ -116,9 +127,13 @@ setup_file() {
   # appears; found the same way verify's sha is below, since the node's
   # output can sit at any depth in --verbose's tree depending on how the
   # engine nests a returns node's result.
-  PR_NUMBER="$(run_json --verbose | jq -r \
+  local result
+  result="$(run_json --verbose)"
+  PR_NUMBER="$(printf '%s' "$result" | jq -r \
     '[.. | objects | select(.pr_number? != null and .record_posted? != null) | .pr_number] | first // empty')"
-  export PR_NUMBER
+  DELIVERED="$(printf '%s' "$result" | jq -r \
+    '[.. | objects | select(.delivered? != null and .record_posted? != null) | .delivered] | first | select(. != null)')"
+  export PR_NUMBER DELIVERED
 }
 
 teardown_file() {
@@ -129,11 +144,20 @@ teardown_file() {
   fi
   (cd "$REPO" && archon complete "e2e/$BEAD" >/dev/null 2>&1) ||
     echo "# archon complete e2e/$BEAD failed; run 'archon isolation list' to find the worktree" >&3
-  if [ -n "${PR_NUMBER:-}" ] && [ "$PR_NUMBER" -gt 0 ] 2>/dev/null; then
-    (cd "$REPO" && gh pr close "$PR_NUMBER" -R "$SLICE_E2E_REPO" --delete-branch >/dev/null 2>&1) ||
-      echo "# gh pr close $PR_NUMBER --delete-branch failed on $SLICE_E2E_REPO; close and delete $BRANCH by hand" >&3
+  # Looked up by branch rather than from validate's pr_number, since a red run
+  # can push the branch and open a pull request without validate naming it.
+  local prs pr
+  if prs="$(gh pr list -R "$SLICE_E2E_REPO" --head "$BRANCH" --state open --json number --jq '.[].number' 2>&1)"; then
+    for pr in $prs; do
+      gh pr close "$pr" -R "$SLICE_E2E_REPO" >/dev/null 2>&1 ||
+        echo "# gh pr close $pr failed on $SLICE_E2E_REPO; close it by hand" >&3
+    done
   else
-    echo "# no pr_number from validate; nothing to close on $SLICE_E2E_REPO" >&3
+    echo "# cannot list open pull requests for $BRANCH on $SLICE_E2E_REPO; close them by hand. gh said: $prs" >&3
+  fi
+  if git -C "$REPO" ls-remote --exit-code origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
+    git -C "$REPO" push --quiet origin --delete "$BRANCH" >/dev/null 2>&1 ||
+      echo "# cannot delete $BRANCH on $SLICE_E2E_REPO; delete it by hand" >&3
   fi
   rm -rf "$SCRATCH"
 }
@@ -187,14 +211,18 @@ diagnose() {
 
 @test "verify reported the sha the branch actually points at" {
   reported="$(run_json --verbose | jq -r '
-    [.. | objects | select(.verified? != null and .sha? != null) | .sha] | first // empty')"
+    [.nodes[]? | select(.nodeId == "verify") | .outputPreview | fromjson? | .sha] | first // empty')"
   equals "$reported" "$(git -C "$REPO" rev-parse "$BRANCH")"
 }
 
-@test "a landed slice keeps its claim instead of going back on the ready list" {
-  bead_json="$(bd show "$BEAD" --json)"
-  equals "$(printf '%s' "$bead_json" | jq -r 'if type == "array" then .[0] else . end | .status')" in_progress
-  lacks "$(bd ready --json | jq -r '.[]?.id')" "$BEAD"
+@test "a delivered slice keeps its claim and an undelivered one is released" {
+  status="$(bd show "$BEAD" --json | jq -r 'if type == "array" then .[0] else . end | .status')"
+  if [ "$DELIVERED" = true ]; then
+    equals "$status" in_progress
+    lacks "$(bd ready --json | jq -r '.[]?.id')" "$BEAD"
+  else
+    equals "$status" open
+  fi
 }
 
 @test "the findings record comment landed on the pull request" {
@@ -206,8 +234,12 @@ diagnose() {
     --jq '[.[].body | select(startswith("<!-- slice-pipeline:findings-record -->"))] | last // empty')"
   [ -n "$record" ] || { echo "no findings record comment on PR $PR_NUMBER" >&2; exit 1; }
   contains "$record" "Drive mode: yes"
-  contains "$record" "Outcome: "
-  printf '%s\n' "$record" | grep -Eq '^(Ask-user findings|Findings history: )' || {
+  printf '%s\n' "$record" | grep -Eq '^Outcome: (checks-passed|passed)$' || {
+    printf 'the findings record names no green outcome:\n%s\n' "$record" >&2
+    exit 1
+  }
+  lacks "$record" "Findings history: unknown"
+  printf '%s\n' "$record" | grep -Eq '^(Ask-user findings|Findings history: none$)' || {
     printf 'the findings record carries no findings-history line:\n%s\n' "$record" >&2
     exit 1
   }

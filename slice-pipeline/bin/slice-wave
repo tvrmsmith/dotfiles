@@ -431,10 +431,11 @@ toon_fixes() {
 # backslash-escapes undone. A naive split on `,` breaks on a quoted field that
 # itself contains a comma, colon or escaped quote (TOON's own reason for
 # quoting it), so this walks the row instead: toon_quoted reads a quoted
-# field, and outside one, `,` ends the field. Prints nothing for a row whose
-# quoted field never closes.
+# field, and outside one, `,` ends the field. Prints nothing for a row that
+# does not split into exactly $2 fields with a non-empty first one, or whose
+# quoted field never closes or runs into text before the next `,`.
 toon_row_fields() {
-	local rest="$1" field out="" sep=""
+	local rest="$1" want="$2" field out="" sep="" count=0
 	while :; do
 		if [ "${rest:0:1}" = '"' ]; then
 			rest="${rest:1}"
@@ -443,13 +444,17 @@ toon_row_fields() {
 			field="${rest%%,*}"
 			rest="${rest:${#field}}"
 		fi
+		[ "$count" -gt 0 ] || [ -n "$field" ] || return 0
 		out="$out$sep$field"
 		sep="$FINDING_HISTORY_SEP"
+		count=$((count + 1))
 		case "$rest" in
 			,*) rest="${rest:1}" ;;
-			*) break ;;
+			'') break ;;
+			*) return 0 ;;
 		esac
 	done
+	[ "$count" -eq "$want" ] || return 0
 	printf '%s%s' "$out" "$FINDING_HISTORY_RS"
 }
 
@@ -478,13 +483,14 @@ readonly FINDING_HISTORY_COLUMNS
 # $FINDING_HISTORY_SEP in that order, quoting and escapes undone. A row that
 # does not parse prints nothing.
 toon_finding_history() {
-	local input="$1" row
+	local input="$1" row width
+	width="$(awk -F, '{ print NF }' <<<"$FINDING_HISTORY_COLUMNS")"
 	awk '
 		/^finding_history\[[0-9]+\]\{/ { inside = 1; next }
 		inside && /^  / { print substr($0, 3); next }
 		inside { exit }
 	' <<<"$input" | while IFS= read -r row; do
-		toon_row_fields "$row"
+		toon_row_fields "$row" "$width"
 	done
 }
 
@@ -495,7 +501,10 @@ toon_finding_history() {
 #   empty   finding_history[0]: - the run found nothing
 #   error   finding_history_error is set, or the header names other columns;
 #           `history_error` carries the reason
-#   absent  no finding_history key at all - an older no-mistakes never sent it
+#   absent  no finding_history key beside an outcome - an older no-mistakes
+#           never sent it
+#   unfinished  no finding_history key and no outcome - no-mistakes sends the
+#           history only with a final result
 history_state_of() {
 	local input="$1" header
 	history_error="$(toon_value "$input" finding_history_error)"
@@ -504,8 +513,10 @@ history_state_of() {
 	history_count="${history_count%%]*}"
 	if [ -n "$history_error" ]; then
 		history_state=error
-	elif [ -z "$header" ]; then
+	elif [ -z "$header" ] && [ -n "$(toon_value "$input" outcome)" ]; then
 		history_state=absent
+	elif [ -z "$header" ]; then
+		history_state=unfinished
 	elif [ "$header" = 'finding_history[0]:' ]; then
 		history_state=empty
 	elif [ "$header" = "finding_history[$history_count]{$FINDING_HISTORY_COLUMNS}:" ]; then
@@ -519,8 +530,8 @@ history_state_of() {
 # Prints the findings-history part of the record from no-mistakes' TOON $1:
 # every ask-user finding verbatim plus a per-step tally of every finding when
 # the run carries a history, or one of the sentences standing in for a
-# history validate could not read, found empty, or an older no-mistakes never
-# sent.
+# history validate could not read, found empty, an older no-mistakes never
+# sent, or a run with no final result has yet to send.
 findings_history_section() {
 	local toon="$1" history_state history_error="" history_count rows
 	history_state_of "$toon"
@@ -544,11 +555,14 @@ findings_history_section() {
 			printf '%s\n' 'This no-mistakes version does not expose findings history, so this record lists only what it reports at the end of the run.'
 			return
 			;;
+		unfinished)
+			printf 'Findings history: not available, no-mistakes sends it only with a final result\n'
+			return
+			;;
 	esac
 
 	local step round id severity action file line description loc ask_line ask_lines=""
 	while IFS="$FINDING_HISTORY_SEP" read -r -d "$FINDING_HISTORY_RS" step round id severity action _ _ file line description; do
-		[ -n "$step" ] || continue
 		[ "$action" = ask-user ] || continue
 		loc="$file"
 		if [ -n "$line" ] && [ "$line" != 0 ]; then
@@ -567,7 +581,7 @@ findings_history_section() {
 
 	printf '\nAll findings:\n'
 	printf '%s' "$rows" | awk -F"$FINDING_HISTORY_SEP" -v RS="$FINDING_HISTORY_RS" '
-		$1 != "" {
+		{
 			step = $1
 			if (!(step in seen)) { seen[step] = 1; order[n++] = step }
 			count[step]++
