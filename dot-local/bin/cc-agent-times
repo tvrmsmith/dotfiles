@@ -2,8 +2,9 @@
 """Report how long each Claude Code subagent ran in a session, and what it spent.
 
 Subagent transcripts live at
-  ~/.claude/projects/<slug>/<session-id>/subagents/agent-*.jsonl
-so a subagent's wall time is its first-to-last entry timestamp.
+  ~/.claude/projects/<slug>/<session-id>/subagents/agent-<id>.jsonl
+so a subagent's wall time is its first-to-last entry timestamp. The name it was
+spawned under sits beside it in agent-<id>.meta.json, not in the file name.
 
 Token columns, which do not sum to a meaningful total since each class bills
 at its own rate:
@@ -19,7 +20,8 @@ Usage:
   cc-agent-times <session-id>    # a specific session, searched across projects
   cc-agent-times <path.jsonl>    # a specific session transcript
   cc-agent-times --grep TEXT     # newest session whose transcript contains TEXT
-  cc-agent-times --agent NAME    # only subagents whose id contains NAME
+  cc-agent-times --agent NAME    # only subagents whose name or id contains NAME,
+                                 # across every session under the cwd's slug
   cc-agent-times --json          # machine-readable rows, for cc-review-ab
 """
 
@@ -55,6 +57,40 @@ def iter_entries(path: Path, skips: "Counter"):
                 skips["lines"] += 1
 
 
+def project_dir() -> Path:
+    project = PROJECTS / slug_for(Path.cwd())
+    if not project.is_dir():
+        sys.exit(f"no project dir for {Path.cwd()} (looked for {project})")
+    return project
+
+
+def spawned_name(path: Path) -> str:
+    """The name a subagent was spawned under, or its transcript id when it has none."""
+    fallback = path.stem.removeprefix("agent-")
+    try:
+        meta = json.loads(path.with_suffix(".meta.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return fallback
+    return meta.get("name") or fallback
+
+
+def subagent_transcripts(args):
+    """(transcript paths, what was searched) for the requested scope.
+
+    --agent with no session named searches every session under the cwd's slug:
+    one worktree can hold several sessions, and the newest is often not the one
+    that spawned the agent.
+    """
+    if args.agent and not args.target and not args.grep:
+        project = project_dir()
+        return sorted(project.glob("*/subagents/agent-*.jsonl")), f"every session under {project}"
+    session = find_session(args)
+    subagent_dir = session.with_suffix("") / "subagents"
+    if not subagent_dir.is_dir():
+        sys.exit(f"no subagents recorded for session {session}")
+    return sorted(subagent_dir.glob("*.jsonl")), str(session)
+
+
 def find_session(args) -> Path:
     if args.target and args.target.endswith(".jsonl"):
         return Path(args.target).expanduser()
@@ -73,9 +109,7 @@ def find_session(args) -> Path:
                 return candidate
         sys.exit(f"no transcript contains {args.grep!r}")
 
-    project = PROJECTS / slug_for(Path.cwd())
-    if not project.is_dir():
-        sys.exit(f"no project dir for {Path.cwd()} (looked for {project})")
+    project = project_dir()
     sessions = sorted(project.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not sessions:
         sys.exit(f"no sessions under {project}")
@@ -152,7 +186,7 @@ def summarize(path: Path, skips: "Counter"):
                 if isinstance(b, dict) and b.get("type") == "tool_use")
     label = " ".join(first_prompt(entries).split())[:70]
     return {
-        "name": path.stem.removeprefix("agent-"),
+        "name": spawned_name(path),
         "start": min(stamps),
         "end": max(stamps),
         "seconds": (max(stamps) - min(stamps)).total_seconds(),
@@ -176,24 +210,21 @@ def main():
         argv = ["--", *argv]
     args = parser.parse_args(argv)
 
-    session = find_session(args)
-    subagent_dir = session.with_suffix("") / "subagents"
+    paths, searched = subagent_transcripts(args)
     if not args.json:
-        print(f"session: {session}")
-
-    if not subagent_dir.is_dir():
-        sys.exit("no subagents recorded for this session")
+        print(f"session: {searched}")
+    if args.agent:
+        # Filter before summarizing, which parses every line of each transcript.
+        paths = [p for p in paths if args.agent in spawned_name(p) or args.agent in p.stem]
 
     # A truncated transcript otherwise understates every number below, silently.
     skips = Counter()
-    rows = [r for r in (summarize(p, skips) for p in sorted(subagent_dir.glob("*.jsonl"))) if r]
+    rows = [r for r in (summarize(p, skips) for p in paths) if r]
     if skips["lines"]:
         print(f"warning: skipped {skips['lines']} unparseable transcript line(s)", file=sys.stderr)
     if skips["transcripts"]:
         print(f"warning: skipped {skips['transcripts']} transcript(s) with no timestamps",
               file=sys.stderr)
-    if args.agent:
-        rows = [r for r in rows if args.agent in r["name"]]
     if not rows:
         sys.exit(f"no subagent matches {args.agent!r}" if args.agent
                  else "no subagent entries with timestamps")
