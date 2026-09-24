@@ -1,4 +1,5 @@
 load helpers/assert
+load helpers/e2e-cleanup
 
 # The one suite that runs the real pipeline: a real GitHub target, this tree's
 # workflow under the real engine, and a real model building a real bead. The
@@ -144,21 +145,7 @@ teardown_file() {
   fi
   (cd "$REPO" && archon complete "e2e/$BEAD" >/dev/null 2>&1) ||
     echo "# archon complete e2e/$BEAD failed; run 'archon isolation list' to find the worktree" >&3
-  # Looked up by branch rather than from validate's pr_number, since a red run
-  # can push the branch and open a pull request without validate naming it.
-  local prs pr
-  if prs="$(gh pr list -R "$SLICE_E2E_REPO" --head "$BRANCH" --state open --json number --jq '.[].number' 2>&1)"; then
-    for pr in $prs; do
-      gh pr close "$pr" -R "$SLICE_E2E_REPO" >/dev/null 2>&1 ||
-        echo "# gh pr close $pr failed on $SLICE_E2E_REPO; close it by hand" >&3
-    done
-  else
-    echo "# cannot list open pull requests for $BRANCH on $SLICE_E2E_REPO; close them by hand. gh said: $prs" >&3
-  fi
-  if git -C "$REPO" ls-remote --exit-code origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
-    git -C "$REPO" push --quiet origin --delete "$BRANCH" >/dev/null 2>&1 ||
-      echo "# cannot delete $BRANCH on $SLICE_E2E_REPO; delete it by hand" >&3
-  fi
+  close_slice_branch "$SLICE_E2E_REPO" "${BRANCH:-}" "$REPO" 2>&3
   rm -rf "$SCRATCH"
 }
 
