@@ -410,6 +410,7 @@ toon_row_fields() {
 			rest="${rest:1}"
 			field=""
 			while :; do
+				# shellcheck disable=SC1003 # '\\' is a literal two-backslash TOON escape
 				case "$rest" in
 					'\"'*) field="$field\""; rest="${rest:2}" ;;
 					'\\'*) field="$field\\"; rest="${rest:2}" ;;
