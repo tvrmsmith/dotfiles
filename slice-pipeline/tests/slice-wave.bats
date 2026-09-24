@@ -184,6 +184,7 @@ teardown() {
   equals "$(git -C "$REPO" symbolic-ref --short HEAD)" "main"
 }
 
+# shellcheck disable=SC2030
 @test "claim proceeds to the tracker when branch sync reports run_pipeline" {
   export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/status-run-pipeline.toon"
   ( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" ) >/dev/null
@@ -192,6 +193,7 @@ teardown() {
   contains "$(cat "$BD_LOG")" "update foo --claim"
 }
 
+# shellcheck disable=SC2030,SC2031
 @test "claim runs the reported sync then claims once a re-read finds no branch_sync" {
   export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/status-sync.toon"
   export NO_MISTAKES_SYNC_NEXT_STATUS_FIXTURE="$FIXTURES_DIR/sync-then-clean.toon"
@@ -200,6 +202,7 @@ teardown() {
   equals "$sequence" "$(printf 'axi status\naxi sync\naxi status\nupdate foo --claim')"
 }
 
+# shellcheck disable=SC2030,SC2031
 @test "claim refuses and detaches when branch sync reports a code it does not reconcile" {
   export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/status-continue-active-run.toon"
   rc=0
@@ -212,6 +215,7 @@ teardown() {
   assert_detached
 }
 
+# shellcheck disable=SC2030,SC2031
 @test "claim refuses a sync code whose reported command is not a no-mistakes sync" {
   export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/status-sync-bad-command.toon"
   # origin/x resolves to the pre-sentinel commit, so if the reported
@@ -233,6 +237,7 @@ teardown() {
   equals "$(cat "$REPO/sentinel")" "sentinel"
 }
 
+# shellcheck disable=SC2030,SC2031
 @test "claim refuses a reported sync command with anything chained after it, unrun" {
   sed 's/^    command: .*/    command: no-mistakes axi sync; git reset --hard x/' \
     "$FIXTURES_DIR/status-sync.toon" > "$STUB_BIN/status-chained.toon"
@@ -247,6 +252,7 @@ teardown() {
   assert_detached
 }
 
+# shellcheck disable=SC2030,SC2031
 @test "claim runs a reported sync with flags as that exact argv" {
   sed 's/^    command: .*/    command: no-mistakes axi sync --recover --keep-local/' \
     "$FIXTURES_DIR/status-sync.toon" > "$STUB_BIN/status-recover.toon"
@@ -257,6 +263,7 @@ teardown() {
   contains "$(cat "$BD_LOG")" "update foo --claim"
 }
 
+# shellcheck disable=SC2030,SC2031
 @test "claim refuses and detaches when the reported sync fails" {
   export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/status-sync.toon"
   export NO_MISTAKES_SYNC_EXIT=1
@@ -281,6 +288,7 @@ teardown() {
   assert_detached
 }
 
+# shellcheck disable=SC2030,SC2031
 @test "claim refuses and detaches when no-mistakes axi status reports an error with exit 0" {
   printf 'error: gate state unreadable\n' > "$STUB_BIN/status-error.toon"
   export NO_MISTAKES_STATUS_FIXTURE="$STUB_BIN/status-error.toon"
@@ -293,6 +301,7 @@ teardown() {
   assert_detached
 }
 
+# shellcheck disable=SC2031
 @test "claim gives up after 3 sync rounds when branch sync still reports sync" {
   export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/status-sync.toon"
   # No NO_MISTAKES_SYNC_NEXT_STATUS_FIXTURE: the stub keeps returning the same
