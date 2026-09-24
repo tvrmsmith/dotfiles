@@ -12,6 +12,10 @@ Each of these is a rule the files themselves do not confess.
 - Shell configs source `$CONSOLO_DOCKER_DEV_DIR/.helpers/{compose,git,system}.sh`, a work-machine path that is absent elsewhere. Guard a new source the same way
 - `gh` runs through `dot-local/bin/gh`, which picks a credential tier from what the command does. The design and its traps are in that file's header comment; `GH_SHIM_EXPLAIN=1 gh <args>` prints the routing decision and runs nothing. Sourcing `~/.config/op/plugins.sh` after startup restores an alias that shadows the shim
 
+### Git Conventions
+
+- Because most of the files in this repo are stow symlinked, be careful about changing the main directory's branch as that also changes the current state of the system. Prefer worktrees when we work on something more complicated. Small changes can be made directly on main though.
+
 ## Issue tracker
 
 Issues live in beads (`bd`). The Matt Pocock skills — `/wayfinder` above all — read
@@ -19,6 +23,7 @@ Issues live in beads (`bd`). The Matt Pocock skills — `/wayfinder` above all �
 the frontier query.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
+
 ## Beads Issue Tracker
 
 This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
@@ -38,7 +43,7 @@ bd close <id>         # Complete work
 - Run `bd prime` for detailed command reference and session close protocol
 - Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
 
-**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
+**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See [https://github.com/gastownhall/beads/blob/main/docs/SYNC\_CONCEPTS.md](https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md) for details and anti-patterns.
 
 ## Agent Context Profiles
 
@@ -57,18 +62,20 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 3. **Update issue status** - Close finished work, update in-progress items
 4. **Handle git/sync by active profile**:
    ```bash
-   # Conservative/minimal/default: report status and proposed commands; wait for approval.
-   git status
-
-   # Team-maintainer opt-in only, unless current instructions forbid it:
-   git pull --rebase
-   git push
-   git status
+     # Conservative/minimal/default: report status and proposed commands; wait for approval.
+     git status
+   
+     # Team-maintainer opt-in only, unless current instructions forbid it:
+     git pull --rebase
+     git push
+     git status
    ```
 5. **Hand off** - Summarize changes, validation, issue status, and any blocked sync/commit/push step
 
 **Critical rules:**
+
 - Explicit user or orchestrator instructions override this Beads block.
 - Do not commit or push without clear authority from the active profile or the current user request.
 - If a required sync or push is blocked, stop and report the exact command and error.
-<!-- END BEADS INTEGRATION -->
+    <!-- END BEADS INTEGRATION -->
+
