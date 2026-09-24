@@ -9,7 +9,7 @@
 - Work repos elsewhere under `~/dev/` 
 - Before cloning/checkout to temp location, search existing local copy under `~/dev` recursively.
 
-## Git Configuration
+## Git and CLI Auth
 
 - Write concise commit messages, keep them under 150 words
 - `~/.gitconfig` uses `includeIf "gitdir:~/dev/personal/"` to auto-load `~/.gitconfig-personal`, sets personal `user.name`, `user.email` (`tvrmsmith@gmail.com`), personal SSH signing key
@@ -17,8 +17,9 @@
 - Remotes: personal repos use the `github-personal` SSH host alias, work repos use `github.com` direct
 - `gh` routes its own credential per command, don't set token env vars
 - Run `gh` where the repo is, or pass `-R owner/repo`. No `gh auth switch`, no `cd` first
-- A 403 from `gh` means the command needs Trevor's approval, which may not arrive promptly
+- A 403 from `gh` means the command needs Trevor's approval, which may not arrive promptly. Report it and carry on with work that doesn't depend on it
 - Merging a feature branch → prefer squash merge unless it's handled by the merge queue.
+- Run `gcloud auth login` and `gcloud auth application-default login` yourself instead of handing them to me as `! <command>`. They open a browser for me to finish
 
 ## Planning
 
@@ -51,12 +52,7 @@
 - ALWAYS load the `engineering-principles` skill when planning, implementing, or verifying a change, and follow it.
 - **Estimation**: estimate effort at agent speed, not human-team scale. Then let quality, simplicity, robustness, maintainability decide, not cost.
 - **Bug fixes**: always start by reproducing the bug in an E2E setting as close as possible to how an end user experiences it. Ensures you find the real problem so the fix actually solves it.
-- **Boy Scout rule, bounded**: clean mechanical, source-level things on lines the task already changes. In other files, clean only fallout, the mess your change caused: the function whose last caller you deleted, the doc naming what you renamed. Cleanup keeps behavior identical and stays smaller than the task diff. File what you notice but leave unfixed, one issue each: a real bug, or a cleanup that broke the bound. Drop cosmetic nits. Before the PR, check the diff. Every hunk is the task, a touched-line cleanup, or fallout.
+- **Boy Scout rule, bounded**: clean mechanical, source-level things on lines the task already changes. In other files, clean only fallout, the mess your change caused: the function whose last caller you deleted, the doc naming what you renamed. Cleanup keeps behavior identical and stays smaller than the task diff. File what you notice but leave unfixed, one issue each in the repo's issue tracker: a real bug, or a cleanup that broke the bound. Cosmetic nits get neither a fix nor an issue. Before the PR, check the diff. Every hunk is the task, a touched-line cleanup, or fallout.
 - **Implementation phase**: ALWAYS load the `coding-standards:coding-standards` skill before writing or modifying code, and follow it.
 - **Design phase**: ALWAYS load the `mattpocock-skills:codebase-design` skill before placing a seam, designing or changing a module interface, or restructuring code, and use its vocabulary.
 - **Cross-boundary contract approval**: any contract crossing a service or independent-deploy boundary (service↔service, frontend↔BFF, Kafka/event schemas, APIs consumed outside the owning service) needs my approval before implementation. Load the `contract-approval` skill and follow it.
-
-### GCloud
-
-- You can run all of the gcloud auth commands yourself, they will open the browser.
-
