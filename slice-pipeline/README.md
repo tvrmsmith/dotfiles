@@ -45,14 +45,23 @@ fixtures through `archon workflow test`, and fails if any function in
 `bin/slice-wave` went unentered. Needs `bats`, `archon`, `bun`, and `jq`.
 
 ```sh
-SLICE_E2E=1 bats tests/e2e.bats
+SLICE_E2E=1 SLICE_E2E_REPO=owner/name bats tests/e2e.bats
 ```
 
-Runs the real pipeline once: a scratch repo and tracker, one small bead, this
-tree's workflow under the real engine, and a real model building it. Then it
-checks the branch, the committed code and the bead directly. It spends model
-tokens and can go red on a bad model run, so it skips unless `SLICE_E2E=1`.
-`SLICE_E2E_KEEP=1` keeps the scratch repo and Archon's worktree for inspection.
+Runs the real pipeline once, against a real GitHub repository named by
+`SLICE_E2E_REPO` that you can push to and open pull requests on: claim's own
+forge and no-mistakes preflight checks refuse anything else, including a
+scratch repo with no remote. It clones that repository to scratch, runs
+`no-mistakes init` there, then drives one small bead through the real
+pipeline - claim, a real model build, verify, a real no-mistakes validate
+drive, and release - and checks the branch, the committed code, the bead and
+the pull request's findings record comment directly. Teardown closes the pull
+request and deletes its remote branch. It spends model tokens, pushes a
+branch and opens a pull request on a real repository, and can go red on a bad
+model run, so it skips unless `SLICE_E2E=1`, and skips with a clear message
+when `SLICE_E2E_REPO` is unset.
+`SLICE_E2E_KEEP=1` keeps the scratch repo and Archon's worktree for
+inspection, and leaves the pull request and its branch open too.
 An Archon run from source needs `CLAUDE_BIN_PATH` pointing at an up-to-date
 `claude`, or its prompt nodes fail on the older copy bundled in its SDK.
 

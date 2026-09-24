@@ -88,7 +88,58 @@ validate() {
   contains "$body" "Outcome: checks-passed"
   contains "$body" "Fix rounds: 1"
   contains "$body" "Checked the rm exit status, per review-2"
-  contains "$body" "Ask-user findings are not exposed under --yes; this record lists only what no-mistakes reports at the end of the run."
+  contains "$body" "This no-mistakes version does not expose findings history, so this record lists only what it reports at the end of the run."
+}
+
+@test "validate lists every ask-user finding verbatim and tallies every finding by step" {
+  export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/findings-history.toon:0"
+  out="$(validate --verified true)"
+  equals "$(printf '%s' "$out" | jq -r .delivered)" true
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  lacks "$body" "This no-mistakes version does not expose findings history"
+  contains "$body" "Ask-user findings:"
+  contains "$body" "review round 1 review-2 warning"
+  contains "$body" 'The reviewer said, "check the retry: it swallows errors"'
+  contains "$body" "lint round 1 lint-1 warning b.go:5"
+  contains "$body" 'Also verify pagination, per spec: the "limit" param should be > 0'
+  ask_section="$(printf '%s\n' "$body" | sed -n '/^Ask-user findings:/,/^$/p')"
+  lacks "$ask_section" "review-1"
+  lacks "$ask_section" "review-3"
+  contains "$body" "All findings:"
+  contains "$body" "review: 3 findings"
+  contains "$body" "lint: 1 finding"
+  contains "$body" "review-1 selected"
+  contains "$body" "review-2 selected"
+  contains "$body" "review-3 not selected"
+  contains "$body" "lint-1 selected"
+}
+
+@test "validate reports no ask-user findings but still tallies the round's findings by step" {
+  export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/findings-history-no-ask-user.toon:0"
+  out="$(validate --verified true)"
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "Ask-user findings: none"
+  contains "$body" "All findings:"
+  contains "$body" "review: 1 finding (review-1 selected)"
+  contains "$body" "lint: 1 finding (lint-1 not selected)"
+}
+
+@test "validate reports an empty findings history as none" {
+  export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/findings-history-empty.toon:0"
+  out="$(validate --verified true)"
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "Findings history: none"
+  lacks "$body" "Ask-user findings"
+  lacks "$body" "All findings"
+}
+
+@test "validate reports an unreadable findings history as unknown with the reason" {
+  export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/findings-history-error.toon:0"
+  out="$(validate --verified true)"
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "Findings history: unknown (read review round 1 findings: unexpected end of JSON input)"
+  lacks "$body" "Ask-user findings"
+  lacks "$body" "All findings"
 }
 
 @test "validate records a failed run on its PR and reports the error as undelivered" {
