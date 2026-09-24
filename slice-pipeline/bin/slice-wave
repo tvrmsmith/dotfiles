@@ -47,16 +47,22 @@ cmd_branch_name() {
 }
 
 # Sets the caller's `bead`, `beads_dir` and `verified` locals from --bead,
-# --beads-dir and --verified. Returns 2 on an unknown flag or a flag with no
-# value after it.
+# --beads-dir and --verified, accepting only the flags named in the
+# space-separated list $1. Returns 2 on any other flag or a flag with no value
+# after it.
 parse_flags() {
+	local accepted=" $1 "
+	shift
 	while [ $# -gt 0 ]; do
 		[ $# -ge 2 ] || { echo "slice-wave: $1 needs a value" >&2; return 2; }
+		case "$accepted" in
+			*" $1 "*) ;;
+			*) echo "slice-wave: unknown flag $1" >&2; return 2 ;;
+		esac
 		case "$1" in
 			--bead) bead="$2" ;;
 			--beads-dir) beads_dir="$2" ;;
 			--verified) verified="$2" ;;
-			*) echo "slice-wave: unknown flag $1" >&2; return 2 ;;
 		esac
 		shift 2
 	done
@@ -111,18 +117,42 @@ check_target_no_mistakes() {
 }
 
 # Strips the double quotes TOON puts around a value that needs them, e.g. an
-# empty string or one containing a colon. Plain barewords like a next_action
-# code or an ordinary shell command pass through unchanged.
+# empty string or one containing a colon, and undoes its escapes (see
+# toon_quoted). Plain barewords like a next_action code or an ordinary shell
+# command pass through unchanged, as does a quoted value that never closes.
 toon_unquote() {
-	local s="$1"
+	local s="$1" field rest
 	case "$s" in
 		\"*\")
-			s="${s#\"}"
-			s="${s%\"}"
-			s="${s//\\\"/\"}"
+			rest="${s:1}"
+			if toon_quoted && [ -z "$rest" ]; then
+				s="$field"
+			fi
 			;;
 	esac
 	printf '%s' "$s"
+}
+
+# Decodes the TOON quoted string the caller's `rest` opens with, its opening
+# quote already stripped, into the caller's `field`, and leaves in `rest`
+# whatever follows the closing quote. `\"`, `\\`, `\n`, `\r` and `\t` are
+# TOON's escapes and a bare `"` closes the string. Returns 1 when the string
+# never closes.
+toon_quoted() {
+	field=""
+	while :; do
+		# shellcheck disable=SC1003 # '\\' is a literal two-backslash TOON escape
+		case "$rest" in
+			'\"'*) field="$field\""; rest="${rest:2}" ;;
+			'\\'*) field="$field\\"; rest="${rest:2}" ;;
+			'\n'*) field="$field"$'\n'; rest="${rest:2}" ;;
+			'\r'*) field="$field"$'\r'; rest="${rest:2}" ;;
+			'\t'*) field="$field"$'\t'; rest="${rest:2}" ;;
+			'"'*) rest="${rest:1}"; return 0 ;;
+			'') return 1 ;;
+			*) field="$field${rest:0:1}"; rest="${rest:1}" ;;
+		esac
+	done
 }
 
 # Detaches HEAD the same way a refused claim always has: a failure past this
@@ -191,7 +221,7 @@ reconcile_branch_sync() {
 
 cmd_claim() {
 	local bead="" beads_dir=""
-	parse_flags "$@" || return 2
+	parse_flags "--bead --beads-dir" "$@" || return 2
 	[ -n "$bead" ] && [ -n "$beads_dir" ] || {
 		echo "slice-wave: claim needs --bead and --beads-dir" >&2
 		return 2
@@ -244,7 +274,7 @@ cmd_claim() {
 # held by a different actor.
 cmd_release() {
 	local bead="" beads_dir=""
-	parse_flags "$@" || return 2
+	parse_flags "--bead --beads-dir" "$@" || return 2
 	[ -n "$bead" ] && [ -n "$beads_dir" ] || {
 		echo "slice-wave: release needs --bead and --beads-dir" >&2
 		return 2
@@ -311,7 +341,7 @@ spent_waivers() {
 
 cmd_verify_commit() {
 	local bead="" beads_dir=""
-	parse_flags "$@" || return 2
+	parse_flags "--bead --beads-dir" "$@" || return 2
 
 	local branch
 	branch="$(derive_branch "$bead")" || {
@@ -400,39 +430,27 @@ toon_fixes() {
 # $FINDING_HISTORY_SEP and ended by $FINDING_HISTORY_RS, quoting and
 # backslash-escapes undone. A naive split on `,` breaks on a quoted field that
 # itself contains a comma, colon or escaped quote (TOON's own reason for
-# quoting it), so this walks the row a character at a time instead: inside a
-# quoted field, `\"`, `\\`, `\n`, `\r` and `\t` are TOON's escapes and a bare
-# `"` closes it; outside one, `,` ends the field.
+# quoting it), so this walks the row instead: toon_quoted reads a quoted
+# field, and outside one, `,` ends the field. Prints nothing for a row whose
+# quoted field never closes.
 toon_row_fields() {
-	local rest="$1" field sep=""
+	local rest="$1" field out="" sep=""
 	while :; do
 		if [ "${rest:0:1}" = '"' ]; then
 			rest="${rest:1}"
-			field=""
-			while :; do
-				# shellcheck disable=SC1003 # '\\' is a literal two-backslash TOON escape
-				case "$rest" in
-					'\"'*) field="$field\""; rest="${rest:2}" ;;
-					'\\'*) field="$field\\"; rest="${rest:2}" ;;
-					'\n'*) field="$field"$'\n'; rest="${rest:2}" ;;
-					'\r'*) field="$field"$'\r'; rest="${rest:2}" ;;
-					'\t'*) field="$field"$'\t'; rest="${rest:2}" ;;
-					'"'*) rest="${rest:1}"; break ;;
-					*) field="$field${rest:0:1}"; rest="${rest:1}" ;;
-				esac
-			done
+			toon_quoted || return 0
 		else
 			field="${rest%%,*}"
 			rest="${rest:${#field}}"
 		fi
-		printf '%s%s' "$sep" "$field"
+		out="$out$sep$field"
 		sep="$FINDING_HISTORY_SEP"
 		case "$rest" in
 			,*) rest="${rest:1}" ;;
 			*) break ;;
 		esac
 	done
-	printf '%s' "$FINDING_HISTORY_RS"
+	printf '%s%s' "$out" "$FINDING_HISTORY_RS"
 }
 
 # The field separator toon_finding_history joins on. Not a tab: bash `read`
@@ -449,15 +467,20 @@ readonly FINDING_HISTORY_SEP
 FINDING_HISTORY_RS="$(printf '\036')"
 readonly FINDING_HISTORY_RS
 
-# Prints each row of the TOON `finding_history[N]{step,round,id,severity,
-# action,source,selected,file,line,description}:` table in $1, each row
-# ended by $FINDING_HISTORY_RS with its columns joined by $FINDING_HISTORY_SEP
-# in that order, quoting and escapes undone. Nothing when the table is absent, empty
-# (`finding_history[0]:`), or replaced by `finding_history_error`.
+# The finding_history columns validate reads, in the order no-mistakes sends
+# them. A table under any other header is one validate cannot read.
+FINDING_HISTORY_COLUMNS="step,round,id,severity,action,source,selected,file,line,description"
+readonly FINDING_HISTORY_COLUMNS
+
+# Prints each row of the TOON finding_history table in $1, whose header
+# history_state_of has already checked names $FINDING_HISTORY_COLUMNS, each
+# row ended by $FINDING_HISTORY_RS with its columns joined by
+# $FINDING_HISTORY_SEP in that order, quoting and escapes undone. A row that
+# does not parse prints nothing.
 toon_finding_history() {
 	local input="$1" row
 	awk '
-		/^finding_history\[[0-9]+\]\{step,round,id,severity,action,source,selected,file,line,description\}:$/ { inside = 1; next }
+		/^finding_history\[[0-9]+\]\{/ { inside = 1; next }
 		inside && /^  / { print substr($0, 3); next }
 		inside { exit }
 	' <<<"$input" | while IFS= read -r row; do
@@ -466,22 +489,30 @@ toon_finding_history() {
 }
 
 # Sets the caller's `history_state` from no-mistakes' TOON $1 to one of:
-#   rows    finding_history carries at least the header, read it with
+#   rows    finding_history has $FINDING_HISTORY_COLUMNS under its header;
+#           `history_count` carries its row count, read them with
 #           toon_finding_history
 #   empty   finding_history[0]: - the run found nothing
-#   error   finding_history_error is set; `history_error` carries the reason
-#   absent  no finding_history key at all - an older no-mistakes
+#   error   finding_history_error is set, or the header names other columns;
+#           `history_error` carries the reason
+#   absent  no finding_history key at all - an older no-mistakes never sent it
 history_state_of() {
-	local input="$1"
+	local input="$1" header
 	history_error="$(toon_value "$input" finding_history_error)"
+	header="$(grep -m 1 '^finding_history\[' <<<"$input")"
+	history_count="${header#finding_history[}"
+	history_count="${history_count%%]*}"
 	if [ -n "$history_error" ]; then
 		history_state=error
-	elif grep -q '^finding_history\[0\]:$' <<<"$input"; then
+	elif [ -z "$header" ]; then
+		history_state=absent
+	elif [ "$header" = 'finding_history[0]:' ]; then
 		history_state=empty
-	elif grep -q '^finding_history\[[0-9]\+\]{' <<<"$input"; then
+	elif [ "$header" = "finding_history[$history_count]{$FINDING_HISTORY_COLUMNS}:" ]; then
 		history_state=rows
 	else
-		history_state=absent
+		history_state=error
+		history_error="unrecognised finding_history columns: $header"
 	fi
 }
 
@@ -491,8 +522,15 @@ history_state_of() {
 # history validate could not read, found empty, or an older no-mistakes never
 # sent.
 findings_history_section() {
-	local toon="$1" history_state history_error=""
+	local toon="$1" history_state history_error="" history_count rows
 	history_state_of "$toon"
+	if [ "$history_state" = rows ]; then
+		rows="$(toon_finding_history "$toon")"
+		if [ "$(printf '%s' "$rows" | tr -cd "$FINDING_HISTORY_RS" | wc -c | tr -d ' ')" != "$history_count" ]; then
+			history_state=error
+			history_error="finding_history declares $history_count rows but validate could not read them all"
+		fi
+	fi
 	case "$history_state" in
 		error)
 			printf 'Findings history: unknown (%s)\n' "$history_error"
@@ -508,8 +546,7 @@ findings_history_section() {
 			;;
 	esac
 
-	local rows step round id severity action file line description loc ask_line ask_lines=""
-	rows="$(toon_finding_history "$toon")"
+	local step round id severity action file line description loc ask_line ask_lines=""
 	while IFS="$FINDING_HISTORY_SEP" read -r -d "$FINDING_HISTORY_RS" step round id severity action _ _ file line description; do
 		[ -n "$step" ] || continue
 		[ "$action" = ask-user ] || continue
@@ -737,7 +774,7 @@ validate_slice() {
 # status.
 cmd_validate() {
 	local bead="" beads_dir="" verified=""
-	parse_flags "$@" || { usage; return 2; }
+	parse_flags "--bead --beads-dir --verified" "$@" || { usage; return 2; }
 	[ -n "$bead" ] && [ -n "$beads_dir" ] && [ -n "$verified" ] || {
 		echo "slice-wave: validate needs --bead, --beads-dir and --verified" >&2
 		usage

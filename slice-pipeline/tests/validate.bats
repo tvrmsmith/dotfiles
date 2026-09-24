@@ -144,6 +144,38 @@ validate() {
   lacks "$body" "All findings"
 }
 
+@test "validate reports a findings history under unrecognised columns as unknown, never as none" {
+  sed 's/^finding_history\[5\]{step,round,id,/finding_history[5]{step,round,phase,id,/' \
+    "$FIXTURES_DIR/findings-history.toon" > "$STUB_BIN/drifted.toon"
+  export NO_MISTAKES_RUN_SEQUENCE="$STUB_BIN/drifted.toon:0"
+  out="$(validate --verified true)"
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "Findings history: unknown (unrecognised finding_history columns: finding_history[5]{step,round,phase,id,severity,action,source,selected,file,line,description}:)"
+  lacks "$body" "Ask-user findings"
+  lacks "$body" "All findings"
+}
+
+@test "validate reports a findings history whose rows do not all parse as unknown, never as none" {
+  sed 's/should be > 0"$/should be > 0/' "$FIXTURES_DIR/findings-history.toon" > "$STUB_BIN/unterminated.toon"
+  export NO_MISTAKES_RUN_SEQUENCE="$STUB_BIN/unterminated.toon:0"
+  out="$(validate --verified true)"
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "Findings history: unknown (finding_history declares 5 rows but validate could not read them all)"
+  lacks "$body" "Ask-user findings"
+  lacks "$body" "All findings"
+}
+
+@test "validate undoes TOON escapes in fix summaries and error text as it does in findings history" {
+  sed 's/^error: .*/error: "ci: \\"lint\\" failed\\tagain"/' "$FIXTURES_DIR/failed.toon" > "$STUB_BIN/escaped-error.toon"
+  printf 'fixes[1]{step,summary}:\n  review,"Quoted \\"retry\\", per review-2"\n' >> "$STUB_BIN/escaped-error.toon"
+  export NO_MISTAKES_RUN_SEQUENCE="$STUB_BIN/escaped-error.toon:1"
+  out="$(validate --verified true)"
+  contains "$(printf '%s' "$out" | jq -r .reason)" "$(printf 'ci: "lint" failed\tagain')"
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "$(printf 'ci: "lint" failed\tagain')"
+  contains "$body" '- review: Quoted "retry", per review-2'
+}
+
 @test "validate records a failed run on its PR and reports the error as undelivered" {
   export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/failed.toon:1"
   out="$(validate --verified true)"
@@ -250,6 +282,27 @@ validate() {
   out="$(validate --verified true)"
   equals "$(printf '%s' "$out" | jq -r .pr_number)" 0
   contains "$(printf '%s' "$out" | jq -r .reason)" "2 open pull requests"
+  lacks "$(cat "$CALL_LOG")" "pr comment"
+}
+
+@test "validate posts no record and names the detached HEAD when the run names no PR" {
+  grep -v '^  pr: ' "$FIXTURES_DIR/checks-passed.toon" > "$STUB_BIN/no-pr.toon"
+  export NO_MISTAKES_RUN_SEQUENCE="$STUB_BIN/no-pr.toon:0"
+  git -C "$REPO" switch --quiet --detach
+  out="$(validate --verified true)"
+  equals "$(printf '%s' "$out" | jq -r .delivered)" false
+  contains "$(printf '%s' "$out" | jq -r .reason)" "HEAD is detached, so no pull request could be looked up"
+  lacks "$(cat "$CALL_LOG")" "pr list"
+  lacks "$(cat "$CALL_LOG")" "pr comment"
+}
+
+@test "validate posts no record when gh's open pull request list does not parse" {
+  grep -v '^  pr: ' "$FIXTURES_DIR/checks-passed.toon" > "$STUB_BIN/no-pr.toon"
+  export NO_MISTAKES_RUN_SEQUENCE="$STUB_BIN/no-pr.toon:0"
+  export GH_PR_LIST_JSON='not json'
+  out="$(validate --verified true)"
+  equals "$(printf '%s' "$out" | jq -r .delivered)" false
+  contains "$(printf '%s' "$out" | jq -r .reason)" "cannot list the open pull requests for slice/demo-1"
   lacks "$(cat "$CALL_LOG")" "pr comment"
 }
 

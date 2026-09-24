@@ -202,6 +202,13 @@ diagnose() {
     echo "no pr_number in validate's output; see $RUN_LOG" >&2
     exit 1
   }
-  comments="$(gh api "repos/$SLICE_E2E_REPO/issues/$PR_NUMBER/comments" --jq '.[].body')"
-  contains "$comments" '<!-- slice-pipeline:findings-record -->'
+  record="$(gh api "repos/$SLICE_E2E_REPO/issues/$PR_NUMBER/comments" \
+    --jq '[.[].body | select(startswith("<!-- slice-pipeline:findings-record -->"))] | last // empty')"
+  [ -n "$record" ] || { echo "no findings record comment on PR $PR_NUMBER" >&2; exit 1; }
+  contains "$record" "Drive mode: yes"
+  contains "$record" "Outcome: "
+  printf '%s\n' "$record" | grep -Eq '^(Ask-user findings|Findings history: )' || {
+    printf 'the findings record carries no findings-history line:\n%s\n' "$record" >&2
+    exit 1
+  }
 }
