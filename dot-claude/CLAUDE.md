@@ -28,6 +28,7 @@
 ## Talking to me
 
 - **Name before number.** Write "the diff-scope test PR (#76)", not "#76". Bare identifiers (issue, PR, commit sha, run id) point at things I have not memorised, and an issue number and a PR number look identical to me.
+- **Status covers this session.** When I ask for status or what's next, list only work this session did or owns. Another Claude session's work appears only when it blocks this session's work, and then name the session that owns it.
 
 ## Working with Agents
 
