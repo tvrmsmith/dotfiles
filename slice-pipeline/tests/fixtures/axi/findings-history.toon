@@ -1,0 +1,22 @@
+run:
+  id: "01RUNGREEN"
+  branch: slice/demo-1
+  status: running
+  head: abcdef12
+  head_sha: abcdef1234567890abcdef1234567890abcdef12
+  pr: "https://github.com/owner/repo/pull/42"
+  findings: none
+  steps[2]{step,status,findings,duration_ms}:
+    review,completed,0,0
+    ci,running,0,0
+  active_steps[1]{step,status,active_for,round_active_for,last_activity,agent_pid,round}:
+    ci,running,"","",unknown,"",starting
+outcome: checks-passed
+fixes[1]{step,summary}:
+  review,"Checked the rm exit status, per review-2"
+finding_history[4]{step,round,id,severity,action,source,selected,file,line,description}:
+  review,1,review-1,error,auto-fix,agent,true,a.go,12,nil deref
+  review,1,review-2,warning,ask-user,agent,true,"",0,"The reviewer said, \"check the retry: it swallows errors\""
+  review,1,review-3,info,no-op,agent,false,"",0,nit
+  lint,1,lint-1,warning,ask-user,user,true,b.go,5,"Also verify pagination, per spec: the \"limit\" param should be > 0"
+help[5]: "CI checks passed - the PR is ready. Ask the user to review and merge it: https://github.com/owner/repo/pull/42","Summarize this pipeline run for the user in a concise, easily readable format: what was validated and what was found.",The pipeline fixed findings the original change missed (see `fixes`) - acknowledge the misses and list each fix so the user can review them.,"Commit post-pipeline follow-up work on top of the existing branch so every pipeline fix commit remains present. Never abort-and-restart, reset, or replace the branch in a way that drops prior gate-fix commits.","If this PR later falls behind the default branch or hits a merge conflict, the CI monitor rebases onto the base, resolves it, revalidates from Format because rebasing cannot prove continuity with the reviewed head, and re-pushes it through Push automatically - run no command and never hand-rebase. Only when that monitor is no longer running (PR closed, run aborted, idle-timeout, or auto-fix exhausted) recover with `no-mistakes rerun`, which validates the selected gate or preserved head and refuses a known clean caller HEAD mismatch. If the dead run left auto-fix or CI-rebase commits your clone lacks, take them with the offered `branch_sync` `sync` action before the rerun, not after: the rerun's own pending run carries no push binding, so it owns the branch (`pipeline_owned`) and `no-mistakes axi sync` then refuses. If heads differ, inspect `no-mistakes axi status` and follow its exact `branch_sync.next_action.command` for custody or synchronization. `no-mistakes rerun` re-validates the head already pushed to the gate, so it is only for an unchanged local HEAD; after a local fix commit, submit intended local commits with a fresh `no-mistakes axi run` once custody permits. `no-mistakes rerun` returns immediately without driving, so something still has to answer the recovered run's gates: follow it with `no-mistakes axi run`, which reattaches and drives that run only while the gate head still equals your local HEAD, which is exactly what syncing first establishes. Then keep answering gates until an outcome."

@@ -396,6 +396,143 @@ toon_fixes() {
 	done
 }
 
+# Splits one row of a TOON tabular table into its fields, printed one per
+# line, quoting and backslash-escapes undone. A naive split on `,` breaks on
+# a quoted field that itself contains a comma, colon or escaped quote (TOON's
+# own reason for quoting it), so this walks the row a character at a time
+# instead: inside a quoted field, `\"` is an embedded quote and a bare `"`
+# closes it; outside one, `,` ends the field.
+toon_row_fields() {
+	local rest="$1" field
+	while :; do
+		if [ "${rest:0:1}" = '"' ]; then
+			rest="${rest:1}"
+			field=""
+			while :; do
+				case "$rest" in
+					'\"'*) field="$field\""; rest="${rest:2}" ;;
+					'"'*) rest="${rest:1}"; break ;;
+					*) field="$field${rest:0:1}"; rest="${rest:1}" ;;
+				esac
+			done
+		else
+			field="${rest%%,*}"
+			rest="${rest:${#field}}"
+		fi
+		printf '%s\n' "$field"
+		case "$rest" in
+			,*) rest="${rest:1}" ;;
+			*) break ;;
+		esac
+	done
+}
+
+# The field separator toon_finding_history joins on. Not a tab: bash `read`
+# treats IFS whitespace (space, tab, newline) as a run that collapses and
+# trims, which would silently drop an empty field such as a row with no file.
+# 0x1F (ASCII unit separator) is not IFS whitespace, so an empty field between
+# two of them survives both the awk join and the caller's `read`.
+FINDING_HISTORY_SEP="$(printf '\037')"
+readonly FINDING_HISTORY_SEP
+
+# Prints each row of the TOON `finding_history[N]{step,round,id,severity,
+# action,source,selected,file,line,description}:` table in $1, one row per
+# line with its columns joined by $FINDING_HISTORY_SEP in that order,
+# quoting and escapes undone. Nothing when the table is absent, empty
+# (`finding_history[0]:`), or replaced by `finding_history_error`.
+toon_finding_history() {
+	local input="$1" row
+	awk '
+		/^finding_history\[[0-9]+\]\{step,round,id,severity,action,source,selected,file,line,description\}:$/ { inside = 1; next }
+		inside && /^  / { print substr($0, 3); next }
+		inside { exit }
+	' <<<"$input" | while IFS= read -r row; do
+		toon_row_fields "$row" | paste -s -d "$FINDING_HISTORY_SEP" -
+	done
+}
+
+# Sets the caller's `history_state` from no-mistakes' TOON $1 to one of:
+#   rows    finding_history carries at least the header, read it with
+#           toon_finding_history
+#   empty   finding_history[0]: - the run found nothing
+#   error   finding_history_error is set; `history_error` carries the reason
+#   absent  no finding_history key at all - an older no-mistakes
+history_state_of() {
+	local input="$1"
+	history_error="$(toon_value "$input" finding_history_error)"
+	if [ -n "$history_error" ]; then
+		history_state=error
+	elif grep -q '^finding_history\[0\]:$' <<<"$input"; then
+		history_state=empty
+	elif grep -q '^finding_history\[[0-9]\+\]{' <<<"$input"; then
+		history_state=rows
+	else
+		history_state=absent
+	fi
+}
+
+# Prints the findings-history part of the record from no-mistakes' TOON $1:
+# every ask-user finding verbatim plus a per-step tally of every finding when
+# the run carries a history, or one of the sentences standing in for a
+# history validate could not read, found empty, or an older no-mistakes never
+# sent.
+findings_history_section() {
+	local toon="$1" history_state history_error=""
+	history_state_of "$toon"
+	case "$history_state" in
+		error)
+			printf 'Findings history: unknown (%s)\n' "$history_error"
+			return
+			;;
+		empty)
+			printf 'Findings history: none\n'
+			return
+			;;
+		absent)
+			printf '%s\n' 'This no-mistakes version does not expose findings history, so this record lists only what it reports at the end of the run.'
+			return
+			;;
+	esac
+
+	local rows step round id severity action file line description loc ask_line ask_lines=""
+	rows="$(toon_finding_history "$toon")"
+	while IFS="$FINDING_HISTORY_SEP" read -r step round id severity action _ _ file line description; do
+		[ -n "$step" ] || continue
+		[ "$action" = ask-user ] || continue
+		loc="$file"
+		if [ -n "$line" ] && [ "$line" != 0 ]; then
+			loc="${loc:+$loc:}$line"
+		fi
+		printf -v ask_line -- '- %s round %s %s %s%s: %s\n' \
+			"$step" "$round" "$id" "$severity" "${loc:+ $loc}" "$description"
+		ask_lines="${ask_lines}${ask_line}"
+	done <<<"$rows"
+
+	if [ -n "$ask_lines" ]; then
+		printf 'Ask-user findings:\n%s' "$ask_lines"
+	else
+		printf 'Ask-user findings: none\n'
+	fi
+
+	printf '\nAll findings:\n'
+	printf '%s\n' "$rows" | awk -F"$FINDING_HISTORY_SEP" '
+		$1 != "" {
+			step = $1
+			if (!(step in seen)) { seen[step] = 1; order[n++] = step }
+			count[step]++
+			detail[step] = detail[step] (detail[step] == "" ? "" : ", ") \
+				$3 " " ($7 == "true" ? "selected" : "not selected")
+		}
+		END {
+			for (i = 0; i < n; i++) {
+				step = order[i]
+				plural = (count[step] == 1) ? "finding" : "findings"
+				printf "- %s: %d %s (%s)\n", step, count[step], plural, detail[step]
+			}
+		}
+	'
+}
+
 # Prints bd's record of bead $1 as the one intent text no-mistakes takes:
 # every non-empty field a slice's goal lives in, separated by blank lines.
 # Prints nothing when every field is empty.
@@ -508,15 +645,17 @@ find_open_pr() {
 
 # Prints the markdown comment that records a drive on its pull request, from
 # the outcome $1, the fix count $2 and its `step: summary` lines $3, the
-# outstanding findings $4 and the error or gate text $5.
+# outstanding findings $4, the error or gate text $5, and the run's full TOON
+# $6, whose finding_history closes the record (see findings_history_section).
 findings_record() {
-	local outcome="$1" fix_rounds="$2" fixes="$3" findings="$4" problem="$5"
+	local outcome="$1" fix_rounds="$2" fixes="$3" findings="$4" problem="$5" toon="$6"
 	printf '%s\n' '<!-- slice-pipeline:findings-record -->' '## slice-pipeline findings record' ''
 	printf 'Drive mode: yes\nOutcome: %s\nFix rounds: %s\n' "${outcome:-none reported}" "$fix_rounds"
 	[ -z "$fixes" ] || printf '%s\n' "$fixes" | sed 's/^/- /'
 	printf '\nOutstanding findings: %s\n' "${findings:-none reported}"
 	[ -z "$problem" ] || printf '\nError: %s\n' "$problem"
-	printf '\n%s\n' 'Ask-user findings are not exposed under --yes; this record lists only what no-mistakes reports at the end of the run.'
+	printf '\n'
+	findings_history_section "$toon"
 }
 
 # Sets the caller's outcome, pr_number, pr_url, repo, fix_rounds,
@@ -571,7 +710,7 @@ validate_slice() {
 		[ "$pr_number" -gt 0 ] || return
 	fi
 
-	if findings_record "$outcome" "$fix_rounds" "$fixes" "$findings" "$problem" \
+	if findings_record "$outcome" "$fix_rounds" "$fixes" "$findings" "$problem" "$toon" \
 		| gh pr comment "$pr_url" --body-file - >/dev/null; then
 		record_posted=true
 	else
