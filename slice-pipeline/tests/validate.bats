@@ -167,6 +167,19 @@ validate() {
   equals "$(printf '%s' "$out" | jq -r .delivered)" true
 }
 
+@test "validate ignores a pr key outside the run block and falls back to gh" {
+  { grep -v '^  pr: ' "$FIXTURES_DIR/checks-passed.toon"
+    printf 'later:\n  pr: "https://github.com/x/y/pull/9"\n'
+  } > "$STUB_BIN/stray-pr.toon"
+  export NO_MISTAKES_RUN_SEQUENCE="$STUB_BIN/stray-pr.toon:0"
+  export GH_PR_LIST_JSON='[{"number":7,"url":"https://github.com/owner/repo/pull/7"}]'
+  out="$(validate --verified true)"
+  contains "$(cat "$CALL_LOG")" "$(printf 'gh\tpr list --head slice/demo-1')"
+  equals "$(printf '%s' "$out" | jq -c '{pr_number, pr_url, repo}')" \
+    '{"pr_number":7,"pr_url":"https://github.com/owner/repo/pull/7","repo":"owner/repo"}'
+  lacks "$(cat "$CALL_LOG")" "pull/9"
+}
+
 @test "validate posts no record and reports undelivered when neither the run nor gh names a PR" {
   grep -v '^  pr: ' "$FIXTURES_DIR/checks-passed.toon" > "$STUB_BIN/no-pr.toon"
   export NO_MISTAKES_RUN_SEQUENCE="$STUB_BIN/no-pr.toon:0"
