@@ -1,7 +1,7 @@
 # slice-pipeline
 
-Takes a ready ticket to a landed pull request that no-mistakes has checked. An
-Archon workflow plus the script it shells out to, self-contained so it runs
+Takes a ready ticket to an open pull request that no-mistakes has driven green.
+An Archon workflow plus the script it shells out to, self-contained so it runs
 against any repo, not just this one.
 
 ```
