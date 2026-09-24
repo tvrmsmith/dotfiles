@@ -60,6 +60,9 @@ request and deletes its remote branch. It spends model tokens, pushes a
 branch and opens a pull request on a real repository, and can go red on a bad
 model run, so it skips unless `SLICE_E2E=1`, and skips with a clear message
 when `SLICE_E2E_REPO` is unset.
+`SLICE_E2E_CLONE_URL` optionally overrides the URL it clones from, for a
+machine whose git credential for gh's default URL belongs to a different
+account than gh's; gh still reaches the repository through `SLICE_E2E_REPO`.
 `SLICE_E2E_KEEP=1` keeps the scratch repo and Archon's worktree for
 inspection, and leaves the pull request and its branch open too.
 An Archon run from source needs `CLAUDE_BIN_PATH` pointing at an up-to-date
