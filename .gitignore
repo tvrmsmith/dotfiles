@@ -41,3 +41,7 @@ dot-config/corporate-ca.crt
 .beads-credential-key
 .beads/proxieddb/
 .beads.gate.lock
+
+# no-mistakes writes its own skill here (`no-mistakes init`, or `make install`
+# in a checkout) so the skill always matches the installed binary. Not vendored.
+dot-claude/skills/no-mistakes/
