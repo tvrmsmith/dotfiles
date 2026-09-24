@@ -1,6 +1,7 @@
 name: implement-slice
 description: |
-  Build one vertical slice from its bead and land its commit on the branch.
+  Build one vertical slice from its bead, land its commit on the branch, and
+  drive it through no-mistakes to a green pull request with a findings record.
   The slice's spec lives in the bead's `design` field, the wave's agreed seams
   in its `notes` field. Verify reads the branch, not a model's self-report.
 
