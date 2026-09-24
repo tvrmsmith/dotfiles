@@ -100,10 +100,12 @@ install_pinned_npm_tools() {
 }
 
 install_no_mistakes() {
-	# no-mistakes: Go CLI backing the vendored /no-mistakes skill (see
-	# vendor/no-mistakes). Installs to ~/.no-mistakes/bin and symlinks into
-	# ~/.local/bin. Upstream install.sh has no version-pin env var, so this is
-	# install-if-missing (idempotent); re-run manually to upgrade.
+	# no-mistakes: Go CLI backing the /no-mistakes skill. The skill is not
+	# vendored: `no-mistakes init` writes the version matching the installed
+	# binary into ~/.claude/skills/no-mistakes (gitignored here). Installs to
+	# ~/.no-mistakes/bin and symlinks into ~/.local/bin. Upstream install.sh has
+	# no version-pin env var, so this is install-if-missing (idempotent); re-run
+	# manually to upgrade.
 	if command -v no-mistakes >/dev/null 2>&1; then
 		echo "no-mistakes already installed ($(no-mistakes --version 2>/dev/null))."
 		return
