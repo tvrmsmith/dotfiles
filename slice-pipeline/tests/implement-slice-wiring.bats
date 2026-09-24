@@ -20,7 +20,8 @@ setup() {
   export GIT_CONFIG_GLOBAL=/dev/null
   export GIT_CONFIG_SYSTEM=/dev/null
 
-  export STUB_BIN="$(mktemp -d)"
+  STUB_BIN="$(mktemp -d)"
+  export STUB_BIN
   export FIXTURES_DIR="${BATS_TEST_DIRNAME}/fixtures/axi"
   install_stubs
 
