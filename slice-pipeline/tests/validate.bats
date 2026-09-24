@@ -79,8 +79,9 @@ validate() {
   out="$(validate --verified true)"
   equals "$(printf '%s' "$out" | jq -c .)" \
     '{"delivered":true,"outcome":"checks-passed","pr_number":42,"pr_url":"https://github.com/owner/repo/pull/42","repo":"owner/repo","fix_rounds":1,"record_posted":true,"reason":""}'
-  contains "$(cat "$CALL_LOG")" "$(printf 'gh\tpr comment 42 -R owner/repo --body-file -')"
+  contains "$(cat "$CALL_LOG")" "$(printf 'gh\tpr comment https://github.com/owner/repo/pull/42 --body-file -')"
   lacks "$(cat "$CALL_LOG")" "pr list"
+  lacks "$(cat "$CALL_LOG")" "repo view"
   body="$(cat "$STUB_BIN/pr-comment-body")"
   equals "$(printf '%s\n' "$body" | head -1)" "<!-- slice-pipeline:findings-record -->"
   contains "$body" "Drive mode: yes"
@@ -106,8 +107,23 @@ validate() {
   export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/wait-elapsed.toon:1 $FIXTURES_DIR/checks-passed.toon:0"
   out="$(validate --verified true)"
   equals "$(printf '%s' "$out" | jq -r .delivered)" true
-  runs="$(awk -F'\t' '$1 == "no-mistakes" { print $2 }' "$CALL_LOG" | cut -c1-24)"
-  equals "$runs" "$(printf 'axi run --yes --intent D\naxi run --yes')"
+  runs="$(awk -F'\t' '$1 == "no-mistakes" { print $2 }' "$CALL_LOG")"
+  equals "$(printf '%s\n' "$runs" | sed 's/ --intent .*//')" "$(printf 'axi run --yes\naxi run --yes')"
+  contains "$(printf '%s\n' "$runs" | head -1)" " --intent Demo slice"
+  lacks "$(printf '%s\n' "$runs" | tail -1)" "--intent"
+}
+
+@test "validate stops reattaching at its time limit and reports the drive as still running" {
+  export SLICE_WAVE_DRIVE_LIMIT_SECONDS=0
+  export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/wait-elapsed.toon:1 $FIXTURES_DIR/checks-passed.toon:0"
+  export GH_PR_LIST_JSON='[{"number":7,"url":"https://github.com/owner/repo/pull/7"}]'
+  rc=0; out="$(validate --verified true)" || rc=$?
+  equals "$rc" 0
+  equals "$(grep -c "$(printf '^no-mistakes\t')" "$CALL_LOG")" 1
+  equals "$(printf '%s' "$out" | jq -r .delivered)" false
+  contains "$(printf '%s' "$out" | jq -r .reason)" "the no-mistakes drive was still running"
+  equals "$(printf '%s' "$out" | jq -r .record_posted)" true
+  contains "$(cat "$STUB_BIN/pr-comment-body")" "the no-mistakes drive was still running"
 }
 
 @test "validate keeps reattaching while each reattach's wait elapses too" {
@@ -147,7 +163,7 @@ validate() {
   contains "$(cat "$CALL_LOG")" "$(printf 'gh\tpr list --head slice/demo-1 --state open --json number,url -R owner/repo')"
   equals "$(printf '%s' "$out" | jq -r .pr_number)" 7
   equals "$(printf '%s' "$out" | jq -r .pr_url)" "https://github.com/owner/repo/pull/7"
-  contains "$(cat "$CALL_LOG")" "$(printf 'gh\tpr comment 7 -R owner/repo --body-file -')"
+  contains "$(cat "$CALL_LOG")" "$(printf 'gh\tpr comment https://github.com/owner/repo/pull/7 --body-file -')"
   equals "$(printf '%s' "$out" | jq -r .delivered)" true
 }
 
@@ -202,7 +218,7 @@ validate() {
   out="$(validate --verified true)"
   equals "$(printf '%s' "$out" | jq -r .record_posted)" false
   equals "$(printf '%s' "$out" | jq -r .delivered)" false
-  contains "$(printf '%s' "$out" | jq -r .reason)" "cannot post the findings record on pull request 42"
+  contains "$(printf '%s' "$out" | jq -r .reason)" "cannot post the findings record on pull request https://github.com/owner/repo/pull/42"
 }
 
 @test "validate reports undelivered without driving no-mistakes when bd cannot show the bead" {
@@ -213,16 +229,27 @@ validate() {
   lacks "$(cat "$CALL_LOG")" "no-mistakes"
 }
 
+@test "validate reports undelivered without driving no-mistakes when the bead has no intent text" {
+  export BD_SHOW_JSON='[{"id":"demo-1","title":"","description":null,"acceptance_criteria":"","notes":""}]'
+  out="$(validate --verified true)"
+  equals "$(printf '%s' "$out" | jq -r .delivered)" false
+  contains "$(printf '%s' "$out" | jq -r .reason)" "bead demo-1 has no title, description, design, acceptance criteria or notes"
+  lacks "$(cat "$CALL_LOG")" "no-mistakes"
+}
+
 @test "validate passes the bead's title and acceptance criteria to no-mistakes as the intent" {
   export BD_SHOW_JSON='[{"id":"demo-1","title":"Greet the user","description":"","acceptance_criteria":"Prints hello on start","notes":null}]'
   validate --verified true >/dev/null
-  run_line="$(grep "$(printf '^no-mistakes\taxi run --yes --intent')" "$CALL_LOG")"
+  # The intent spans lines, so the call's entry runs until the next tool's line.
+  run_line="$(awk '/^no-mistakes\taxi run --yes --intent/ { p = 1; print; next } /^(bd|gh|no-mistakes)\t/ { p = 0 } p' "$CALL_LOG")"
   contains "$run_line" "Greet the user"
-  contains "$(cat "$CALL_LOG")" "Prints hello on start"
+  contains "$run_line" "Prints hello on start"
   contains "$(cat "$BD_LOG")" "$(printf '/tmp/beads-demo\tshow demo-1 --json')"
 }
 
 @test "validate reports undelivered and posts nothing when gh cannot name the repository" {
+  grep -v '^  pr: ' "$FIXTURES_DIR/checks-passed.toon" > "$STUB_BIN/no-pr.toon"
+  export NO_MISTAKES_RUN_SEQUENCE="$STUB_BIN/no-pr.toon:0"
   export GH_EXIT_CODE=1
   out="$(validate --verified true)"
   equals "$(printf '%s' "$out" | jq -r .delivered)" false
@@ -243,4 +270,14 @@ validate() {
   equals "$(printf '%s' "$out" | jq -r .pr_number)" 42
   equals "$(printf '%s' "$out" | jq -r .delivered)" true
   is_empty "$(printf '%s' "$out" | jq -r .reason)"
+}
+
+@test "validate posts on the run's PR and names its repo when gh's default repo differs" {
+  sed 's#^  pr: .*#  pr: "https://github.com/fork/other/pull/42"#' \
+    "$FIXTURES_DIR/checks-passed.toon" > "$STUB_BIN/fork-pr.toon"
+  export NO_MISTAKES_RUN_SEQUENCE="$STUB_BIN/fork-pr.toon:0"
+  out="$(validate --verified true)"
+  equals "$(printf '%s' "$out" | jq -c '{repo, pr_number, delivered}')" '{"repo":"fork/other","pr_number":42,"delivered":true}'
+  contains "$(cat "$CALL_LOG")" "$(printf 'gh\tpr comment https://github.com/fork/other/pull/42 --body-file -')"
+  lacks "$(cat "$CALL_LOG")" "repo view"
 }

@@ -78,6 +78,7 @@ case "$1" in
 				if [ -n "${NO_MISTAKES_SYNC_NEXT_STATUS_FIXTURE:-}" ]; then
 					printf '%s' "$NO_MISTAKES_SYNC_NEXT_STATUS_FIXTURE" > "$STUB_BIN/status-fixture-override"
 				fi
+				[ "${NO_MISTAKES_SYNC_EXIT:-0}" -eq 0 ] || echo "error: stub sync configured to fail" >&2
 				exit "${NO_MISTAKES_SYNC_EXIT:-0}"
 				;;
 			run)

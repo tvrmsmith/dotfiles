@@ -111,7 +111,8 @@ nodes:
   # itself exits 0 on every verdict (see its comment above), so it never
   # fails this dependency. The long timeout covers a real no-mistakes drive:
   # a review, fix rounds and CI, which routinely outruns Archon's 2-minute
-  # default.
+  # default. slice-wave stops reattaching to the drive at 3.5 hours, so it
+  # still reports delivered false before this timeout kills it.
   - id: validate
     depends_on: [verify]
     timeout: 14400000
@@ -130,9 +131,10 @@ nodes:
       required: [delivered, outcome, pr_number, pr_url, repo, fix_rounds, record_posted, reason]
 
   # Depends on claim as well as validate, under the default trigger rule (not
-  # all_done): validate always resolves (it is the returns node and exits 0
-  # on every path, same as verify), so requiring it to succeed costs nothing;
-  # its `delivered` field, not its own success, is what the `when` reads.
+  # all_done): validate always resolves (it is the returns node and, given a
+  # true or false --verified, exits 0 on every path, same as verify), so
+  # requiring it to succeed costs nothing; its `delivered` field, not its own
+  # success, is what the `when` reads.
   # Requiring claim to have succeeded is what stops this node from releasing a
   # bead this run never claimed, which would clear the assignee of whoever
   # actually holds it. An unverified run still lands here: validate's

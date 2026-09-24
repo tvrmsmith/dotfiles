@@ -34,6 +34,11 @@ setup() {
     commit --quiet --allow-empty -m base
 }
 
+assert_detached() {
+  rc=0; git -C "$REPO" symbolic-ref -q HEAD >/dev/null || rc=$?
+  [ "$rc" -ne 0 ] || { echo "expected a detached HEAD, got $(git -C "$REPO" symbolic-ref HEAD)" >&2; exit 1; }
+}
+
 teardown() {
   export PATH="$OLD_PATH"
   rm -rf "$STUB_BIN" "$REPO"
@@ -148,6 +153,7 @@ teardown() {
   equals "$rc" 1
   is_empty "$out"
   contains "$(cat "$STUB_BIN/err")" "no forge remote you can open pull requests on"
+  contains "$(cat "$STUB_BIN/err")" "gh: stub configured to fail"
   is_empty "$(cat "$BD_LOG")"
   equals "$(git -C "$REPO" symbolic-ref --short HEAD)" "main"
 }
@@ -203,8 +209,7 @@ teardown() {
   contains "$(cat "$STUB_BIN/err")" "continue_active_run"
   contains "$(cat "$STUB_BIN/err")" "no-mistakes axi status"
   is_empty "$(cat "$BD_LOG")"
-  rc=0; git -C "$REPO" symbolic-ref -q HEAD >/dev/null || rc=$?
-  [ "$rc" -ne 0 ] || { echo "expected a detached HEAD, got $(git -C "$REPO" symbolic-ref HEAD)" >&2; exit 1; }
+  assert_detached
 }
 
 @test "claim refuses a sync code whose reported command is not a no-mistakes sync" {
@@ -226,6 +231,66 @@ teardown() {
   contains "$(cat "$STUB_BIN/err")" "git reset --hard origin/x"
   is_empty "$(cat "$BD_LOG")"
   equals "$(cat "$REPO/sentinel")" "sentinel"
+}
+
+@test "claim refuses a reported sync command with anything chained after it, unrun" {
+  sed 's/^    command: .*/    command: no-mistakes axi sync; git reset --hard x/' \
+    "$FIXTURES_DIR/status-sync.toon" > "$STUB_BIN/status-chained.toon"
+  export NO_MISTAKES_STATUS_FIXTURE="$STUB_BIN/status-chained.toon"
+  rc=0
+  out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err" )" || rc=$?
+  equals "$rc" 1
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "refusing to run it"
+  lacks "$(cut -f2 "$CALL_LOG")" "axi sync"
+  is_empty "$(cat "$BD_LOG")"
+  assert_detached
+}
+
+@test "claim runs a reported sync with flags as that exact argv" {
+  sed 's/^    command: .*/    command: no-mistakes axi sync --recover --keep-local/' \
+    "$FIXTURES_DIR/status-sync.toon" > "$STUB_BIN/status-recover.toon"
+  export NO_MISTAKES_STATUS_FIXTURE="$STUB_BIN/status-recover.toon"
+  export NO_MISTAKES_SYNC_NEXT_STATUS_FIXTURE="$FIXTURES_DIR/sync-then-clean.toon"
+  ( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" ) >/dev/null
+  contains "$(cat "$CALL_LOG")" "$(printf 'no-mistakes\taxi sync --recover --keep-local\n')"
+  contains "$(cat "$BD_LOG")" "update foo --claim"
+}
+
+@test "claim refuses and detaches when the reported sync fails" {
+  export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/status-sync.toon"
+  export NO_MISTAKES_SYNC_EXIT=1
+  rc=0
+  out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err" )" || rc=$?
+  equals "$rc" 1
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "'no-mistakes axi sync' failed while reconciling slice/foo"
+  contains "$(cat "$STUB_BIN/err")" "error: stub sync configured to fail"
+  is_empty "$(cat "$BD_LOG")"
+  assert_detached
+}
+
+@test "claim refuses and detaches when no-mistakes axi status exits non-zero" {
+  export NO_MISTAKES_STATUS_EXIT=1
+  rc=0
+  out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err" )" || rc=$?
+  equals "$rc" 1
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "cannot read no-mistakes axi status for slice/foo"
+  is_empty "$(cat "$BD_LOG")"
+  assert_detached
+}
+
+@test "claim refuses and detaches when no-mistakes axi status reports an error with exit 0" {
+  printf 'error: gate state unreadable\n' > "$STUB_BIN/status-error.toon"
+  export NO_MISTAKES_STATUS_FIXTURE="$STUB_BIN/status-error.toon"
+  rc=0
+  out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err" )" || rc=$?
+  equals "$rc" 1
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "error: gate state unreadable"
+  is_empty "$(cat "$BD_LOG")"
+  assert_detached
 }
 
 @test "claim gives up after 3 sync rounds when branch sync still reports sync" {
