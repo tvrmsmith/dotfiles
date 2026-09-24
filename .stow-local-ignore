@@ -27,6 +27,9 @@
 # bats suite for install.sh
 ^/tests
 
+# Scratch fixture built by the slice pipeline e2e run, not a dotfile.
+^/e2e-scratch
+
 # Self-contained subproject, not a dotfile. Its two consumers are machine-wide
 # paths that stow cannot express: ~/.local/bin/slice-wave and an Archon global
 # workflow directory. install.sh links both, the same way it links
