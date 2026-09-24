@@ -396,14 +396,15 @@ toon_fixes() {
 	done
 }
 
-# Splits one row of a TOON tabular table into its fields, printed one per
-# line, quoting and backslash-escapes undone. A naive split on `,` breaks on
-# a quoted field that itself contains a comma, colon or escaped quote (TOON's
-# own reason for quoting it), so this walks the row a character at a time
-# instead: inside a quoted field, `\"` is an embedded quote and a bare `"`
-# closes it; outside one, `,` ends the field.
+# Splits one row of a TOON tabular table into its fields, printed joined by
+# $FINDING_HISTORY_SEP and ended by $FINDING_HISTORY_RS, quoting and
+# backslash-escapes undone. A naive split on `,` breaks on a quoted field that
+# itself contains a comma, colon or escaped quote (TOON's own reason for
+# quoting it), so this walks the row a character at a time instead: inside a
+# quoted field, `\"`, `\\`, `\n`, `\r` and `\t` are TOON's escapes and a bare
+# `"` closes it; outside one, `,` ends the field.
 toon_row_fields() {
-	local rest="$1" field
+	local rest="$1" field sep=""
 	while :; do
 		if [ "${rest:0:1}" = '"' ]; then
 			rest="${rest:1}"
@@ -411,6 +412,10 @@ toon_row_fields() {
 			while :; do
 				case "$rest" in
 					'\"'*) field="$field\""; rest="${rest:2}" ;;
+					'\\'*) field="$field\\"; rest="${rest:2}" ;;
+					'\n'*) field="$field"$'\n'; rest="${rest:2}" ;;
+					'\r'*) field="$field"$'\r'; rest="${rest:2}" ;;
+					'\t'*) field="$field"$'\t'; rest="${rest:2}" ;;
 					'"'*) rest="${rest:1}"; break ;;
 					*) field="$field${rest:0:1}"; rest="${rest:1}" ;;
 				esac
@@ -419,12 +424,14 @@ toon_row_fields() {
 			field="${rest%%,*}"
 			rest="${rest:${#field}}"
 		fi
-		printf '%s\n' "$field"
+		printf '%s%s' "$sep" "$field"
+		sep="$FINDING_HISTORY_SEP"
 		case "$rest" in
 			,*) rest="${rest:1}" ;;
 			*) break ;;
 		esac
 	done
+	printf '%s' "$FINDING_HISTORY_RS"
 }
 
 # The field separator toon_finding_history joins on. Not a tab: bash `read`
@@ -435,10 +442,16 @@ toon_row_fields() {
 FINDING_HISTORY_SEP="$(printf '\037')"
 readonly FINDING_HISTORY_SEP
 
+# The record separator toon_finding_history ends each row with. Not a
+# newline, since a description's decoded `\n` escape is one. 0x1E is ASCII
+# record separator.
+FINDING_HISTORY_RS="$(printf '\036')"
+readonly FINDING_HISTORY_RS
+
 # Prints each row of the TOON `finding_history[N]{step,round,id,severity,
-# action,source,selected,file,line,description}:` table in $1, one row per
-# line with its columns joined by $FINDING_HISTORY_SEP in that order,
-# quoting and escapes undone. Nothing when the table is absent, empty
+# action,source,selected,file,line,description}:` table in $1, each row
+# ended by $FINDING_HISTORY_RS with its columns joined by $FINDING_HISTORY_SEP
+# in that order, quoting and escapes undone. Nothing when the table is absent, empty
 # (`finding_history[0]:`), or replaced by `finding_history_error`.
 toon_finding_history() {
 	local input="$1" row
@@ -447,7 +460,7 @@ toon_finding_history() {
 		inside && /^  / { print substr($0, 3); next }
 		inside { exit }
 	' <<<"$input" | while IFS= read -r row; do
-		toon_row_fields "$row" | paste -s -d "$FINDING_HISTORY_SEP" -
+		toon_row_fields "$row"
 	done
 }
 
@@ -496,7 +509,7 @@ findings_history_section() {
 
 	local rows step round id severity action file line description loc ask_line ask_lines=""
 	rows="$(toon_finding_history "$toon")"
-	while IFS="$FINDING_HISTORY_SEP" read -r step round id severity action _ _ file line description; do
+	while IFS="$FINDING_HISTORY_SEP" read -r -d "$FINDING_HISTORY_RS" step round id severity action _ _ file line description; do
 		[ -n "$step" ] || continue
 		[ "$action" = ask-user ] || continue
 		loc="$file"
@@ -515,7 +528,7 @@ findings_history_section() {
 	fi
 
 	printf '\nAll findings:\n'
-	printf '%s\n' "$rows" | awk -F"$FINDING_HISTORY_SEP" '
+	printf '%s' "$rows" | awk -F"$FINDING_HISTORY_SEP" -v RS="$FINDING_HISTORY_RS" '
 		$1 != "" {
 			step = $1
 			if (!(step in seen)) { seen[step] = 1; order[n++] = step }

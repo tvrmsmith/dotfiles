@@ -102,15 +102,17 @@ validate() {
   contains "$body" 'The reviewer said, "check the retry: it swallows errors"'
   contains "$body" "lint round 1 lint-1 warning b.go:5"
   contains "$body" 'Also verify pagination, per spec: the "limit" param should be > 0'
+  contains "$body" "review round 1 review-4 warning: $(printf 'Match a space with \\s, not \\\\s:\n\tsee "docs"')"
   ask_section="$(printf '%s\n' "$body" | sed -n '/^Ask-user findings:/,/^$/p')"
   lacks "$ask_section" "review-1"
   lacks "$ask_section" "review-3"
   contains "$body" "All findings:"
-  contains "$body" "review: 3 findings"
+  contains "$body" "review: 4 findings"
   contains "$body" "lint: 1 finding"
   contains "$body" "review-1 selected"
   contains "$body" "review-2 selected"
   contains "$body" "review-3 not selected"
+  contains "$body" "review-4 not selected"
   contains "$body" "lint-1 selected"
 }
 
