@@ -1,0 +1,9 @@
+run:
+  id: "01RUNPRIOR"
+  branch: slice/foo
+  status: failed
+  head: abcdef12
+  head_sha: abcdef1234567890abcdef1234567890abcdef12
+  pr: "https://github.com/owner/repo/pull/42"
+  findings: none
+outcome: failed

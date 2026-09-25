@@ -1,0 +1,14 @@
+run:
+  id: "01RUNFAIL"
+  branch: slice/demo-1
+  status: failed
+  head: abcdef12
+  head_sha: abcdef1234567890abcdef1234567890abcdef12
+  pr: "https://github.com/owner/repo/pull/42"
+  findings: none
+  steps[2]{step,status,findings,duration_ms}:
+    pr,completed,0,0
+    ci,failed,0,0
+outcome: failed
+error: "ci: checks failed after 3 auto-fix attempts"
+help[2]: "Open the PR: https://github.com/owner/repo/pull/42","Commit post-pipeline follow-up work on top of the existing branch so every pipeline fix commit remains present. Never abort-and-restart, reset, or replace the branch in a way that drops prior gate-fix commits."

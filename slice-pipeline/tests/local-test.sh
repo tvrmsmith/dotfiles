@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Targeted local validation for the slice pipeline: the two bats suites that
+# Targeted local validation for the slice pipeline: the bats suites that
 # drive `bin/slice-wave` and the declared fixtures for the implement-slice
 # workflow. Every path below is relative to slice-pipeline/, so this runner
 # moves with the subproject rather than with the repo hosting it.
@@ -27,7 +27,7 @@ case "$OUT" in
 esac
 mkdir -p "$OUT" || exit 1
 
-SUITES="tests/slice-wave.bats tests/implement-slice-wiring.bats"
+SUITES="tests/slice-wave.bats tests/validate.bats tests/implement-slice-wiring.bats"
 WORKFLOW_DIR="workflows/implement-slice"
 COV_SOURCE="bin/slice-wave"
 

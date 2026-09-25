@@ -1,0 +1,43 @@
+# Landed but not shipped: verify sees a commit, but no-mistakes never gets it
+# to checks-passed, so validate reports delivered: false and release hands
+# the bead back. This is the case green-pr.stubs.yaml's unstubbed `release`
+# guards against never happening on a delivered slice; here it must happen.
+#
+# Archon's fixture language cannot assert the authored outcome directly (a
+# known runner limit: it checks `expect`, the run status, not an authored
+# field), so `reached` carries the assertion instead. If
+# `$validate.output.delivered == false` ever stopped catching a failed
+# validation, `release` would go unstubbed here and this fixture would fail
+# with a missing-stub error rather than a wrong outcome.
+fixture:
+  expect: completed
+  reached: [claim, build, verify, validate, release]
+  inputs:
+    bead: demo-slice-1
+    beads_dir: /tmp/beads
+
+claim:
+  bead: demo-slice-1
+  beads_dir: /tmp/beads
+  branch: slice/demo-slice-1
+build: "the slice is built and committed"
+verify:
+  verified: true
+  committed: true
+  tests_touched: true
+  branch: slice/demo-slice-1
+  sha: 1f0c6a4e2b7d9c3a5e8f10b2d4c6a8e0f2b4d6c8
+  reason: ""
+  waivers: []
+  waivers_error: ""
+validate:
+  delivered: false
+  outcome: failed
+  pr_number: 42
+  pr_url: https://github.com/owner/repo/pull/42
+  repo: owner/repo
+  fix_rounds: 3
+  record_posted: true
+  reason: "no-mistakes ended failed, not checks-passed or passed"
+release:
+  released: true

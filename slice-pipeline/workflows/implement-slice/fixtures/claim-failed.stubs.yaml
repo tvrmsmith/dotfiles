@@ -7,11 +7,13 @@
 #
 # verify still runs under all_done, and its verdict is pinned false: a run
 # that never claimed the bead is never on its branch, so verify-commit
-# credits nothing.
+# credits nothing. validate depends on verify alone, not claim, so it still
+# runs too and short-circuits on that false verdict; release's dependency on
+# claim, not validate's own success, is what stops it running here.
 fixture:
   expect: failed
   fail-node: claim
-  reached: [verify]
+  reached: [verify, validate]
   inputs:
     bead: demo-slice-1
     beads_dir: /tmp/beads
@@ -25,3 +27,12 @@ verify:
   reason: "this worktree is not on slice/demo-slice-1, so this run never claimed it"
   waivers: []
   waivers_error: ""
+validate:
+  delivered: false
+  outcome: ""
+  pr_number: 0
+  pr_url: ""
+  repo: ""
+  fix_rounds: 0
+  record_posted: false
+  reason: "verification did not pass, so validation was skipped"
