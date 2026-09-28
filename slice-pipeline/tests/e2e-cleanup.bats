@@ -66,3 +66,98 @@ teardown() {
   rc=0; git -C "$CLONE" ls-remote --exit-code origin refs/heads/slice/demo-1 >/dev/null || rc=$?
   equals "$rc" 2
 }
+
+# release_archon_registration acts on Archon's own state, not the stub
+# fixtures above, so these tests build a throwaway ARCHON_HOME under
+# $STUB_BIN instead of reusing the gh/git fixtures.
+
+# Seeds a throwaway Archon home under $STUB_BIN: the archon.db schema, a
+# scratch clone's codebase row plus two rows that must survive (an unrelated
+# codebase and a sibling path sharing the scratch dir's name as a prefix),
+# the isolation row that depends on the scratch codebase, and the workspaces
+# symlinks and real directory release_archon_registration must leave alone.
+seed_archon_fixture() {
+  ARCHON_HOME="$STUB_BIN/archon-home"
+  export ARCHON_HOME
+  mkdir -p "$ARCHON_HOME"
+  sqlite3 "$ARCHON_HOME/archon.db" <<'SQL'
+CREATE TABLE remote_agent_codebases (id TEXT PRIMARY KEY, name TEXT NOT NULL, default_cwd TEXT NOT NULL);
+CREATE TABLE remote_agent_isolation_environments (id TEXT PRIMARY KEY, codebase_id TEXT NOT NULL REFERENCES remote_agent_codebases(id) ON DELETE CASCADE);
+SQL
+
+  SCR="$(mktemp -d "$STUB_BIN/scratch.XXXXXX")"
+  mkdir -p "$SCR/repo"
+  PHYS="$(cd "$SCR" && pwd -P)"
+
+  sqlite3 "$ARCHON_HOME/archon.db" <<SQL
+INSERT INTO remote_agent_codebases VALUES ('scratch', 'owner/repo', '$PHYS/repo');
+INSERT INTO remote_agent_codebases VALUES ('other', 'owner/other', '$STUB_BIN/elsewhere/repo');
+INSERT INTO remote_agent_codebases VALUES ('sibling', 'owner/sib', '${PHYS}-sibling/repo');
+INSERT INTO remote_agent_isolation_environments VALUES ('env1', 'scratch');
+SQL
+
+  mkdir -p "$ARCHON_HOME/workspaces/owner/repo" \
+    "$ARCHON_HOME/workspaces/owner/other" \
+    "$ARCHON_HOME/workspaces/owner/cloned/source"
+  ln -s "$PHYS/repo" "$ARCHON_HOME/workspaces/owner/repo/source"
+  ln -s "$STUB_BIN/elsewhere/repo" "$ARCHON_HOME/workspaces/owner/other/source"
+  echo x > "$ARCHON_HOME/workspaces/owner/cloned/source/file"
+}
+
+@test "releasing a scratch clone deletes its codebase row and the rows that depend on it" {
+  command -v sqlite3 >/dev/null || skip "no sqlite3"
+  seed_archon_fixture
+
+  release_archon_registration "$SCR"
+
+  equals "$(sqlite3 "$ARCHON_HOME/archon.db" 'select id from remote_agent_codebases order by id')" "$(printf 'other\nsibling')"
+  equals "$(sqlite3 "$ARCHON_HOME/archon.db" 'select count(*) from remote_agent_isolation_environments')" 0
+}
+
+@test "releasing a scratch clone removes the source symlink into it and no other" {
+  command -v sqlite3 >/dev/null || skip "no sqlite3"
+  seed_archon_fixture
+
+  release_archon_registration "$SCR"
+
+  if [ -L "$ARCHON_HOME/workspaces/owner/repo/source" ] || [ -e "$ARCHON_HOME/workspaces/owner/repo/source" ]; then
+    echo "expected workspaces/owner/repo/source to be gone" >&2
+    exit 1
+  fi
+
+  [ -L "$ARCHON_HOME/workspaces/owner/other/source" ] ||
+    { echo "expected workspaces/owner/other/source to remain a symlink" >&2; exit 1; }
+  equals "$(readlink "$ARCHON_HOME/workspaces/owner/other/source")" "$STUB_BIN/elsewhere/repo"
+
+  [ -d "$ARCHON_HOME/workspaces/owner/cloned/source" ] ||
+    { echo "expected workspaces/owner/cloned/source to remain a directory" >&2; exit 1; }
+  contains "$(cat "$ARCHON_HOME/workspaces/owner/cloned/source/file")" x
+}
+
+@test "a scratch named through a symlink still matches the physical path Archon recorded" {
+  command -v sqlite3 >/dev/null || skip "no sqlite3"
+  seed_archon_fixture
+  ln -s "$SCR" "$STUB_BIN/alias"
+
+  release_archon_registration "$STUB_BIN/alias"
+
+  equals "$(sqlite3 "$ARCHON_HOME/archon.db" 'select id from remote_agent_codebases order by id')" "$(printf 'other\nsibling')"
+  if [ -L "$ARCHON_HOME/workspaces/owner/repo/source" ] || [ -e "$ARCHON_HOME/workspaces/owner/repo/source" ]; then
+    echo "expected workspaces/owner/repo/source to be gone" >&2
+    exit 1
+  fi
+}
+
+@test "with no Archon database, release touches nothing and fails nothing" {
+  command -v sqlite3 >/dev/null || skip "no sqlite3"
+  ARCHON_HOME="$STUB_BIN/empty-archon-home"
+  export ARCHON_HOME
+  mkdir -p "$ARCHON_HOME/workspaces/owner/other"
+  ln -s "$STUB_BIN/elsewhere/repo" "$ARCHON_HOME/workspaces/owner/other/source"
+  SCR="$(mktemp -d "$STUB_BIN/scratch.XXXXXX")"
+
+  run release_archon_registration "$SCR"
+
+  equals "$status" 0
+  equals "$(readlink "$ARCHON_HOME/workspaces/owner/other/source")" "$STUB_BIN/elsewhere/repo"
+}
