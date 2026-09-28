@@ -48,6 +48,12 @@ field() {
   printf '%s' "$1" | jq -r ".$2"
 }
 
+# How many times merge read the pull request, through `gh pr view` or the
+# GraphQL query the merge-queue strategy uses.
+reads() {
+  grep -c -e 'pr view' -e 'pullRequest(number' "$CALL_LOG"
+}
+
 @test "merge calls no tool and merges nothing when the slice was not delivered" {
   rc=0; out="$(merge --delivered false --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
@@ -88,6 +94,9 @@ field() {
   equals "$rc" 0
   equals "$(grep 'pr merge' "$CALL_LOG")" "$(printf 'gh\tpr merge 42 -R owner/repo')"
   equals "$(field "$out" strategy)" merge-queue
+  equals "$(field "$out" merged)" true
+  equals "$(field "$out" pr_url)" "https://github.com/owner/repo/pull/42"
+  contains "$(grep 'pullRequest(number' "$CALL_LOG")" "-f owner=owner -f name=repo -F number=42"
 }
 
 @test "merge squashes when repos.json names only other repositories" {
@@ -124,7 +133,7 @@ field() {
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "Pull request is not mergeable"
-  equals "$(grep -c 'pr view' "$CALL_LOG")" 1
+  equals "$(reads)" 1
 }
 
 @test "merge polls an open PR until the forge reports it merged" {
@@ -132,7 +141,7 @@ field() {
   rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" true
-  equals "$(grep -c 'pr view' "$CALL_LOG")" 3
+  equals "$(reads)" 3
 }
 
 queue_repo() {
@@ -147,7 +156,7 @@ queue_repo() {
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "merge queue dropped"
-  equals "$(grep -c 'pr view' "$CALL_LOG")" 3
+  equals "$(reads)" 3
 }
 
 @test "merge reports merged when the re-read after an unqueued read finds the PR merged" {
@@ -156,7 +165,7 @@ queue_repo() {
   rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" true
-  equals "$(grep -c 'pr view' "$CALL_LOG")" 3
+  equals "$(reads)" 3
 }
 
 @test "merge disables auto-merge and dequeues a PR still queued at the time limit" {
@@ -167,8 +176,8 @@ queue_repo() {
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "dequeued at the deadline"
   contains "$(cat "$CALL_LOG")" "$(printf 'gh\tpr merge 42 -R owner/repo --disable-auto')"
-  contains "$(grep 'api graphql' "$CALL_LOG")" "id=PR_stub42"
-  equals "$(grep -c 'pr view' "$CALL_LOG")" 2
+  contains "$(grep dequeuePullRequest "$CALL_LOG")" "id=PR_stub42"
+  equals "$(reads)" 2
 }
 
 @test "merge only disables auto-merge on a queue PR not yet queued at the time limit" {
@@ -179,7 +188,7 @@ queue_repo() {
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "dequeued at the deadline"
   contains "$(cat "$CALL_LOG")" "--disable-auto"
-  lacks "$(cat "$CALL_LOG")" "api graphql"
+  lacks "$(cat "$CALL_LOG")" dequeuePullRequest
 }
 
 @test "merge reports merged when the read after the deadline dequeue finds the PR merged" {
@@ -208,7 +217,7 @@ queue_repo() {
   rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" true
-  equals "$(grep -c 'pr view' "$CALL_LOG")" 4
+  equals "$(reads)" 4
 }
 
 @test "merge ignores the merge queue for a squashed PR" {
@@ -216,7 +225,7 @@ queue_repo() {
   rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" true
-  equals "$(grep -c 'pr view' "$CALL_LOG")" 3
+  equals "$(reads)" 3
 }
 
 @test "merge reports a PR the forge closed without merging" {

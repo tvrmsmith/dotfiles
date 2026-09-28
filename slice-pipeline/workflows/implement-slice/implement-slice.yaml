@@ -158,7 +158,7 @@ nodes:
 
   # Closing the bead unblocks every slice that depends on it, so only a merge
   # the forge confirmed reaches this node: merge reports merged true only
-  # after `gh pr view` reads MERGED, never on the merge command's exit status
+  # after a forge read returns MERGED, never on the merge command's exit status
   # alone. Default trigger rule, since the `when` already requires merge to
   # have produced output. The timeout covers one `bd close` and one
   # `git worktree remove`, which Archon's 2-minute default already fits.

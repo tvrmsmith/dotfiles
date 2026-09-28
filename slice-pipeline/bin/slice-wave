@@ -858,11 +858,19 @@ merge_strategy() {
 }
 
 # Sets the caller's state, queued, pr_id and pr_url from one read of pull
-# request $1 in repository $2, reading the caller's fields. A failed read sets
-# read_error instead and keeps the last read's values.
+# request $1 in repository $2. A failed read sets read_error instead and keeps
+# the last read's values. The merge-queue strategy reads through GraphQL,
+# since `gh pr view --json` offers no isInMergeQueue field.
 read_pr() {
 	local view
-	view="$(gh pr view "$1" -R "$2" --json "$fields" 2>&1)" || {
+	if [ "$strategy" = merge-queue ]; then
+		# shellcheck disable=SC2016
+		view="$(gh api graphql -f owner="${2%%/*}" -f name="${2#*/}" -F number="$1" \
+			-f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { state url isInMergeQueue id } } }' \
+			--jq .data.repository.pullRequest 2>&1)"
+	else
+		view="$(gh pr view "$1" -R "$2" --json state,url 2>&1)"
+	fi || {
 		read_error="$view"
 		return 1
 	}
@@ -914,9 +922,8 @@ merge_pr() {
 	# A failed read is polled too, since the forge may only be unreachable.
 	local poll="${SLICE_WAVE_MERGE_POLL_SECONDS:-30}" limit="${SLICE_WAVE_MERGE_LIMIT_SECONDS:-7200}"
 	local grace="${SLICE_WAVE_MERGE_DROP_GRACE_SECONDS:-5}"
-	local fields=state,url state="" queued=false pr_id="" read_error=""
+	local state="" queued=false pr_id="" read_error=""
 	local seen_queued=false suspect_drop=false dequeued
-	[ "$strategy" != merge-queue ] || fields+=,isInMergeQueue,id
 	while :; do
 		if read_pr "$pr" "$repo"; then
 			case "$state" in
