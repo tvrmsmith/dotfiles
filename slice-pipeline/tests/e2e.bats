@@ -28,9 +28,10 @@ load helpers/e2e-cleanup
 # so claim's preflight passes, then drives one small bead through the real
 # pipeline: claim, a real model build, verify, a real no-mistakes validate
 # drive against that repository's forge, and release. Teardown closes the
-# pull request the drive opened and deletes its remote branch, so a run
-# leaves the target repository exactly as it found it, aside from a closed,
-# branch-deleted pull request.
+# pull request the drive opened, deletes its remote branch, and releases
+# Archon's registration of the scratch clone as the target repository's
+# codebase, so a run leaves the target repository exactly as it found it,
+# aside from a closed, branch-deleted pull request.
 #
 # SLICE_E2E_CLONE_URL, when set, is the URL the suite clones SLICE_E2E_REPO
 # from instead of gh's default, for a machine whose git credential for that
@@ -39,9 +40,10 @@ load helpers/e2e-cleanup
 # and -R, so the clone URL can use any host alias git knows.
 #
 # SLICE_E2E_KEEP=1 keeps the scratch clone, the run log and Archon's worktree
-# for inspection instead of removing them, and leaves the pull request and its
-# branch open too - the live artifacts are more useful than a clean target
-# while debugging a run.
+# for inspection instead of removing them, leaves the pull request and its
+# branch open too, and leaves Archon's registration of the scratch clone in
+# place, since the live artifacts are more useful than a clean target while
+# debugging a run.
 #
 # One run happens in setup_file, and each test below checks one fact about
 # what it left behind. The checks read git, the tracker and the pull request
@@ -72,6 +74,7 @@ setup_file() {
   SCRATCH="$(mktemp -d)"
   export SCRATCH
   export REPO="$SCRATCH/repo" SOURCE="$SCRATCH/source" RUN_LOG="$SCRATCH/run.log"
+  export ARCHON_SNAPSHOT="$SCRATCH/archon-codebases.sql"
 
   export GH_REPO="$SLICE_E2E_REPO"
   if [ -n "${SLICE_E2E_CLONE_URL:-}" ]; then
@@ -113,6 +116,10 @@ setup_file() {
   mkdir -p "$SOURCE/.archon/workflows/slice-pipeline"
   cp -R "$TREE/workflows/implement-slice" "$SOURCE/.archon/workflows/slice-pipeline/"
 
+  # Before the run, so teardown can tell a codebase row Archon rewrote to point
+  # at the scratch clone from one the run created.
+  snapshot_archon_registrations "$ARCHON_SNAPSHOT" 2>&3
+
   # This tree's bin first, so the nodes run the slice-wave under test rather
   # than whatever install.sh last linked onto the machine.
   local rc=0
@@ -141,11 +148,19 @@ teardown_file() {
   [ -n "${SCRATCH:-}" ] || return 0
   if [ "${SLICE_E2E_KEEP:-}" = 1 ]; then
     echo "# kept scratch at $SCRATCH (run log: $RUN_LOG, run: ${RUN_ID:-none}, pr: ${PR_NUMBER:-none})" >&3
+    # The physical path is what Archon recorded, and it can no longer be
+    # resolved once the kept scratch dir is deleted. The snapshot is copied
+    # out of the scratch dir for the same reason.
+    local phys snapshot
+    phys="$(cd "$SCRATCH" && pwd -P)" || phys="$SCRATCH"
+    snapshot="$(mktemp)" && cp "$ARCHON_SNAPSHOT" "$snapshot" || snapshot="$ARCHON_SNAPSHOT"
+    echo "# Archon still registers the scratch clone as $SLICE_E2E_REPO's codebase; a later run from another clone fails until it is released, e.g. bash -c '. $TREE/tests/helpers/e2e-cleanup.bash; release_archon_registration $phys $snapshot'" >&3
     return 0
   fi
   (cd "$REPO" && archon complete "e2e/$BEAD" >/dev/null 2>&1) ||
     echo "# archon complete e2e/$BEAD failed; run 'archon isolation list' to find the worktree" >&3
   close_slice_branch "$SLICE_E2E_REPO" "${BRANCH:-}" "$REPO" 2>&3
+  release_archon_registration "$SCRATCH" "$ARCHON_SNAPSHOT" 2>&3
   rm -rf "$SCRATCH"
 }
 

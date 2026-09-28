@@ -56,15 +56,17 @@ scratch repo with no remote. It clones that repository to scratch, runs
 pipeline - claim, a real model build, verify, a real no-mistakes validate
 drive, and release - and checks the branch, the committed code, the bead and
 the pull request's findings record comment directly. Teardown closes the pull
-request and deletes its remote branch. It spends model tokens, pushes a
-branch and opens a pull request on a real repository, and can go red on a bad
-model run, so it skips unless `SLICE_E2E=1`, and skips with a clear message
+request, deletes its remote branch, and releases Archon's registration of the
+scratch clone as the target repository's codebase. It spends model tokens,
+pushes a branch and opens a pull request on a real repository, and can go red
+on a bad model run, so it skips unless `SLICE_E2E=1`, and skips with a clear message
 when `SLICE_E2E_REPO` is unset.
 `SLICE_E2E_CLONE_URL` optionally overrides the URL it clones from, for a
 machine whose git credential for gh's default URL belongs to a different
 account than gh's; gh still reaches the repository through `SLICE_E2E_REPO`.
 `SLICE_E2E_KEEP=1` keeps the scratch repo and Archon's worktree for
-inspection, and leaves the pull request and its branch open too.
+inspection, leaves the pull request and its branch open too, and leaves
+Archon's registration of the scratch clone in place.
 An Archon run from source needs `CLAUDE_BIN_PATH` pointing at an up-to-date
 `claude`, or its prompt nodes fail on the older copy bundled in its SDK.
 
