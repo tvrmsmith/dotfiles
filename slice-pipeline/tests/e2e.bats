@@ -1,23 +1,53 @@
 load helpers/assert
+load helpers/e2e-cleanup
 
-# The one suite that runs the real pipeline: this tree's workflow, under the
-# real engine, with a real model building a real bead. The other suites each
-# stub out a half (slice-wave.bats the engine, the fixtures the script, the
-# wiring suite the model), so only this one shows that `build` produces a
-# commit at all and that the four nodes hand off to each other for real.
+# The one suite that runs the real pipeline: a real GitHub target, this tree's
+# workflow under the real engine, and a real model building a real bead. The
+# other suites each stub out a layer (slice-wave.bats the engine, the
+# fixtures the script, the wiring suite the model), so only this one shows
+# that the five nodes - claim, build, verify, validate, release - hand off to
+# each other for real, against a repository claim's own preflight checks
+# actually have to accept.
 #
-# Opt-in, because a run spends model tokens and can go red
-# on a bad model run rather than on broken code:
+# claim now refuses a target it cannot open pull requests on or that
+# no-mistakes has never validated (see check_target_forge and
+# check_target_no_mistakes in bin/slice-wave), so the scratch repo the old
+# version of this suite built - a local bare origin, never run through
+# `no-mistakes init` - no longer clears claim and cannot stand in for a real
+# target. This version clones a real repository instead.
 #
-#   SLICE_E2E=1 bats slice-pipeline/tests/e2e.bats
+# Opt-in, because a run spends model tokens, pushes a branch and opens a pull
+# request on a real repository, and can go red on a bad model run rather than
+# on broken code:
 #
-# SLICE_E2E_KEEP=1 keeps the scratch repo, the run log and Archon's worktree
-# for inspection instead of removing them.
+#   SLICE_E2E=1 SLICE_E2E_REPO=owner/name bats slice-pipeline/tests/e2e.bats
+#
+# SLICE_E2E_REPO names a GitHub repository (owner/name) you can push to and
+# open pull requests on; the suite skips with a clear message when it is
+# unset. It clones that repository to scratch, runs `no-mistakes init` there
+# so claim's preflight passes, then drives one small bead through the real
+# pipeline: claim, a real model build, verify, a real no-mistakes validate
+# drive against that repository's forge, and release. Teardown closes the
+# pull request the drive opened and deletes its remote branch, so a run
+# leaves the target repository exactly as it found it, aside from a closed,
+# branch-deleted pull request.
+#
+# SLICE_E2E_CLONE_URL, when set, is the URL the suite clones SLICE_E2E_REPO
+# from instead of gh's default, for a machine whose git credential for that
+# URL belongs to a different account than gh's, which makes no-mistakes' push
+# fail. gh still reaches the repository through SLICE_E2E_REPO, via GH_REPO
+# and -R, so the clone URL can use any host alias git knows.
+#
+# SLICE_E2E_KEEP=1 keeps the scratch clone, the run log and Archon's worktree
+# for inspection instead of removing them, and leaves the pull request and its
+# branch open too - the live artifacts are more useful than a clean target
+# while debugging a run.
 #
 # One run happens in setup_file, and each test below checks one fact about
-# what it left behind. The checks read git and the tracker directly, never the
-# workflow's own report, because a workflow that reports success without
-# having done the work is the failure this suite exists to catch.
+# what it left behind. The checks read git, the tracker and the pull request
+# directly, never the workflow's own report, because a workflow that reports
+# success without having done the work is the failure this suite exists to
+# catch.
 
 TREE="$(cd "${BATS_TEST_DIRNAME}/.." && pwd)"
 
@@ -33,8 +63,9 @@ current branch.'
 
 setup_file() {
   [ "${SLICE_E2E:-}" = 1 ] || skip "set SLICE_E2E=1 to run the real pipeline"
+  [ -n "${SLICE_E2E_REPO:-}" ] || skip "set SLICE_E2E_REPO=owner/name to a GitHub repository you can push to and open pull requests on"
   local tool
-  for tool in archon bd bats git jq; do
+  for tool in archon bd bats git jq gh no-mistakes; do
     command -v "$tool" >/dev/null || skip "no $tool"
   done
 
@@ -42,11 +73,15 @@ setup_file() {
   export SCRATCH
   export REPO="$SCRATCH/repo" SOURCE="$SCRATCH/source" RUN_LOG="$SCRATCH/run.log"
 
-  # Archon cuts its worktree from origin/<base>, so the repo needs an origin,
-  # and verify-commit resolves its base from origin/HEAD. A clone of an empty
-  # bare repo sets neither head, hence the push and the set-head.
-  git init --quiet --bare --initial-branch=main "$SCRATCH/origin.git"
-  git clone --quiet "$SCRATCH/origin.git" "$REPO" 2>/dev/null
+  export GH_REPO="$SLICE_E2E_REPO"
+  if [ -n "${SLICE_E2E_CLONE_URL:-}" ]; then
+    git clone --quiet "$SLICE_E2E_CLONE_URL" "$REPO" >"$RUN_LOG" 2>&1
+  else
+    gh repo clone "$SLICE_E2E_REPO" "$REPO" -- --quiet >"$RUN_LOG" 2>&1
+  fi || {
+    echo "# cannot clone $SLICE_E2E_REPO; see $RUN_LOG" >&3
+    exit 1
+  }
 
   # Repo-local, not GIT_CONFIG_GLOBAL as the other suites use: the model's
   # commit happens in Archon's worktree, which shares this config but not the
@@ -55,11 +90,11 @@ setup_file() {
   git -C "$REPO" config user.name "Slice E2E"
   git -C "$REPO" config user.email e2e@example.com
   git -C "$REPO" config commit.gpgsign false
-  printf '# scratch\n' >"$REPO/README.md"
-  git -C "$REPO" add README.md
-  git -C "$REPO" commit --quiet -m base
-  git -C "$REPO" push --quiet origin main 2>/dev/null
-  git -C "$REPO" remote set-head origin main
+
+  (cd "$REPO" && no-mistakes init) >>"$RUN_LOG" 2>&1 || {
+    echo "# no-mistakes init failed on $SLICE_E2E_REPO; see $RUN_LOG" >&3
+    exit 1
+  }
 
   # Stealth keeps the tracker out of git status, so the model starts from a
   # clean tree.
@@ -83,21 +118,34 @@ setup_file() {
   local rc=0
   (cd "$REPO" && PATH="$TREE/bin:$PATH" archon workflow run implement-slice \
     --workflow-source "$SOURCE" --branch "e2e/$BEAD" \
-    --input bead="$BEAD" --input beads_dir="$BEADS_DIR") >"$RUN_LOG" 2>&1 || rc=$?
+    --input bead="$BEAD" --input beads_dir="$BEADS_DIR") >>"$RUN_LOG" 2>&1 || rc=$?
   export RUN_RC="$rc"
 
   RUN_ID="$(cd "$REPO" && archon workflow runs --json --limit 1 | jq -r '.runs[0].id // empty')"
   export RUN_ID
+
+  # validate's own output_format is the one place a pull request number
+  # appears; found the same way verify's sha is below, since the node's
+  # output can sit at any depth in --verbose's tree depending on how the
+  # engine nests a returns node's result.
+  local result
+  result="$(run_json --verbose)"
+  PR_NUMBER="$(printf '%s' "$result" | jq -r \
+    '[.. | objects | select(.pr_number? != null and .record_posted? != null) | .pr_number] | first // empty')"
+  DELIVERED="$(printf '%s' "$result" | jq -r \
+    '[.. | objects | select(.delivered? != null and .record_posted? != null) | .delivered] | first | select(. != null)')"
+  export PR_NUMBER DELIVERED
 }
 
 teardown_file() {
   [ -n "${SCRATCH:-}" ] || return 0
   if [ "${SLICE_E2E_KEEP:-}" = 1 ]; then
-    echo "# kept scratch at $SCRATCH (run log: $RUN_LOG, run: ${RUN_ID:-none})" >&3
+    echo "# kept scratch at $SCRATCH (run log: $RUN_LOG, run: ${RUN_ID:-none}, pr: ${PR_NUMBER:-none})" >&3
     return 0
   fi
   (cd "$REPO" && archon complete "e2e/$BEAD" >/dev/null 2>&1) ||
     echo "# archon complete e2e/$BEAD failed; run 'archon isolation list' to find the worktree" >&3
+  close_slice_branch "$SLICE_E2E_REPO" "${BRANCH:-}" "$REPO" 2>&3
   rm -rf "$SCRATCH"
 }
 
@@ -150,12 +198,36 @@ diagnose() {
 
 @test "verify reported the sha the branch actually points at" {
   reported="$(run_json --verbose | jq -r '
-    [.. | objects | select(.verified? != null and .sha? != null) | .sha] | first // empty')"
+    [.nodes[]? | select(.nodeId == "verify") | .outputPreview | fromjson? | .sha] | first // empty')"
   equals "$reported" "$(git -C "$REPO" rev-parse "$BRANCH")"
 }
 
-@test "a landed slice keeps its claim instead of going back on the ready list" {
-  bead_json="$(bd show "$BEAD" --json)"
-  equals "$(printf '%s' "$bead_json" | jq -r 'if type == "array" then .[0] else . end | .status')" in_progress
-  lacks "$(bd ready --json | jq -r '.[]?.id')" "$BEAD"
+@test "a delivered slice keeps its claim and an undelivered one is released" {
+  status="$(bd show "$BEAD" --json | jq -r 'if type == "array" then .[0] else . end | .status')"
+  if [ "$DELIVERED" = true ]; then
+    equals "$status" in_progress
+    lacks "$(bd ready --json | jq -r '.[]?.id')" "$BEAD"
+  else
+    equals "$status" open
+  fi
+}
+
+@test "the findings record comment landed on the pull request" {
+  [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" -gt 0 ] 2>/dev/null || {
+    echo "no pr_number in validate's output; see $RUN_LOG" >&2
+    exit 1
+  }
+  record="$(gh api "repos/$SLICE_E2E_REPO/issues/$PR_NUMBER/comments" \
+    --jq '[.[].body | select(startswith("<!-- slice-pipeline:findings-record -->"))] | last // empty')"
+  [ -n "$record" ] || { echo "no findings record comment on PR $PR_NUMBER" >&2; exit 1; }
+  contains "$record" "Drive mode: yes"
+  printf '%s\n' "$record" | grep -Eq '^Outcome: (checks-passed|passed)$' || {
+    printf 'the findings record names no green outcome:\n%s\n' "$record" >&2
+    exit 1
+  }
+  lacks "$record" "Findings history: unknown"
+  printf '%s\n' "$record" | grep -Eq '^(Ask-user findings|Findings history: none$)' || {
+    printf 'the findings record carries no findings-history line:\n%s\n' "$record" >&2
+    exit 1
+  }
 }
