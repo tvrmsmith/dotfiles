@@ -137,14 +137,11 @@ setup_file() {
   RUN_ID="$(cd "$REPO" && archon workflow runs --json --limit 1 | jq -r '.runs[0].id // empty')"
   export RUN_ID
 
-  # validate's output is the one that carries record_posted beside a pull
-  # request number, which is what tells it from merge's; found the same way
-  # verify's sha is below, since the node's output can sit at any depth in
-  # --verbose's tree depending on how the engine nests a node's result.
-  local result
-  result="$(run_json --verbose)"
-  PR_NUMBER="$(printf '%s' "$result" | jq -r \
-    '[.. | objects | select(.pr_number? != null and .record_posted? != null) | .pr_number] | first // empty')"
+  # Read from validate's node preview, the same way verify's sha is below.
+  # Only the returns node's result appears as a parsed object in --verbose's
+  # tree, and merge, not validate, is the returns node now.
+  PR_NUMBER="$(run_json --verbose | jq -r '
+    [.nodes[]? | select(.nodeId == "validate") | .outputPreview | fromjson? | .pr_number] | first // empty')"
   export PR_NUMBER
 }
 
