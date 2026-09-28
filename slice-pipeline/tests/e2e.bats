@@ -74,6 +74,7 @@ setup_file() {
   SCRATCH="$(mktemp -d)"
   export SCRATCH
   export REPO="$SCRATCH/repo" SOURCE="$SCRATCH/source" RUN_LOG="$SCRATCH/run.log"
+  export ARCHON_SNAPSHOT="$SCRATCH/archon-codebases.sql"
 
   export GH_REPO="$SLICE_E2E_REPO"
   if [ -n "${SLICE_E2E_CLONE_URL:-}" ]; then
@@ -115,6 +116,10 @@ setup_file() {
   mkdir -p "$SOURCE/.archon/workflows/slice-pipeline"
   cp -R "$TREE/workflows/implement-slice" "$SOURCE/.archon/workflows/slice-pipeline/"
 
+  # Before the run, so teardown can tell a codebase row Archon rewrote to point
+  # at the scratch clone from one the run created.
+  snapshot_archon_registrations "$ARCHON_SNAPSHOT" 2>&3
+
   # This tree's bin first, so the nodes run the slice-wave under test rather
   # than whatever install.sh last linked onto the machine.
   local rc=0
@@ -147,13 +152,13 @@ teardown_file() {
     # resolved once the kept scratch dir is deleted.
     local phys
     phys="$(cd "$SCRATCH" && pwd -P)" || phys="$SCRATCH"
-    echo "# Archon still registers the scratch clone as $SLICE_E2E_REPO's codebase; a later run from another clone fails until it is released, e.g. bash -c '. $TREE/tests/helpers/e2e-cleanup.bash; release_archon_registration $phys'" >&3
+    echo "# Archon still registers the scratch clone as $SLICE_E2E_REPO's codebase; a later run from another clone fails until it is released, e.g. bash -c '. $TREE/tests/helpers/e2e-cleanup.bash; release_archon_registration $phys $phys/${ARCHON_SNAPSHOT##*/}'" >&3
     return 0
   fi
   (cd "$REPO" && archon complete "e2e/$BEAD" >/dev/null 2>&1) ||
     echo "# archon complete e2e/$BEAD failed; run 'archon isolation list' to find the worktree" >&3
   close_slice_branch "$SLICE_E2E_REPO" "${BRANCH:-}" "$REPO" 2>&3
-  release_archon_registration "$SCRATCH" 2>&3
+  release_archon_registration "$SCRATCH" "$ARCHON_SNAPSHOT" 2>&3
   rm -rf "$SCRATCH"
 }
 

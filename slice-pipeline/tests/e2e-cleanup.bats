@@ -72,16 +72,19 @@ teardown() {
 # $STUB_BIN instead of reusing the gh/git fixtures.
 
 # Seeds a throwaway Archon home under $STUB_BIN: the archon.db schema, a
-# scratch clone's codebase row plus two rows that must survive (an unrelated
-# codebase and a sibling path sharing the scratch dir's name as a prefix),
-# the isolation row that depends on the scratch codebase, and the workspaces
-# symlinks and real directory release_archon_registration must leave alone.
+# scratch clone's codebase row plus three rows that must survive (an
+# unrelated codebase, a sibling path sharing the scratch dir's name as a
+# prefix, and an Archon-managed clone), the isolation rows that depend on the
+# scratch and managed codebases, and the workspaces symlinks and real
+# directory release_archon_registration must leave alone. Given $1, it
+# snapshots the codebases into that file before adding the scratch row, as
+# e2e.bats does before its run.
 seed_archon_fixture() {
   ARCHON_HOME="$STUB_BIN/archon-home"
   export ARCHON_HOME
   mkdir -p "$ARCHON_HOME"
   sqlite3 "$ARCHON_HOME/archon.db" <<'SQL'
-CREATE TABLE remote_agent_codebases (id TEXT PRIMARY KEY, name TEXT NOT NULL, default_cwd TEXT NOT NULL);
+CREATE TABLE remote_agent_codebases (id TEXT PRIMARY KEY, name TEXT NOT NULL, default_cwd TEXT NOT NULL, default_branch TEXT);
 CREATE TABLE remote_agent_isolation_environments (id TEXT PRIMARY KEY, codebase_id TEXT NOT NULL REFERENCES remote_agent_codebases(id) ON DELETE CASCADE);
 SQL
 
@@ -90,9 +93,14 @@ SQL
   PHYS="$(cd "$SCR" && pwd -P)"
 
   sqlite3 "$ARCHON_HOME/archon.db" <<SQL
-INSERT INTO remote_agent_codebases VALUES ('scratch', 'owner/repo', '$PHYS/repo');
-INSERT INTO remote_agent_codebases VALUES ('other', 'owner/other', '$STUB_BIN/elsewhere/repo');
-INSERT INTO remote_agent_codebases VALUES ('sibling', 'owner/sib', '${PHYS}-sibling/repo');
+INSERT INTO remote_agent_codebases VALUES ('other', 'owner/other', '$STUB_BIN/elsewhere/repo', 'main');
+INSERT INTO remote_agent_codebases VALUES ('sibling', 'owner/sib', '${PHYS}-sibling/repo', 'main');
+INSERT INTO remote_agent_codebases VALUES ('cloned', 'owner/cloned', '$ARCHON_HOME/workspaces/owner/cloned/source', 'trunk');
+INSERT INTO remote_agent_isolation_environments VALUES ('env2', 'cloned');
+SQL
+  [ -z "${1:-}" ] || snapshot_archon_registrations "$1"
+  sqlite3 "$ARCHON_HOME/archon.db" <<SQL
+INSERT INTO remote_agent_codebases VALUES ('scratch', 'owner/repo', '$PHYS/repo', 'main');
 INSERT INTO remote_agent_isolation_environments VALUES ('env1', 'scratch');
 SQL
 
@@ -112,8 +120,8 @@ SQL
 
   release_archon_registration "$SCR"
 
-  equals "$(sqlite3 "$ARCHON_HOME/archon.db" 'select id from remote_agent_codebases order by id')" "$(printf 'other\nsibling')"
-  equals "$(sqlite3 "$ARCHON_HOME/archon.db" 'select count(*) from remote_agent_isolation_environments')" 0
+  equals "$(sqlite3 "$ARCHON_HOME/archon.db" 'select id from remote_agent_codebases order by id')" "$(printf 'cloned\nother\nsibling')"
+  equals "$(sqlite3 "$ARCHON_HOME/archon.db" 'select id from remote_agent_isolation_environments')" env2
 }
 
 @test "releasing a scratch clone removes the source symlink into it and no other" {
@@ -144,7 +152,7 @@ SQL
 
   release_archon_registration "$STUB_BIN/alias"
 
-  equals "$(sqlite3 "$ARCHON_HOME/archon.db" 'select id from remote_agent_codebases order by id')" "$(printf 'other\nsibling')"
+  equals "$(sqlite3 "$ARCHON_HOME/archon.db" 'select id from remote_agent_codebases order by id')" "$(printf 'cloned\nother\nsibling')"
   if [ -L "$ARCHON_HOME/workspaces/owner/repo/source" ] || [ -e "$ARCHON_HOME/workspaces/owner/repo/source" ]; then
     echo "expected workspaces/owner/repo/source to be gone" >&2
     exit 1
@@ -183,4 +191,44 @@ SQL
     echo "expected workspaces/owner/repo/source to be gone" >&2
     exit 1
   fi
+}
+
+@test "releasing an already deleted scratch by its recorded path still drops its row and link" {
+  command -v sqlite3 >/dev/null || skip "no sqlite3"
+  seed_archon_fixture
+  rm -rf "$SCR"
+
+  release_archon_registration "$PHYS"
+
+  equals "$(sqlite3 "$ARCHON_HOME/archon.db" 'select id from remote_agent_codebases order by id')" "$(printf 'cloned\nother\nsibling')"
+  if [ -L "$ARCHON_HOME/workspaces/owner/repo/source" ] || [ -e "$ARCHON_HOME/workspaces/owner/repo/source" ]; then
+    echo "expected workspaces/owner/repo/source to be gone" >&2
+    exit 1
+  fi
+  equals "$(readlink "$ARCHON_HOME/workspaces/owner/sib/source")" "${PHYS}-sibling/repo"
+}
+
+@test "a codebase row that predates the run and was rewritten into scratch is restored, not deleted" {
+  command -v sqlite3 >/dev/null || skip "no sqlite3"
+  seed_archon_fixture "$STUB_BIN/snapshot.sql"
+  sqlite3 "$ARCHON_HOME/archon.db" "UPDATE remote_agent_codebases SET default_cwd = '$PHYS/repo', default_branch = 'e2e/demo' WHERE id = 'cloned'"
+
+  release_archon_registration "$SCR" "$STUB_BIN/snapshot.sql"
+
+  equals "$(sqlite3 "$ARCHON_HOME/archon.db" 'select id from remote_agent_codebases order by id')" "$(printf 'cloned\nother\nsibling')"
+  equals "$(sqlite3 -separator ' ' "$ARCHON_HOME/archon.db" "select default_cwd, default_branch from remote_agent_codebases where id = 'cloned'")" \
+    "$ARCHON_HOME/workspaces/owner/cloned/source trunk"
+  equals "$(sqlite3 "$ARCHON_HOME/archon.db" 'select id from remote_agent_isolation_environments')" env2
+}
+
+@test "a snapshot taken with no Archon database is empty and fails nothing" {
+  ARCHON_HOME="$STUB_BIN/empty-archon-home"
+  export ARCHON_HOME
+
+  snapshot_archon_registrations "$STUB_BIN/snapshot.sql"
+
+  [ -f "$STUB_BIN/snapshot.sql" ] && [ ! -s "$STUB_BIN/snapshot.sql" ] ||
+    { echo "expected an empty snapshot file" >&2; exit 1; }
+  [ ! -e "$ARCHON_HOME/archon.db" ] ||
+    { echo "expected no archon.db to be created" >&2; exit 1; }
 }

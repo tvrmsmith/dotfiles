@@ -40,9 +40,15 @@ close_slice_branch() {
 # both, matched against the scratch dir as given and its physical path
 # (`cd` resolves the same symlink hops Archon did when it recorded the row),
 # so a sibling path sharing the scratch dir's name as a prefix is left alone.
+#
+# A codebase row that already existed is not Archon's new registration: when
+# it points at an Archon-managed clone, Archon rewrites its default_cwd to the
+# scratch clone instead of inserting a row. Given $2, a file written by
+# snapshot_archon_registrations before the run, a matching row whose id is in
+# it gets its default_cwd and default_branch back instead of being deleted.
 # Never fails the caller; problems go to stderr for a human to finish by hand.
 release_archon_registration() {
-	local scratch="$1" home db phys
+	local scratch="$1" snapshot="${2:-}" home db phys
 	home="${ARCHON_HOME:-$HOME/.archon}"
 	db="$home/archon.db"
 
@@ -50,13 +56,25 @@ release_archon_registration() {
 
 	if [ -f "$db" ] && ! command -v sqlite3 >/dev/null 2>&1; then
 		echo "# no sqlite3; delete the codebase row for $scratch from $db by hand" >&2
+	elif [ -f "$db" ] && [ -n "$snapshot" ] && [ ! -r "$snapshot" ]; then
+		echo "# cannot read snapshot $snapshot; release Archon's registration of $scratch in $db by hand" >&2
 	elif [ -f "$db" ]; then
 		local where out
 		where="$(_archon_path_match_sql default_cwd "$scratch")"
 		if [ -n "$phys" ] && [ "$phys" != "$scratch" ]; then
 			where="$where OR $(_archon_path_match_sql default_cwd "$phys")"
 		fi
-		out="$(sqlite3 "$db" "PRAGMA foreign_keys=ON; DELETE FROM remote_agent_codebases WHERE $where;" 2>&1)" ||
+		out="$({
+			echo "PRAGMA foreign_keys=ON; BEGIN;"
+			echo "CREATE TEMP TABLE snap (id TEXT PRIMARY KEY, default_cwd TEXT, default_branch TEXT);"
+			[ -z "$snapshot" ] || cat "$snapshot"
+			echo "UPDATE remote_agent_codebases SET
+				default_cwd = (SELECT default_cwd FROM snap WHERE snap.id = remote_agent_codebases.id),
+				default_branch = (SELECT default_branch FROM snap WHERE snap.id = remote_agent_codebases.id)
+				WHERE ($where) AND id IN (SELECT id FROM snap);"
+			echo "DELETE FROM remote_agent_codebases WHERE ($where) AND id NOT IN (SELECT id FROM snap);"
+			echo "COMMIT;"
+		} | sqlite3 -bail "$db" 2>&1)" ||
 			echo "# cannot release Archon's registration of $scratch in $db; delete it by hand. sqlite3 said: $out" >&2
 	fi
 
@@ -78,6 +96,22 @@ release_archon_registration() {
 	done
 
 	return 0
+}
+
+# Writes every remote_agent_codebases row's id, default_cwd and default_branch
+# to $1 as INSERTs into the snap table release_archon_registration reads.
+# Leaves $1 empty when there is no Archon database or no sqlite3; never fails.
+snapshot_archon_registrations() {
+	local file="$1" db out
+	db="${ARCHON_HOME:-$HOME/.archon}/archon.db"
+	: >"$file" || return 0
+	[ -f "$db" ] && command -v sqlite3 >/dev/null 2>&1 || return 0
+	out="$(sqlite3 -readonly -cmd '.mode insert snap' "$db" \
+		'SELECT id, default_cwd, default_branch FROM remote_agent_codebases;' 2>&1)" || {
+		echo "# cannot snapshot Archon's codebases in $db; teardown will delete, not restore, any it matches. sqlite3 said: $out" >&2
+		return 0
+	}
+	printf '%s\n' "$out" >"$file"
 }
 
 # Builds a `column matches P or starts with P/` SQL predicate for path $2,
