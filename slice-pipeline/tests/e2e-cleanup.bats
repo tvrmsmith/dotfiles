@@ -221,6 +221,25 @@ SQL
   equals "$(sqlite3 "$ARCHON_HOME/archon.db" 'select id from remote_agent_isolation_environments')" env2
 }
 
+@test "an unreadable snapshot skips the DB step, so a rewritten pre-existing row is not deleted" {
+  command -v sqlite3 >/dev/null || skip "no sqlite3"
+  bats_require_minimum_version 1.5.0
+  seed_archon_fixture "$STUB_BIN/snapshot.sql"
+  sqlite3 "$ARCHON_HOME/archon.db" "UPDATE remote_agent_codebases SET default_cwd = '$PHYS/repo', default_branch = 'e2e/demo' WHERE id = 'cloned'"
+
+  run --separate-stderr release_archon_registration "$SCR" "$STUB_BIN/missing.sql"
+
+  equals "$status" 0
+  contains "$stderr" "# cannot read snapshot"
+  equals "$(sqlite3 "$ARCHON_HOME/archon.db" 'select id from remote_agent_codebases order by id')" "$(printf 'cloned\nother\nscratch\nsibling')"
+  equals "$(sqlite3 -separator ' ' "$ARCHON_HOME/archon.db" "select default_cwd, default_branch from remote_agent_codebases where id = 'cloned'")" \
+    "$PHYS/repo e2e/demo"
+  if [ -L "$ARCHON_HOME/workspaces/owner/repo/source" ] || [ -e "$ARCHON_HOME/workspaces/owner/repo/source" ]; then
+    echo "expected workspaces/owner/repo/source to be gone" >&2
+    exit 1
+  fi
+}
+
 @test "a snapshot taken with no Archon database is empty and fails nothing" {
   ARCHON_HOME="$STUB_BIN/empty-archon-home"
   export ARCHON_HOME
