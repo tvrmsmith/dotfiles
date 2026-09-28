@@ -18,6 +18,7 @@ install_stubs() {
 	: > "$CALL_LOG"
 	unset BD_EXIT_CODE BD_SHOW_JSON GH_EXIT_CODE GH_VIEWER_PERMISSION \
 		GH_PR_LIST_JSON GH_PR_COMMENT_EXIT GH_PR_MERGE_EXIT GH_PR_VIEW_STATES \
+		GH_PR_DISABLE_AUTO_EXIT GH_API_GRAPHQL_EXIT \
 		NO_MISTAKES_RUN_SEQUENCE \
 		NO_MISTAKES_AXI_EXIT NO_MISTAKES_AXI_FIXTURE \
 		NO_MISTAKES_STATUS_EXIT NO_MISTAKES_STATUS_FIXTURE \
@@ -56,14 +57,31 @@ case "${1:-} ${2:-}" in
 		exit "${GH_PR_COMMENT_EXIT:-0}"
 		;;
 	"pr merge")
+		case " $* " in
+			*" --disable-auto "*)
+				[ "${GH_PR_DISABLE_AUTO_EXIT:-0}" -eq 0 ] || echo "GraphQL: auto-merge could not be disabled" >&2
+				exit "${GH_PR_DISABLE_AUTO_EXIT:-0}"
+				;;
+		esac
 		[ "${GH_PR_MERGE_EXIT:-0}" -eq 0 ] || echo "GraphQL: Pull request is not mergeable" >&2
 		exit "${GH_PR_MERGE_EXIT:-0}"
+		;;
+	"api graphql")
+		[ "${GH_API_GRAPHQL_EXIT:-0}" -eq 0 ] || echo "GraphQL: Could not dequeue pull request" >&2
+		exit "${GH_API_GRAPHQL_EXIT:-0}"
 		;;
 	"pr view")
 		# GH_PR_VIEW_STATES lists one state per call, space-separated, so a
 		# test can script a merge that lands after a few polls. Calls past
 		# the end repeat the last state, and FAIL makes that call exit 1. A
-		# state suffixed :queued reads as sitting in the merge queue.
+		# state suffixed :queued reads as sitting in the merge queue. Like real
+		# gh, it prints only the keys the call names after --json.
+		fields=""
+		prev=""
+		for arg in "$@"; do
+			[ "$prev" != --json ] || fields="$arg"
+			prev="$arg"
+		done
 		calls="$(cat "$STUB_BIN/pr-view-calls" 2>/dev/null || echo 0)"
 		echo $((calls + 1)) > "$STUB_BIN/pr-view-calls"
 		set -- ${GH_PR_VIEW_STATES:-MERGED}
@@ -72,7 +90,8 @@ case "${1:-} ${2:-}" in
 		[ "$1" != FAIL ] || { echo "gh: stub pr view configured to fail" >&2; exit 1; }
 		queued=false
 		[ "${1#*:}" != queued ] || queued=true
-		printf '{"state":"%s","url":"https://github.com/owner/repo/pull/42","isInMergeQueue":%s}\n' "${1%%:*}" "$queued"
+		printf '{"state":"%s","url":"https://github.com/owner/repo/pull/42","isInMergeQueue":%s,"id":"PR_stub42"}\n' "${1%%:*}" "$queued" |
+			jq -c --arg fields "$fields" '. as $pr | $fields | split(",") | map({(.): $pr[.]}) | add'
 		;;
 	*) printf '{"nameWithOwner":"owner/repo","viewerPermission":"%s"}\n' "${GH_VIEWER_PERMISSION:-WRITE}" ;;
 esac

@@ -24,7 +24,7 @@ setup() {
 
   # No run may read the machine's real repos.json, and no poll may sleep.
   export XDG_CONFIG_HOME="$STUB_BIN/config"
-  export SLICE_WAVE_MERGE_POLL_SECONDS=0
+  export SLICE_WAVE_MERGE_POLL_SECONDS=0 SLICE_WAVE_MERGE_DROP_GRACE_SECONDS=0
 
   OLD_PATH="$PATH"
   export PATH="$STUB_BIN:$PATH"
@@ -135,20 +135,75 @@ field() {
   equals "$(grep -c 'pr view' "$CALL_LOG")" 3
 }
 
-@test "merge fails at once when the merge queue drops a PR it had queued" {
+queue_repo() {
   mkdir -p "$XDG_CONFIG_HOME/slice-pipeline"
   printf '{"owner/repo":{"merge_queue":true}}\n' > "$XDG_CONFIG_HOME/slice-pipeline/repos.json"
-  export GH_PR_VIEW_STATES="OPEN:queued OPEN MERGED"
+}
+
+@test "merge fails once a re-read confirms the merge queue dropped a PR it had queued" {
+  queue_repo
+  export GH_PR_VIEW_STATES="OPEN:queued OPEN OPEN MERGED"
   rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "merge queue dropped"
+  equals "$(grep -c 'pr view' "$CALL_LOG")" 3
+}
+
+@test "merge reports merged when the re-read after an unqueued read finds the PR merged" {
+  queue_repo
+  export GH_PR_VIEW_STATES="OPEN:queued OPEN MERGED"
+  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" merged)" true
+  equals "$(grep -c 'pr view' "$CALL_LOG")" 3
+}
+
+@test "merge disables auto-merge and dequeues a PR still queued at the time limit" {
+  queue_repo
+  export SLICE_WAVE_MERGE_LIMIT_SECONDS=0 GH_PR_VIEW_STATES=OPEN:queued
+  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" merged)" false
+  contains "$(field "$out" reason)" "dequeued at the deadline"
+  contains "$(cat "$CALL_LOG")" "$(printf 'gh\tpr merge 42 -R owner/repo --disable-auto')"
+  contains "$(grep 'api graphql' "$CALL_LOG")" "id=PR_stub42"
   equals "$(grep -c 'pr view' "$CALL_LOG")" 2
 }
 
+@test "merge only disables auto-merge on a queue PR not yet queued at the time limit" {
+  queue_repo
+  export SLICE_WAVE_MERGE_LIMIT_SECONDS=0 GH_PR_VIEW_STATES=OPEN
+  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" merged)" false
+  contains "$(field "$out" reason)" "dequeued at the deadline"
+  contains "$(cat "$CALL_LOG")" "--disable-auto"
+  lacks "$(cat "$CALL_LOG")" "api graphql"
+}
+
+@test "merge reports merged when the read after the deadline dequeue finds the PR merged" {
+  queue_repo
+  export SLICE_WAVE_MERGE_LIMIT_SECONDS=0 GH_PR_VIEW_STATES="OPEN:queued MERGED"
+  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" merged)" true
+  is_empty "$(field "$out" reason)"
+}
+
+@test "merge names a dequeue gh refused at the time limit" {
+  queue_repo
+  export SLICE_WAVE_MERGE_LIMIT_SECONDS=0 GH_PR_VIEW_STATES=OPEN:queued GH_API_GRAPHQL_EXIT=1
+  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" merged)" false
+  contains "$(field "$out" reason)" "could not dequeue pull request 42"
+  contains "$(field "$out" reason)" "Could not dequeue pull request"
+  lacks "$(field "$out" reason)" "dequeued at the deadline"
+}
+
 @test "merge keeps polling a queue PR waiting on checks and then sitting in the queue" {
-  mkdir -p "$XDG_CONFIG_HOME/slice-pipeline"
-  printf '{"owner/repo":{"merge_queue":true}}\n' > "$XDG_CONFIG_HOME/slice-pipeline/repos.json"
+  queue_repo
   export GH_PR_VIEW_STATES="OPEN OPEN:queued OPEN:queued MERGED"
   rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
@@ -204,6 +259,7 @@ field() {
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "still open"
+  lacks "$(cat "$CALL_LOG")" "--disable-auto"
 }
 
 @test "merge trusts the forge over a failed merge command when the PR merged" {

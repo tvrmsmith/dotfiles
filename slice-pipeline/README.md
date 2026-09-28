@@ -41,8 +41,11 @@ read at run time and keyed by `owner/name`:
 {"owner/name": {"merge_queue": true}}
 ```
 
-A queued repository is enqueued with no strategy flag, and `merge` fails at
-once if the queue drops the pull request after holding it. If the file exists but
+A queued repository is enqueued with no strategy flag. `merge` fails if the
+queue drops the pull request after holding it, once a re-read
+`SLICE_WAVE_MERGE_DROP_GRACE_SECONDS` (default 5) later still finds it open and
+unqueued. At the deadline it disables auto-merge and dequeues the pull request,
+so the queue cannot land it after the bead goes back to the frontier. If the file exists but
 jq cannot read it, `merge` refuses to merge rather than guess squash.
 
 Review `verify`'s `waivers` after a slice merges. The build runs unattended, so
