@@ -88,7 +88,126 @@ validate() {
   contains "$body" "Outcome: checks-passed"
   contains "$body" "Fix rounds: 1"
   contains "$body" "Checked the rm exit status, per review-2"
-  contains "$body" "Ask-user findings are not exposed under --yes; this record lists only what no-mistakes reports at the end of the run."
+  contains "$body" "This no-mistakes version does not expose findings history, so this record lists only what it reports at the end of the run."
+}
+
+@test "validate lists every ask-user finding verbatim and tallies every finding by step" {
+  export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/findings-history.toon:0"
+  out="$(validate --verified true)"
+  equals "$(printf '%s' "$out" | jq -r .delivered)" true
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  lacks "$body" "This no-mistakes version does not expose findings history"
+  contains "$body" "Ask-user findings:"
+  contains "$body" "review round 1 review-2 warning"
+  contains "$body" 'The reviewer said, "check the retry: it swallows errors"'
+  contains "$body" "lint round 1 lint-1 warning b.go:5"
+  contains "$body" 'Also verify pagination, per spec: the "limit" param should be > 0'
+  contains "$body" "review round 1 review-4 warning: $(printf 'Match a space with \\s, not \\\\s:\n\tsee "docs"')"
+  ask_section="$(printf '%s\n' "$body" | sed -n '/^Ask-user findings:/,/^$/p')"
+  lacks "$ask_section" "review-1"
+  lacks "$ask_section" "review-3"
+  contains "$body" "All findings:"
+  contains "$body" "review: 4 findings"
+  contains "$body" "lint: 1 finding"
+  contains "$body" "review-1 selected"
+  contains "$body" "review-2 selected"
+  contains "$body" "review-3 not selected"
+  contains "$body" "review-4 not selected"
+  contains "$body" "lint-1 selected"
+}
+
+@test "validate reports no ask-user findings but still tallies the round's findings by step" {
+  export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/findings-history-no-ask-user.toon:0"
+  out="$(validate --verified true)"
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "Ask-user findings: none"
+  contains "$body" "All findings:"
+  contains "$body" "review: 1 finding (review-1 selected)"
+  contains "$body" "lint: 1 finding (lint-1 not selected)"
+}
+
+@test "validate reports an empty findings history as none" {
+  export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/findings-history-empty.toon:0"
+  out="$(validate --verified true)"
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "Findings history: none"
+  lacks "$body" "Ask-user findings"
+  lacks "$body" "All findings"
+}
+
+@test "validate reports an unreadable findings history as unknown with the reason" {
+  export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/findings-history-error.toon:0"
+  out="$(validate --verified true)"
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "Findings history: unknown (read review round 1 findings: unexpected end of JSON input)"
+  lacks "$body" "Ask-user findings"
+  lacks "$body" "All findings"
+}
+
+@test "validate reports a findings history under unrecognised columns as unknown, never as none" {
+  sed 's/^finding_history\[5\]{step,round,id,/finding_history[5]{step,round,phase,id,/' \
+    "$FIXTURES_DIR/findings-history.toon" > "$STUB_BIN/drifted.toon"
+  export NO_MISTAKES_RUN_SEQUENCE="$STUB_BIN/drifted.toon:0"
+  out="$(validate --verified true)"
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "Findings history: unknown (unrecognised finding_history columns: finding_history[5]{step,round,phase,id,severity,action,source,selected,file,line,description}:)"
+  lacks "$body" "Ask-user findings"
+  lacks "$body" "All findings"
+}
+
+@test "validate reports a findings history whose rows do not all parse as unknown, never as none" {
+  sed 's/should be > 0"$/should be > 0/' "$FIXTURES_DIR/findings-history.toon" > "$STUB_BIN/unterminated.toon"
+  export NO_MISTAKES_RUN_SEQUENCE="$STUB_BIN/unterminated.toon:0"
+  out="$(validate --verified true)"
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "Findings history: unknown (finding_history declares 5 rows but validate could not read them all)"
+  lacks "$body" "Ask-user findings"
+  lacks "$body" "All findings"
+}
+
+@test "validate reports a findings history with a row of the wrong width as unknown, never as data" {
+  sed 's/^  review,1,review-3,info,no-op,agent,false,"",0,nit$/  review,1,review-3,info,no-op,agent,false,"",0/' \
+    "$FIXTURES_DIR/findings-history.toon" > "$STUB_BIN/short-row.toon"
+  sed 's/^  review,1,review-3,info,no-op,agent,false,"",0,nit$/  review,1,review-3,info,no-op,agent,false,"",0,nit,extra/' \
+    "$FIXTURES_DIR/findings-history.toon" > "$STUB_BIN/long-row.toon"
+  for fixture in short-row long-row; do
+    export NO_MISTAKES_RUN_SEQUENCE="$STUB_BIN/$fixture.toon:0"
+    validate --verified true >/dev/null
+    body="$(cat "$STUB_BIN/pr-comment-body")"
+    contains "$body" "Findings history: unknown (finding_history declares 5 rows but validate could not read them all)"
+    lacks "$body" "Ask-user findings"
+    lacks "$body" "All findings"
+  done
+}
+
+@test "validate reports a findings history with text after a closing quote as unknown, never as data" {
+  sed 's/^  review,1,review-3,info,no-op,agent,false,"",0,nit$/  review,1,review-3,info,no-op,agent,false,"a"junk,12,nit/' \
+    "$FIXTURES_DIR/findings-history.toon" > "$STUB_BIN/after-quote.toon"
+  export NO_MISTAKES_RUN_SEQUENCE="$STUB_BIN/after-quote.toon:0"
+  validate --verified true >/dev/null
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "Findings history: unknown (finding_history declares 5 rows but validate could not read them all)"
+  lacks "$body" "Ask-user findings"
+}
+
+@test "validate reports a findings history with an empty step as unknown, never as none" {
+  sed 's/^  lint,1,lint-1,/  "",1,lint-1,/' "$FIXTURES_DIR/findings-history.toon" > "$STUB_BIN/empty-step.toon"
+  export NO_MISTAKES_RUN_SEQUENCE="$STUB_BIN/empty-step.toon:0"
+  validate --verified true >/dev/null
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "Findings history: unknown (finding_history declares 5 rows but validate could not read them all)"
+  lacks "$body" "Ask-user findings"
+}
+
+@test "validate undoes TOON escapes in fix summaries and error text as it does in findings history" {
+  sed 's/^error: .*/error: "ci: \\"lint\\" failed\\tagain"/' "$FIXTURES_DIR/failed.toon" > "$STUB_BIN/escaped-error.toon"
+  printf 'fixes[1]{step,summary}:\n  review,"Quoted \\"retry\\", per review-2"\n' >> "$STUB_BIN/escaped-error.toon"
+  export NO_MISTAKES_RUN_SEQUENCE="$STUB_BIN/escaped-error.toon:1"
+  out="$(validate --verified true)"
+  contains "$(printf '%s' "$out" | jq -r .reason)" "$(printf 'ci: "lint" failed\tagain')"
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "$(printf 'ci: "lint" failed\tagain')"
+  contains "$body" '- review: Quoted "retry", per review-2'
 }
 
 @test "validate records a failed run on its PR and reports the error as undelivered" {
@@ -124,6 +243,8 @@ validate() {
   contains "$(printf '%s' "$out" | jq -r .reason)" "the no-mistakes drive was still running"
   equals "$(printf '%s' "$out" | jq -r .record_posted)" true
   contains "$(cat "$STUB_BIN/pr-comment-body")" "the no-mistakes drive was still running"
+  contains "$(cat "$STUB_BIN/pr-comment-body")" "Findings history: not available, no-mistakes sends it only with a final result"
+  lacks "$(cat "$STUB_BIN/pr-comment-body")" "This no-mistakes version does not expose findings history"
 }
 
 @test "validate keeps reattaching while each reattach's wait elapses too" {
@@ -200,13 +321,37 @@ validate() {
   lacks "$(cat "$CALL_LOG")" "pr comment"
 }
 
+@test "validate posts no record and names the detached HEAD when the run names no PR" {
+  grep -v '^  pr: ' "$FIXTURES_DIR/checks-passed.toon" > "$STUB_BIN/no-pr.toon"
+  export NO_MISTAKES_RUN_SEQUENCE="$STUB_BIN/no-pr.toon:0"
+  git -C "$REPO" switch --quiet --detach
+  out="$(validate --verified true)"
+  equals "$(printf '%s' "$out" | jq -r .delivered)" false
+  contains "$(printf '%s' "$out" | jq -r .reason)" "HEAD is detached, so no pull request could be looked up"
+  lacks "$(cat "$CALL_LOG")" "pr list"
+  lacks "$(cat "$CALL_LOG")" "pr comment"
+}
+
+@test "validate posts no record when gh's open pull request list does not parse" {
+  grep -v '^  pr: ' "$FIXTURES_DIR/checks-passed.toon" > "$STUB_BIN/no-pr.toon"
+  export NO_MISTAKES_RUN_SEQUENCE="$STUB_BIN/no-pr.toon:0"
+  export GH_PR_LIST_JSON='not json'
+  out="$(validate --verified true)"
+  equals "$(printf '%s' "$out" | jq -r .delivered)" false
+  contains "$(printf '%s' "$out" | jq -r .reason)" "cannot list the open pull requests for slice/demo-1"
+  lacks "$(cat "$CALL_LOG")" "pr comment"
+}
+
 @test "validate reports a gate --yes cannot pass as undelivered, without rerunning" {
   export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/gate-protected.toon:0"
+  export GH_PR_LIST_JSON='[{"number":7,"url":"https://github.com/owner/repo/pull/7"}]'
   out="$(validate --verified true)"
   equals "$(printf '%s' "$out" | jq -r .delivered)" false
   contains "$(printf '%s' "$out" | jq -r .reason)" "lint gate: Automatic commit refused for a protected path"
   equals "$(grep -c "$(printf '^no-mistakes\t')" "$CALL_LOG")" 1
   lacks "$(cat "$CALL_LOG")" "rerun"
+  contains "$(cat "$STUB_BIN/pr-comment-body")" "Findings history: not available, no-mistakes sends it only with a final result"
+  lacks "$(cat "$STUB_BIN/pr-comment-body")" "This no-mistakes version does not expose findings history"
 }
 
 @test "validate names an outcome short of checks-passed as the reason it did not deliver" {

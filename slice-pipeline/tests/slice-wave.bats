@@ -127,6 +127,15 @@ teardown() {
   is_empty "$(cat "$BD_LOG")"
 }
 
+@test "claim exits 2 without touching the tracker on --verified, which only validate takes" {
+  rc=0
+  out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" --verified true 2>"$STUB_BIN/err" )" || rc=$?
+  equals "$rc" 2
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "unknown flag --verified"
+  is_empty "$(cat "$BD_LOG")"
+}
+
 @test "claim switches to the derived branch when it already exists" {
   git -C "$REPO" branch slice/foo
   ( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" ) >/dev/null
@@ -402,6 +411,14 @@ teardown() {
   equals "$rc" 2
   is_empty "$out"
   contains "$(cat "$STUB_BIN/err")" "release needs --bead and --beads-dir"
+  is_empty "$(cat "$BD_LOG")"
+}
+
+@test "release exits 2 without touching the tracker on --verified, which only validate takes" {
+  rc=0; out="$( cd "$REPO" && "$HELPER" release --bead foo --beads-dir "$STUB_BIN" --verified true 2>"$STUB_BIN/err" )" || rc=$?
+  equals "$rc" 2
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "unknown flag --verified"
   is_empty "$(cat "$BD_LOG")"
 }
 
