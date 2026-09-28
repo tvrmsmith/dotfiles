@@ -1,8 +1,9 @@
 # slice-pipeline
 
-Takes a ready ticket to an open pull request that no-mistakes has driven green.
-An Archon workflow plus the script it shells out to, self-contained so it runs
-against any repo, not just this one.
+Takes a ready ticket to a merged pull request that no-mistakes drove green,
+then closes the ticket and removes the run's worktree. An Archon workflow plus
+the script it shells out to, self-contained so it runs against any repo, not
+just this one.
 
 ```
 bin/slice-wave                     every non-trivial rule, driven by bats
@@ -19,20 +20,40 @@ archon workflow run implement-slice \
 ```
 
 Both inputs are required and the engine rejects the run without them. Read the
-authored outcome (`delivered`), not the run status: `verify` and `validate` both
-exit 0 on every verdict so the run completes and keeps its artifacts either way.
-`delivered` is only true once a commit landed, no-mistakes drove it to a
-checks-passed or passed pull request, and the findings record posted on that PR.
+authored outcome (`merged`), not the run status: `verify`, `validate` and
+`merge` all exit 0 on every verdict so the run completes and keeps its
+artifacts either way. `merged` is only true once a commit landed, no-mistakes
+drove it to a checks-passed or passed pull request, the findings record posted
+on that PR, and the forge reports the PR merged. Only then does `close` close
+the bead and remove the worktree. An unmerged run hands the bead back open and
+unclaimed, and leaves any pull request open.
 
-The target repo needs a GitHub remote you can push to and an initialized
-no-mistakes; `claim` checks both before it touches the branch or the tracker,
-and fails the run with what to fix if either is missing.
+The target repo needs a GitHub remote gh can open pull requests on, a git
+credential that can push to origin, and an initialized no-mistakes. `claim`
+checks all three (the push through `git push --dry-run`) before it touches the
+branch or the tracker, and fails the run with what to fix if any is missing.
 
-Review `waivers` before merging a slice. The build runs unattended, so it records
-personal coding-standards lint waivers without asking, and this lists each one
-spent on the slice's commits, read from the waiver log rather than the model's
-report. A non-empty `waivers_error` means the log was unreadable and the list is
-not to be trusted.
+`merge` squashes by default. A repository that uses a merge queue is named in
+the machine-local `${XDG_CONFIG_HOME:-~/.config}/slice-pipeline/repos.json`,
+read at run time and keyed by `owner/name`:
+
+```json
+{"owner/name": {"merge_queue": true}}
+```
+
+A queued repository is enqueued with no strategy flag. `merge` fails if the
+queue drops the pull request after holding it, once a re-read
+`SLICE_WAVE_MERGE_DROP_GRACE_SECONDS` (default 5) later still finds it open and
+unqueued. At the deadline it disables auto-merge and dequeues the pull request,
+so the queue cannot land it after the bead goes back to the frontier. If the
+file exists but jq cannot read it, `merge` refuses to merge rather than guess
+squash.
+
+Review `verify`'s `waivers` after a slice merges. The build runs unattended, so
+it records personal coding-standards lint waivers without asking, and this
+lists each one spent on the slice's commits, read from the waiver log rather
+than the model's report. A non-empty `waivers_error` means the log was
+unreadable and the list is not to be trusted.
 
 ## Test it
 
@@ -53,20 +74,22 @@ Runs the real pipeline once, against a real GitHub repository named by
 forge and no-mistakes preflight checks refuse anything else, including a
 scratch repo with no remote. It clones that repository to scratch, runs
 `no-mistakes init` there, then drives one small bead through the real
-pipeline - claim, a real model build, verify, a real no-mistakes validate
-drive, and release - and checks the branch, the committed code, the bead and
-the pull request's findings record comment directly. Teardown closes the pull
-request, deletes its remote branch, and releases Archon's registration of the
-scratch clone as the target repository's codebase. It spends model tokens,
-pushes a branch and opens a pull request on a real repository, and can go red
-on a bad model run, so it skips unless `SLICE_E2E=1`, and skips with a clear message
-when `SLICE_E2E_REPO` is unset.
+pipeline (claim, a real model build, verify, a real no-mistakes validate
+drive, merge and close) and checks the branch, the committed code, the closed
+bead, the merged pull request, its findings record comment and the removed
+worktree directly. A green run merges a small script and its test into the
+repository, named after the bead so reruns do not collide. Teardown closes any
+pull request still open on the slice branch, deletes that branch, and releases
+Archon's registration of the scratch clone as the target repository's
+codebase. It spends model tokens and merges into a real repository, and can go
+red on a bad model run, so it skips unless `SLICE_E2E=1`, and skips with a
+clear message when `SLICE_E2E_REPO` is unset.
 `SLICE_E2E_CLONE_URL` optionally overrides the URL it clones from, for a
 machine whose git credential for gh's default URL belongs to a different
 account than gh's; gh still reaches the repository through `SLICE_E2E_REPO`.
-`SLICE_E2E_KEEP=1` keeps the scratch repo and Archon's worktree for
-inspection, leaves the pull request and its branch open too, and leaves
-Archon's registration of the scratch clone in place.
+`SLICE_E2E_KEEP=1` keeps the scratch repo, and Archon's worktree when close
+left it, for inspection, leaves the pull request's branch in place too, and
+leaves Archon's registration of the scratch clone in place.
 An Archon run from source needs `CLAUDE_BIN_PATH` pointing at an up-to-date
 `claude`, or its prompt nodes fail on the older copy bundled in its SDK.
 

@@ -17,7 +17,9 @@ install_stubs() {
 	: > "$BD_LOG"
 	: > "$CALL_LOG"
 	unset BD_EXIT_CODE BD_SHOW_JSON GH_EXIT_CODE GH_VIEWER_PERMISSION \
-		GH_PR_LIST_JSON GH_PR_COMMENT_EXIT NO_MISTAKES_RUN_SEQUENCE \
+		GH_PR_LIST_JSON GH_PR_COMMENT_EXIT GH_PR_MERGE_EXIT GH_PR_VIEW_STATES \
+		GH_PR_DISABLE_AUTO_EXIT GH_API_GRAPHQL_EXIT \
+		NO_MISTAKES_RUN_SEQUENCE \
 		NO_MISTAKES_AXI_EXIT NO_MISTAKES_AXI_FIXTURE \
 		NO_MISTAKES_STATUS_EXIT NO_MISTAKES_STATUS_FIXTURE \
 		NO_MISTAKES_SYNC_EXIT NO_MISTAKES_SYNC_NEXT_STATUS_FIXTURE
@@ -40,18 +42,97 @@ EOF
 	# Default: a forge remote claim can open pull requests on, with no open
 	# pull request for the branch. `pr comment` saves the body it reads on
 	# stdin to $STUB_BIN/pr-comment-body, so a test can read what was posted.
+	# `pr merge` succeeds, and every pull request read reports it merged.
 	cat > "$STUB_BIN/gh" <<'EOF'
 #!/bin/bash
 printf 'gh\t%s\n' "$*" >> "$CALL_LOG"
+# The fields gh 2.101.0's `pr view --json` accepts.
+GH_PR_VIEW_FIELDS="additions assignees author autoMergeRequest baseRefName baseRefOid body
+	changedFiles closed closedAt closingIssuesReferences comments commits createdAt deletions
+	files fullDatabaseId headRefName headRefOid headRepository headRepositoryOwner id
+	isCrossRepository isDraft labels latestReviews maintainerCanModify mergeCommit
+	mergeStateStatus mergeable mergedAt mergedBy milestone number potentialMergeCommit
+	projectCards projectItems reactionGroups reviewDecision reviewRequests reviews state
+	statusCheckRollup title updatedAt url"
 if [ "${GH_EXIT_CODE:-0}" -ne 0 ]; then
 	echo "gh: stub configured to fail" >&2
 	exit "${GH_EXIT_CODE:-0}"
 fi
+# Sets pr to the next pull request read, from either `pr view` or a GraphQL
+# query. GH_PR_VIEW_STATES lists one state per read, space-separated, so a
+# test can script a merge that lands after a few polls. Reads past the end
+# repeat the last state, and FAIL makes that read exit 1. A state suffixed
+# :queued reads as sitting in the merge queue.
+pr_read() {
+	local calls
+	calls="$(cat "$STUB_BIN/pr-view-calls" 2>/dev/null || echo 0)"
+	echo $((calls + 1)) > "$STUB_BIN/pr-view-calls"
+	set -- ${GH_PR_VIEW_STATES:-MERGED}
+	[ "$calls" -lt $# ] || calls=$(($# - 1))
+	shift "$calls"
+	[ "$1" != FAIL ] || { echo "gh: stub pr view configured to fail" >&2; exit 1; }
+	local queued=false
+	[ "${1#*:}" != queued ] || queued=true
+	pr="$(printf '{"state":"%s","url":"https://github.com/owner/repo/pull/42","isInMergeQueue":%s,"id":"PR_stub42"}' "${1%%:*}" "$queued")"
+}
 case "${1:-} ${2:-}" in
 	"pr list") printf '%s\n' "${GH_PR_LIST_JSON:-[]}" ;;
 	"pr comment")
 		cat > "$STUB_BIN/pr-comment-body"
 		exit "${GH_PR_COMMENT_EXIT:-0}"
+		;;
+	"pr merge")
+		case " $* " in
+			*" --disable-auto "*)
+				[ "${GH_PR_DISABLE_AUTO_EXIT:-0}" -eq 0 ] || echo "GraphQL: auto-merge could not be disabled" >&2
+				exit "${GH_PR_DISABLE_AUTO_EXIT:-0}"
+				;;
+		esac
+		[ "${GH_PR_MERGE_EXIT:-0}" -eq 0 ] || echo "GraphQL: Pull request is not mergeable" >&2
+		exit "${GH_PR_MERGE_EXIT:-0}"
+		;;
+	"api graphql")
+		query=""
+		jq_filter=.
+		prev=""
+		for arg in "$@"; do
+			[ "$prev" != -f ] || [ "${arg%%=*}" != query ] || query="${arg#query=}"
+			[ "$prev" != --jq ] || jq_filter="$arg"
+			prev="$arg"
+		done
+		case "$query" in
+			*dequeuePullRequest*)
+				[ "${GH_API_GRAPHQL_EXIT:-0}" -eq 0 ] || echo "GraphQL: Could not dequeue pull request" >&2
+				exit "${GH_API_GRAPHQL_EXIT:-0}"
+				;;
+		esac
+		# A pull request read: answer with the fields the query selects.
+		fields="$(sed -n 's/.*pullRequest(number: [^)]*) { \([^}]*\) }.*/\1/p' <<<"$query")"
+		fields="${fields// /,}"
+		pr_read
+		printf '%s\n' "$pr" |
+			jq -c --arg fields "$fields" '. as $pr | {data: {repository: {pullRequest: ($fields | split(",") | map({(.): $pr[.]}) | add)}}}' |
+			jq -c "$jq_filter"
+		;;
+	"pr view")
+		# Like real gh, it prints only the keys the call names after --json,
+		# and refuses a key gh 2.101.0 does not offer, such as isInMergeQueue.
+		fields=""
+		prev=""
+		for arg in "$@"; do
+			[ "$prev" != --json ] || fields="$arg"
+			prev="$arg"
+		done
+		known=" $(echo $GH_PR_VIEW_FIELDS) "
+		for field in ${fields//,/ }; do
+			case "$known" in
+				*" $field "*) ;;
+				*) echo "Unknown JSON field: \"$field\"" >&2; exit 1 ;;
+			esac
+		done
+		pr_read
+		printf '%s\n' "$pr" |
+			jq -c --arg fields "$fields" '. as $pr | $fields | split(",") | map({(.): $pr[.]}) | add'
 		;;
 	*) printf '{"nameWithOwner":"owner/repo","viewerPermission":"%s"}\n' "${GH_VIEWER_PERMISSION:-WRITE}" ;;
 esac
