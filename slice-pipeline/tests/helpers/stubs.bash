@@ -42,7 +42,7 @@ EOF
 	# Default: a forge remote claim can open pull requests on, with no open
 	# pull request for the branch. `pr comment` saves the body it reads on
 	# stdin to $STUB_BIN/pr-comment-body, so a test can read what was posted.
-	# `pr merge` succeeds, and `pr view` reports the pull request merged.
+	# `pr merge` succeeds, and every pull request read reports it merged.
 	cat > "$STUB_BIN/gh" <<'EOF'
 #!/bin/bash
 printf 'gh\t%s\n' "$*" >> "$CALL_LOG"
