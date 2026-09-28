@@ -99,6 +99,15 @@ field() {
   equals "$(field "$out" strategy)" squash
 }
 
+@test "merge squashes a repository repos.json lists with merge_queue false" {
+  mkdir -p "$XDG_CONFIG_HOME/slice-pipeline"
+  printf '{"owner/repo":{"merge_queue":false}}\n' > "$XDG_CONFIG_HOME/slice-pipeline/repos.json"
+  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  equals "$rc" 0
+  equals "$(grep 'pr merge' "$CALL_LOG")" "$(printf 'gh\tpr merge 42 -R owner/repo --squash')"
+  equals "$(field "$out" strategy)" squash
+}
+
 @test "merge merges nothing and names repos.json when jq cannot parse it" {
   mkdir -p "$XDG_CONFIG_HOME/slice-pipeline"
   printf 'not json\n' > "$XDG_CONFIG_HOME/slice-pipeline/repos.json"
@@ -232,6 +241,7 @@ add_linked_worktree() {
   equals "$rc" 1
   is_empty "$out"
   contains "$(cat "$STUB_BIN/err")" "tracker refused to close"
+  contains "$(cat "$STUB_BIN/err")" "bd: stub configured to fail"
   [ -d "$WT" ] || { echo "the worktree was removed" >&2; exit 1; }
 }
 
