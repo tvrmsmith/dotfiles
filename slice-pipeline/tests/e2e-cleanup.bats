@@ -98,9 +98,11 @@ SQL
 
   mkdir -p "$ARCHON_HOME/workspaces/owner/repo" \
     "$ARCHON_HOME/workspaces/owner/other" \
+    "$ARCHON_HOME/workspaces/owner/sib" \
     "$ARCHON_HOME/workspaces/owner/cloned/source"
   ln -s "$PHYS/repo" "$ARCHON_HOME/workspaces/owner/repo/source"
   ln -s "$STUB_BIN/elsewhere/repo" "$ARCHON_HOME/workspaces/owner/other/source"
+  ln -s "${PHYS}-sibling/repo" "$ARCHON_HOME/workspaces/owner/sib/source"
   echo x > "$ARCHON_HOME/workspaces/owner/cloned/source/file"
 }
 
@@ -128,6 +130,7 @@ SQL
   [ -L "$ARCHON_HOME/workspaces/owner/other/source" ] ||
     { echo "expected workspaces/owner/other/source to remain a symlink" >&2; exit 1; }
   equals "$(readlink "$ARCHON_HOME/workspaces/owner/other/source")" "$STUB_BIN/elsewhere/repo"
+  equals "$(readlink "$ARCHON_HOME/workspaces/owner/sib/source")" "${PHYS}-sibling/repo"
 
   [ -d "$ARCHON_HOME/workspaces/owner/cloned/source" ] ||
     { echo "expected workspaces/owner/cloned/source to remain a directory" >&2; exit 1; }
@@ -149,7 +152,6 @@ SQL
 }
 
 @test "with no Archon database, release touches nothing and fails nothing" {
-  command -v sqlite3 >/dev/null || skip "no sqlite3"
   ARCHON_HOME="$STUB_BIN/empty-archon-home"
   export ARCHON_HOME
   mkdir -p "$ARCHON_HOME/workspaces/owner/other"
@@ -160,4 +162,25 @@ SQL
 
   equals "$status" 0
   equals "$(readlink "$ARCHON_HOME/workspaces/owner/other/source")" "$STUB_BIN/elsewhere/repo"
+  [ ! -e "$ARCHON_HOME/archon.db" ] ||
+    { echo "expected no archon.db to be created" >&2; exit 1; }
+}
+
+@test "when sqlite3 fails, release still removes the source symlink and fails nothing" {
+  command -v sqlite3 >/dev/null || skip "no sqlite3"
+  ARCHON_HOME="$STUB_BIN/broken-archon-home"
+  export ARCHON_HOME
+  mkdir -p "$ARCHON_HOME/workspaces/owner/repo"
+  sqlite3 "$ARCHON_HOME/archon.db" 'CREATE TABLE unrelated (id TEXT);'
+  SCR="$(mktemp -d "$STUB_BIN/scratch.XXXXXX")"
+  PHYS="$(cd "$SCR" && pwd -P)"
+  ln -s "$PHYS/repo" "$ARCHON_HOME/workspaces/owner/repo/source"
+
+  release_archon_registration "$SCR" 2>"$STUB_BIN/err"
+
+  contains "$(cat "$STUB_BIN/err")" "# cannot release"
+  if [ -L "$ARCHON_HOME/workspaces/owner/repo/source" ] || [ -e "$ARCHON_HOME/workspaces/owner/repo/source" ]; then
+    echo "expected workspaces/owner/repo/source to be gone" >&2
+    exit 1
+  fi
 }
