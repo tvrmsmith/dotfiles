@@ -32,6 +32,10 @@ setup() {
   git -C "$REPO" init --quiet --initial-branch=main
   git -C "$REPO" -c user.email=t@example.com -c user.name=Test \
     commit --quiet --allow-empty -m base
+
+  ORIGIN="$(mktemp -d)"
+  git init --quiet --bare "$ORIGIN"
+  git -C "$REPO" remote add origin "$ORIGIN"
 }
 
 assert_detached() {
@@ -41,14 +45,14 @@ assert_detached() {
 
 teardown() {
   export PATH="$OLD_PATH"
-  rm -rf "$STUB_BIN" "$REPO"
+  rm -rf "$STUB_BIN" "$REPO" "$ORIGIN"
 }
 
 @test "an unknown subcommand prints the usage line to stderr and exits 2" {
   rc=0; out="$("$HELPER" resurrect --bead foo 2>"$STUB_BIN/err")" || rc=$?
   equals "$rc" 2
   is_empty "$out"
-  contains "$(cat "$STUB_BIN/err")" "usage: slice-wave <branch-name|claim|release|verify-commit|validate>"
+  contains "$(cat "$STUB_BIN/err")" "usage: slice-wave <branch-name|claim|release|verify-commit|validate|merge|close> ..."
 }
 
 @test "no subcommand at all prints the usage line to stderr and exits 2" {
@@ -191,6 +195,33 @@ teardown() {
   contains "$(cat "$STUB_BIN/err")" "repo not initialized (run 'no-mistakes init' first)"
   is_empty "$(cat "$BD_LOG")"
   equals "$(git -C "$REPO" symbolic-ref --short HEAD)" "main"
+}
+
+@test "claim exits 1 without touching the tracker or no-mistakes when git cannot push to origin" {
+  git -C "$REPO" remote set-url origin "$STUB_BIN/no-such-remote.git"
+  rc=0
+  out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err" )" || rc=$?
+  equals "$rc" 1
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "git cannot push to origin"
+  is_empty "$(cat "$BD_LOG")"
+  lacks "$(cat "$CALL_LOG")" "no-mistakes"
+  equals "$(git -C "$REPO" symbolic-ref --short HEAD)" "main"
+}
+
+@test "claim's push check writes nothing to origin" {
+  ( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" ) >/dev/null
+  is_empty "$(git -C "$ORIGIN" for-each-ref)"
+}
+
+@test "claim passes the push check when origin holds a slice branch HEAD does not contain" {
+  other="$(git -C "$REPO" -c user.email=t@example.com -c user.name=Test \
+    commit-tree "$(git -C "$REPO" hash-object -t tree /dev/null)" -m other)"
+  git -C "$REPO" push --quiet origin "$other:refs/heads/slice/foo"
+  rc=0
+  ( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" ) >/dev/null || rc=$?
+  equals "$rc" 0
+  equals "$(git -C "$ORIGIN" rev-parse refs/heads/slice/foo)" "$other"
 }
 
 # shellcheck disable=SC2030

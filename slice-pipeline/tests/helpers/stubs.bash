@@ -17,7 +17,8 @@ install_stubs() {
 	: > "$BD_LOG"
 	: > "$CALL_LOG"
 	unset BD_EXIT_CODE BD_SHOW_JSON GH_EXIT_CODE GH_VIEWER_PERMISSION \
-		GH_PR_LIST_JSON GH_PR_COMMENT_EXIT NO_MISTAKES_RUN_SEQUENCE \
+		GH_PR_LIST_JSON GH_PR_COMMENT_EXIT GH_PR_MERGE_EXIT GH_PR_VIEW_STATES \
+		NO_MISTAKES_RUN_SEQUENCE \
 		NO_MISTAKES_AXI_EXIT NO_MISTAKES_AXI_FIXTURE \
 		NO_MISTAKES_STATUS_EXIT NO_MISTAKES_STATUS_FIXTURE \
 		NO_MISTAKES_SYNC_EXIT NO_MISTAKES_SYNC_NEXT_STATUS_FIXTURE
@@ -40,6 +41,7 @@ EOF
 	# Default: a forge remote claim can open pull requests on, with no open
 	# pull request for the branch. `pr comment` saves the body it reads on
 	# stdin to $STUB_BIN/pr-comment-body, so a test can read what was posted.
+	# `pr merge` succeeds, and `pr view` reports the pull request merged.
 	cat > "$STUB_BIN/gh" <<'EOF'
 #!/bin/bash
 printf 'gh\t%s\n' "$*" >> "$CALL_LOG"
@@ -52,6 +54,22 @@ case "${1:-} ${2:-}" in
 	"pr comment")
 		cat > "$STUB_BIN/pr-comment-body"
 		exit "${GH_PR_COMMENT_EXIT:-0}"
+		;;
+	"pr merge")
+		[ "${GH_PR_MERGE_EXIT:-0}" -eq 0 ] || echo "GraphQL: Pull request is not mergeable" >&2
+		exit "${GH_PR_MERGE_EXIT:-0}"
+		;;
+	"pr view")
+		# GH_PR_VIEW_STATES lists one state per call, space-separated, so a
+		# test can script a merge that lands after a few polls. Calls past
+		# the end repeat the last state, and FAIL makes that call exit 1.
+		calls="$(cat "$STUB_BIN/pr-view-calls" 2>/dev/null || echo 0)"
+		echo $((calls + 1)) > "$STUB_BIN/pr-view-calls"
+		set -- ${GH_PR_VIEW_STATES:-MERGED}
+		[ "$calls" -lt $# ] || calls=$(($# - 1))
+		shift "$calls"
+		[ "$1" != FAIL ] || { echo "gh: stub pr view configured to fail" >&2; exit 1; }
+		printf '{"state":"%s","url":"https://github.com/owner/repo/pull/42"}\n' "$1"
 		;;
 	*) printf '{"nameWithOwner":"owner/repo","viewerPermission":"%s"}\n' "${GH_VIEWER_PERMISSION:-WRITE}" ;;
 esac

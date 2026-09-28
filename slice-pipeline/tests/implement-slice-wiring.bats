@@ -9,7 +9,7 @@ load helpers/stubs
 
 WORKFLOW="${BATS_TEST_DIRNAME}/../workflows/implement-slice/implement-slice.yaml"
 NODE="${BATS_TEST_DIRNAME}/helpers/workflow-node.ts"
-EXEC_NODES="claim verify release validate"
+EXEC_NODES="claim verify release validate merge close"
 
 setup() {
   command -v bun >/dev/null || skip "no bun"
@@ -36,24 +36,44 @@ setup() {
   git -C "$REPO" init --quiet --initial-branch=main
   git -C "$REPO" -c user.email=t@example.com -c user.name=Test \
     commit --quiet --allow-empty -m base
+
+  ORIGIN="$(mktemp -d)"
+  git init --quiet --bare "$ORIGIN"
+  git -C "$REPO" remote add origin "$ORIGIN"
 }
 
 teardown() {
   export PATH="$OLD_PATH"
-  rm -rf "$STUB_BIN" "$REPO"
+  rm -rf "$STUB_BIN" "$REPO" "$ORIGIN"
 }
 
 # Runs $1's declared body the way the engine does: under `sh`, with the run's
 # declared inputs arriving as INPUTS_<UPPER_SNAKE> environment variables and
 # every $<node>.output.<field> token pre-substituted, the way Archon
 # substitutes a producer node's declared output into a downstream body before
-# running it. `true` stands in as the representative value: every such token
-# in this workflow today names a boolean, and this suite only needs a body sh
-# can execute, not a truthful one.
+# running it. Each field gets a representative value of its own type:
+# `pr_number`, `repo` and `pr_url` need a number, a slug and a URL for the
+# script to accept them, and every other field this workflow substitutes is a
+# boolean, so `true`. Any further argument, `field=value`, overrides one
+# field's value, written the way Archon writes it into a bash body: shell
+# quoted, so an empty string arrives as ''.
 run_node_body() {
-  local body
-  body="$(bun "$NODE" body "$WORKFLOW" "$1")" || return 2
-  body="$(printf '%s' "$body" | sed -E 's/\$[A-Za-z_][A-Za-z0-9_]*\.output\.[A-Za-z_][A-Za-z0-9_]*/true/g')"
+  local node="$1" body token field value override
+  shift
+  body="$(bun "$NODE" body "$WORKFLOW" "$node")" || return 2
+  while token="$(printf '%s' "$body" | grep -oE '\$[A-Za-z_][A-Za-z0-9_]*\.output\.[A-Za-z_][A-Za-z0-9_]*' | head -n 1)" && [ -n "$token" ]; do
+    field="${token##*.}"
+    case "$field" in
+      pr_number) value=42 ;;
+      repo) value=owner/repo ;;
+      pr_url) value=https://github.com/owner/repo/pull/42 ;;
+      *) value=true ;;
+    esac
+    for override in "$@"; do
+      [ "${override%%=*}" != "$field" ] || value="${override#*=}"
+    done
+    body="${body%%"$token"*}${value}${body#*"$token"}"
+  done
   ( cd "$REPO" && env INPUTS_BEAD=foo INPUTS_BEADS_DIR="$STUB_BIN" sh -c "$body" )
 }
 
@@ -79,6 +99,28 @@ run_node_body() {
   rc=0; out="$(run_node_body validate)" || rc=$?
   equals "$rc" 0
   printf '%s' "$out" | bun "$NODE" check-output "$WORKFLOW" validate
+}
+
+@test "the merge node prints what the workflow declares it prints" {
+  rc=0; out="$(run_node_body merge)" || rc=$?
+  equals "$rc" 0
+  printf '%s' "$out" | bun "$NODE" check-output "$WORKFLOW" merge
+}
+
+# validate's short-circuit on an unverified slice reports no pull request and
+# no repository, and merge runs on that path too, with no `when:`. A merge
+# body that rejected those values would fail the node and skip release,
+# leaving the bead claimed.
+@test "the merge node prints what the workflow declares on validate's undelivered output" {
+  rc=0; out="$(run_node_body merge delivered=false pr_number=0 "repo=''")" || rc=$?
+  equals "$rc" 0
+  printf '%s' "$out" | bun "$NODE" check-output "$WORKFLOW" merge
+}
+
+@test "the close node prints what the workflow declares it prints" {
+  rc=0; out="$(run_node_body close)" || rc=$?
+  equals "$rc" 0
+  printf '%s' "$out" | bun "$NODE" check-output "$WORKFLOW" close
 }
 
 @test "every exec node reads its inputs as env vars, not the prompt-only form" {

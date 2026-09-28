@@ -1,17 +1,19 @@
 name: implement-slice
 description: |
-  Build one vertical slice from its bead, land its commit on the branch, and
-  drive it through no-mistakes to a green pull request with a findings record.
-  The slice's spec lives in the bead's `design` field, the wave's agreed seams
-  in its `notes` field. Verify reads the branch, not a model's self-report.
+  Build one vertical slice from its bead, land its commit on the branch, drive
+  it through no-mistakes to a green pull request with a findings record, merge
+  it, and close the bead once the forge confirms the merge. The slice's spec
+  lives in the bead's `design` field, the wave's agreed seams in its `notes`
+  field. Verify reads the branch, not a model's self-report, and close reads
+  the forge, not the merge command's exit status.
 
   Use when: a bead is ready and its spec lives in the bead. Run one per slice,
   normally as a fan_out child.
   NOT for: deciding what to build, or work that cannot land independently.
 
 model: large
-returns: validate
-outcome_field: delivered
+returns: merge
+outcome_field: merged
 
 # Pinned, not left to the caller. The driver fans out several of these at
 # once, and runs sharing one checkout serialize on the working-path lock,
@@ -73,19 +75,19 @@ nodes:
       overrides the usual rule to close finished work.
 
   # Joins on all_done, not the default: under the default, a failed `build`
-  # would skip `verify`, which would skip `validate` and `release` behind it,
-  # and the bead would stay claimed by a worker that is gone. all_done runs
-  # the commit check on every path out of build. verify reads none of build's
-  # output, so it never references a failed producer. all_done also runs
-  # verify after a failed claim; verify-commit credits the slice branch only
-  # while this worktree has it checked out, which a failed claim never leaves
-  # behind.
+  # would skip `verify`, which would skip `validate`, `merge` and `release`
+  # behind it, and the bead would stay claimed by a worker that is gone.
+  # all_done runs the commit check on every path out of build. verify reads
+  # none of build's output, so it never references a failed producer.
+  # all_done also runs verify after a failed claim; verify-commit credits the
+  # slice branch only while this worktree has it checked out, which a failed
+  # claim never leaves behind.
   #
   # Exits 0 on every verdict, landed or not, so the run completes and its
   # artifacts survive either way. Its `verified` field only feeds validate's
-  # --verified flag below; the run's authored outcome is `delivered`, read
-  # from validate (outcome_field above), since a landed commit is not by
-  # itself a shipped slice.
+  # --verified flag below; the run's authored outcome is `merged`, read from
+  # merge (outcome_field above), since a landed commit is not by itself a
+  # merged slice.
   - id: verify
     depends_on: [claim, build]
     trigger_rule: all_done
@@ -104,10 +106,10 @@ nodes:
         waivers_error: {type: string}
       required: [verified, committed, tests_touched, branch, sha, reason, waivers, waivers_error]
 
-  # The returns node: no `when:`, since a skipped returns node persists no
-  # authored outcome, and the script's own --verified false short-circuit
-  # already handles the unverified path with no external call. depends_on
-  # verify alone, under the default trigger rule (not all_done): verify
+  # No `when:`: a skipped validate would skip merge behind it, and merge is
+  # the returns node, which persists no authored outcome when skipped. The
+  # script's own --verified false short-circuit already handles the
+  # unverified path with no external call. depends_on verify alone, under the default trigger rule (not all_done): verify
   # itself exits 0 on every verdict (see its comment above), so it never
   # fails this dependency. The long timeout covers a real no-mistakes drive:
   # a review, fix rounds and CI, which routinely outruns Archon's 2-minute
@@ -130,19 +132,65 @@ nodes:
         reason: {type: string}
       required: [delivered, outcome, pr_number, pr_url, repo, fix_rounds, record_posted, reason]
 
-  # Depends on claim as well as validate, under the default trigger rule (not
-  # all_done): validate always resolves (it is the returns node and, given a
-  # true or false --verified, exits 0 on every path, same as verify), so
-  # requiring it to succeed costs nothing; its `delivered` field, not its own
-  # success, is what the `when` reads.
+  # The returns node: no `when:`, since a skipped returns node persists no
+  # authored outcome, and the script's own --delivered false short-circuit
+  # already handles the undelivered path with no external call, accepting
+  # the empty repo and zero pull request validate reports there. depends_on
+  # validate alone, under the default trigger rule: validate exits 0 on every
+  # path (see its comment above), so it never fails this dependency. The
+  # timeout covers the script's own 2-hour merge-queue deadline, so a merge
+  # still waiting on the queue reports merged false before this kills it.
+  # Archon shell-quotes a substituted node output in a bash body, so an empty
+  # repo arrives as ''.
+  - id: merge
+    depends_on: [validate]
+    timeout: 9000000
+    bash: slice-wave merge --delivered $validate.output.delivered --pr $validate.output.pr_number --repo $validate.output.repo
+    output_format:
+      type: object
+      properties:
+        merged: {type: boolean}
+        strategy: {type: string}
+        pr_number: {type: integer}
+        pr_url: {type: string}
+        reason: {type: string}
+      required: [merged, strategy, pr_number, pr_url, reason]
+
+  # Closing the bead unblocks every slice that depends on it, so only a merge
+  # the forge confirmed reaches this node: merge reports merged true only
+  # after `gh pr view` reads MERGED, never on the merge command's exit status
+  # alone. Default trigger rule, since the `when` already requires merge to
+  # have produced output. The timeout covers one `bd close` and one
+  # `git worktree remove`, which Archon's 2-minute default already fits.
+  - id: close
+    depends_on: [merge]
+    when: "$merge.output.merged == true"
+    timeout: 120000
+    bash: slice-wave close --bead "$INPUTS_BEAD" --beads-dir "$INPUTS_BEADS_DIR" --pr-url $merge.output.pr_url
+    output_format:
+      type: object
+      properties:
+        closed: {type: boolean}
+        worktree_removed: {type: boolean}
+        reason: {type: string}
+      required: [closed, worktree_removed, reason]
+
+  # An unmerged slice goes back to the frontier open and unclaimed, whether it
+  # was never delivered or its green pull request did not merge; that pull
+  # request is left open for a person to look at. Depends on claim as well as
+  # merge, under the default trigger rule (not all_done): merge always
+  # resolves (it is the returns node and, given a true or false --delivered,
+  # exits 0 on every path, same as validate), so requiring it to succeed
+  # costs nothing; its `merged` field, not its own success, is what the
+  # `when` reads.
   # Requiring claim to have succeeded is what stops this node from releasing a
   # bead this run never claimed, which would clear the assignee of whoever
-  # actually holds it. An unverified run still lands here: validate's
-  # --verified false short-circuit reports delivered false without
-  # contacting anything, and that false is what this `when` catches.
+  # actually holds it. An unverified run still lands here: validate and merge
+  # both short-circuit without contacting anything, and merge's false is what
+  # this `when` catches. The timeout covers one `bd update`.
   - id: release
-    depends_on: [claim, validate]
-    when: "$validate.output.delivered == false"
+    depends_on: [claim, merge]
+    when: "$merge.output.merged == false"
     timeout: 120000
     bash: slice-wave release --bead "$INPUTS_BEAD" --beads-dir "$INPUTS_BEADS_DIR"
     output_format:

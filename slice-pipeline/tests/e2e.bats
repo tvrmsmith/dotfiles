@@ -5,7 +5,7 @@ load helpers/e2e-cleanup
 # workflow under the real engine, and a real model building a real bead. The
 # other suites each stub out a layer (slice-wave.bats the engine, the
 # fixtures the script, the wiring suite the model), so only this one shows
-# that the five nodes - claim, build, verify, validate, release - hand off to
+# that the nodes - claim, build, verify, validate, merge, close - hand off to
 # each other for real, against a repository claim's own preflight checks
 # actually have to accept.
 #
@@ -16,9 +16,9 @@ load helpers/e2e-cleanup
 # `no-mistakes init` - no longer clears claim and cannot stand in for a real
 # target. This version clones a real repository instead.
 #
-# Opt-in, because a run spends model tokens, pushes a branch and opens a pull
-# request on a real repository, and can go red on a bad model run rather than
-# on broken code:
+# Opt-in, because a run spends model tokens, pushes a branch, and opens and
+# merges a pull request on a real repository, and can go red on a bad model
+# run rather than on broken code:
 #
 #   SLICE_E2E=1 SLICE_E2E_REPO=owner/name bats slice-pipeline/tests/e2e.bats
 #
@@ -27,11 +27,14 @@ load helpers/e2e-cleanup
 # unset. It clones that repository to scratch, runs `no-mistakes init` there
 # so claim's preflight passes, then drives one small bead through the real
 # pipeline: claim, a real model build, verify, a real no-mistakes validate
-# drive against that repository's forge, and release. Teardown closes the
-# pull request the drive opened, deletes its remote branch, and releases
-# Archon's registration of the scratch clone as the target repository's
-# codebase, so a run leaves the target repository exactly as it found it,
-# aside from a closed, branch-deleted pull request.
+# drive against that repository's forge, a real merge, and close. A green run
+# therefore leaves a merged pull request and its code on the target's default
+# branch. The script and test file names carry the bead id, so a rerun
+# against the same target never collides with an earlier run's merged files.
+# Teardown closes any pull request still open on the slice branch, deletes
+# that branch on the remote, and releases Archon's registration of the scratch
+# clone as the target repository's codebase. After a merge there is no open
+# pull request to close, and deleting the merged branch is still right.
 #
 # SLICE_E2E_CLONE_URL, when set, is the URL the suite clones SLICE_E2E_REPO
 # from instead of gh's default, for a machine whose git credential for that
@@ -40,10 +43,10 @@ load helpers/e2e-cleanup
 # and -R, so the clone URL can use any host alias git knows.
 #
 # SLICE_E2E_KEEP=1 keeps the scratch clone, the run log and Archon's worktree
-# for inspection instead of removing them, leaves the pull request and its
-# branch open too, and leaves Archon's registration of the scratch clone in
-# place, since the live artifacts are more useful than a clean target while
-# debugging a run.
+# (when close has not already removed it) for inspection instead of removing
+# them, leaves the pull request and its branch in place too, and leaves
+# Archon's registration of the scratch clone in place. The live artifacts are
+# more useful than a clean target while debugging a run.
 #
 # One run happens in setup_file, and each test below checks one fact about
 # what it left behind. The checks read git, the tracker and the pull request
@@ -53,15 +56,18 @@ load helpers/e2e-cleanup
 
 TREE="$(cd "${BATS_TEST_DIRNAME}/.." && pwd)"
 
-# Small enough that the model spends its time on the pipeline rather than the
-# problem, while still needing both code and a test, since verify only credits
-# a commit that touches a test file.
-# shellcheck disable=SC2016 # Backticks are Markdown for the model, not expansions.
-SPEC='Add an executable greet.sh at the repository root. `./greet.sh <name>`
+# Prints the spec for bead $1. Small enough that the model spends its time on
+# the pipeline rather than the problem, while still needing both code and a
+# test, since verify only credits a commit that touches a test file. The file
+# names carry the bead id because a green run merges them into the target.
+spec_for() {
+  # shellcheck disable=SC2016 # Backticks are Markdown for the model, not expansions.
+  printf 'Add an executable greet-%s.sh at the repository root. `./greet-%s.sh <name>`
 prints `hello, <name>` to stdout and exits 0. Run with no argument, it prints
 a usage line to stderr and exits 2. Cover both behaviours with bats tests in
-tests/greet.bats, and commit the script and the tests together on the
-current branch.'
+tests/greet-%s.bats, and commit the script and the tests together on the
+current branch.' "$1" "$1" "$1"
+}
 
 setup_file() {
   [ "${SLICE_E2E:-}" = 1 ] || skip "set SLICE_E2E=1 to run the real pipeline"
@@ -103,9 +109,9 @@ setup_file() {
   # clean tree.
   export BEADS_DIR="$REPO/.beads"
   (cd "$REPO" && bd init --non-interactive --stealth --prefix e2e >/dev/null 2>&1)
-  BEAD="$(bd create --title "Add a greet script" --type task --priority 2 \
-    --design "$SPEC" --silent)"
+  BEAD="$(bd create --title "Add a greet script" --type task --priority 2 --silent)"
   export BEAD
+  bd update "$BEAD" --design "$(spec_for "$BEAD")" >/dev/null
   BRANCH="$("$TREE/bin/slice-wave" branch-name "$BEAD")"
   export BRANCH
 
@@ -131,17 +137,15 @@ setup_file() {
   RUN_ID="$(cd "$REPO" && archon workflow runs --json --limit 1 | jq -r '.runs[0].id // empty')"
   export RUN_ID
 
-  # validate's own output_format is the one place a pull request number
-  # appears; found the same way verify's sha is below, since the node's
-  # output can sit at any depth in --verbose's tree depending on how the
-  # engine nests a returns node's result.
+  # validate's output is the one that carries record_posted beside a pull
+  # request number, which is what tells it from merge's; found the same way
+  # verify's sha is below, since the node's output can sit at any depth in
+  # --verbose's tree depending on how the engine nests a node's result.
   local result
   result="$(run_json --verbose)"
   PR_NUMBER="$(printf '%s' "$result" | jq -r \
     '[.. | objects | select(.pr_number? != null and .record_posted? != null) | .pr_number] | first // empty')"
-  DELIVERED="$(printf '%s' "$result" | jq -r \
-    '[.. | objects | select(.delivered? != null and .record_posted? != null) | .delivered] | first | select(. != null)')"
-  export PR_NUMBER DELIVERED
+  export PR_NUMBER
 }
 
 teardown_file() {
@@ -195,18 +199,18 @@ diagnose() {
   }
   count="$(git -C "$REPO" rev-list --count "origin/main..$BRANCH")"
   [ "$count" -gt 0 ] || { echo "no commit on $BRANCH beyond origin/main" >&2; exit 1; }
-  contains "$(git -C "$REPO" diff --name-only "origin/main...$BRANCH")" "tests/greet.bats"
+  contains "$(git -C "$REPO" diff --name-only "origin/main...$BRANCH")" "tests/greet-$BEAD.bats"
 }
 
 @test "the committed script does what the bead asked" {
   wt="$(mktemp -d)"
   git -C "$REPO" archive "$BRANCH" | tar -x -C "$wt"
 
-  rc=0; out="$(cd "$wt" && ./greet.sh world 2>/dev/null)" || rc=$?
+  rc=0; out="$(cd "$wt" && "./greet-$BEAD.sh" world 2>/dev/null)" || rc=$?
   equals "$rc" 0
   equals "$out" "hello, world"
 
-  rc=0; (cd "$wt" && ./greet.sh >/dev/null 2>&1) || rc=$?
+  rc=0; (cd "$wt" && "./greet-$BEAD.sh" >/dev/null 2>&1) || rc=$?
   equals "$rc" 2
   rm -rf "$wt"
 }
@@ -217,14 +221,22 @@ diagnose() {
   equals "$reported" "$(git -C "$REPO" rev-parse "$BRANCH")"
 }
 
-@test "a delivered slice keeps its claim and an undelivered one is released" {
+@test "the bead is closed" {
   status="$(bd show "$BEAD" --json | jq -r 'if type == "array" then .[0] else . end | .status')"
-  if [ "$DELIVERED" = true ]; then
-    equals "$status" in_progress
-    lacks "$(bd ready --json | jq -r '.[]?.id')" "$BEAD"
-  else
-    equals "$status" open
-  fi
+  equals "$status" closed
+}
+
+@test "the forge reports the pull request merged" {
+  [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" -gt 0 ] 2>/dev/null || {
+    echo "no pr_number in validate's output; see $RUN_LOG" >&2
+    exit 1
+  }
+  state="$(gh pr view "$PR_NUMBER" -R "$SLICE_E2E_REPO" --json state --jq .state)"
+  equals "$state" MERGED
+}
+
+@test "no worktree is left on the slice branch" {
+  lacks "$(git -C "$REPO" worktree list)" "[$BRANCH]"
 }
 
 @test "the findings record comment landed on the pull request" {

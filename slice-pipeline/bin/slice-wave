@@ -8,7 +8,7 @@
 set -uo pipefail
 
 usage() {
-	echo "usage: slice-wave <branch-name|claim|release|verify-commit|validate> ..." >&2
+	echo "usage: slice-wave <branch-name|claim|release|verify-commit|validate|merge|close> ..." >&2
 }
 
 # Prints the branch git-check-ref-format accepts for $1, or returns 2 with
@@ -46,9 +46,9 @@ cmd_branch_name() {
 	printf '%s\n' "$branch"
 }
 
-# Sets the caller's `bead`, `beads_dir` and `verified` locals from --bead,
-# --beads-dir and --verified, accepting only the flags named in the
-# space-separated list $1. Returns 2 on any other flag or a flag with no value
+# Sets the caller's `bead`, `beads_dir`, `verified`, `delivered`, `pr`, `repo`
+# and `pr_url` locals from the flag of the same name, accepting only the flags
+# named in the space-separated list $1. Returns 2 on any other flag or a flag with no value
 # after it.
 parse_flags() {
 	local accepted=" $1 "
@@ -63,6 +63,10 @@ parse_flags() {
 			--bead) bead="$2" ;;
 			--beads-dir) beads_dir="$2" ;;
 			--verified) verified="$2" ;;
+			--delivered) delivered="$2" ;;
+			--pr) pr="$2" ;;
+			--repo) repo="$2" ;;
+			--pr-url) pr_url="$2" ;;
 		esac
 		shift 2
 	done
@@ -99,6 +103,21 @@ check_target_forge() {
 	esac
 	echo "slice-wave: no forge remote you can open pull requests on (viewer permission is $perm; add a GitHub remote you can push to, then check 'gh auth status')" >&2
 	return 1
+}
+
+# Fails a claim on a target repository whose origin git itself cannot push
+# $1 to. no-mistakes pushes the branch to origin's URL with git's own
+# credential, which can belong to a different account than the one gh
+# checked in check_target_forge. Runs before any branch switch or bd call,
+# same as check_target_forge.
+check_target_push() {
+	local branch="$1" said
+	# --force so a stale remote slice branch that HEAD does not contain reads
+	# as pushable; --dry-run writes nothing, so forcing costs nothing.
+	said="$(git push --dry-run --force --quiet origin "HEAD:refs/heads/$branch" 2>&1)" || {
+		echo "slice-wave: git cannot push to origin (check the git credential for origin's URL, which is separate from gh's). git said: $said" >&2
+		return 1
+	}
 }
 
 # Fails a claim on a target repository no-mistakes cannot validate: `axi`
@@ -243,6 +262,7 @@ cmd_claim() {
 	}
 
 	check_target_forge || return 1
+	check_target_push "$branch" || return 1
 	check_target_no_mistakes || return 1
 
 	switch_to_branch "$branch" || {
@@ -783,9 +803,9 @@ validate_slice() {
 	fi
 }
 
-# The workflow's returns node, so once --verified is true or false it exits 0
-# on every path and reports through the JSON object, never through its exit
-# status.
+# The workflow's returns node runs on this output on every path, so once
+# --verified is true or false it exits 0 on every path and reports through the
+# JSON object, never through its exit status.
 cmd_validate() {
 	local bead="" beads_dir="" verified=""
 	parse_flags "--bead --beads-dir --verified" "$@" || { usage; return 2; }
@@ -818,6 +838,161 @@ cmd_validate() {
 	return 0
 }
 
+# Sets the caller's `strategy` to how repository $1 merges: merge-queue when
+# the machine-local repos.json gives it a merge_queue of true, else squash.
+# The file is machine-local because which repositories run a merge queue is a
+# fact about the target, never one this repository commits. A file jq cannot
+# read adds a reason and returns 1, since guessing squash could bypass a queue.
+merge_strategy() {
+	local repo="$1" config="${XDG_CONFIG_HOME:-$HOME/.config}/slice-pipeline/repos.json" queued
+	strategy=squash
+	[ -e "$config" ] || return 0
+	queued="$(jq --arg repo "$repo" '.[$repo].merge_queue == true' "$config" 2>&1)" || {
+		strategy=""
+		add_reason "cannot read $config, so nothing was merged: $queued"
+		return 1
+	}
+	[ "$queued" != true ] || strategy=merge-queue
+}
+
+# Sets the caller's merged, strategy, pr_url and reason locals from merging
+# pull request $1 in repository $2. Merged is what the forge reports
+# afterwards, never the merge command's exit status.
+merge_pr() {
+	local pr="$1" repo="$2" view
+	merge_strategy "$repo" || return
+	# A merge queue takes no strategy flag: gh enqueues the pull request and
+	# the queue branch decides how it lands.
+	local merge_args=(pr merge "$pr" -R "$repo")
+	[ "$strategy" = merge-queue ] || merge_args+=(--squash)
+	local refused="" merge_failed=false
+	refused="$(gh "${merge_args[@]}" 2>&1 >/dev/null)" || merge_failed=true
+
+	# A merge queue, or a squash waiting on required checks, leaves the pull
+	# request open for a while after gh returns, so an open read is polled
+	# until $SLICE_WAVE_MERGE_LIMIT_SECONDS have passed since merge started.
+	local poll="${SLICE_WAVE_MERGE_POLL_SECONDS:-30}" limit="${SLICE_WAVE_MERGE_LIMIT_SECONDS:-7200}"
+	while :; do
+		view="$(gh pr view "$pr" -R "$repo" --json state,url)"
+		case "$(jq -r .state <<<"$view")" in
+			MERGED)
+				merged=true
+				pr_url="$(jq -r .url <<<"$view")"
+				return
+				;;
+			CLOSED)
+				add_reason "pull request $pr was closed without merging"
+				return
+				;;
+			OPEN)
+				[ "$merge_failed" = false ] || {
+					add_reason "gh could not merge pull request $pr, which the forge reports open: $refused"
+					return
+				}
+				;;
+		esac
+		if [ "$SECONDS" -ge "$limit" ]; then
+			add_reason "pull request $pr is still open ${limit}s after merge started"
+			[ "$merge_failed" = false ] || add_reason "gh could not merge it: $refused"
+			return
+		fi
+		sleep "$poll"
+	done
+}
+
+# The workflow's returns node, so once its flags parse it exits 0
+# on every path and reports through the JSON object, never through its exit
+# status.
+cmd_merge() {
+	local delivered="" pr="" repo=""
+	parse_flags "--delivered --pr --repo" "$@" || { usage; return 2; }
+	# --repo may be empty on an undelivered slice, since validate's
+	# short-circuit reports no repository; only a merge needs one.
+	[ -n "$delivered" ] && [ -n "$pr" ] && { [ -n "$repo" ] || [ "$delivered" = false ]; } || {
+		echo "slice-wave: merge needs --delivered, --pr and, for a delivered slice, --repo" >&2
+		usage
+		return 2
+	}
+	case "$pr" in
+		*[!0-9]*)
+			echo "slice-wave: --pr must be a pull request number, not '$pr'" >&2
+			usage
+			return 2
+			;;
+	esac
+
+	local merged=false strategy="" pr_url="" reason=""
+	case "$delivered" in
+		true)
+			if [ "$pr" -eq 0 ]; then
+				reason="the delivered slice names no pull request, so nothing was merged"
+			else
+				merge_pr "$pr" "$repo"
+			fi
+			;;
+		false) reason="the slice was not delivered, so nothing was merged" ;;
+		*)
+			echo "slice-wave: --delivered must be true or false, not '$delivered'" >&2
+			usage
+			return 2
+			;;
+	esac
+
+	jq -n --argjson merged "$merged" --arg strategy "$strategy" \
+		--argjson pr_number "$pr" --arg pr_url "$pr_url" --arg reason "$reason" \
+		'{merged: $merged, strategy: $strategy, pr_number: $pr_number,
+		  pr_url: $pr_url, reason: $reason}'
+	return 0
+}
+
+# Sets the caller's worktree_removed and reason locals from removing the
+# linked worktree the current directory sits in. Nothing else reaps a run's
+# worktree, so without this each slice leaves one behind. --force drops the
+# untracked build output a run leaves, which is disposable once the code has
+# merged. Archon reconciles an isolation environment whose path is gone, so
+# removing it under Archon is safe. A main worktree is never removed.
+remove_linked_worktree() {
+	local dirs top main said
+	# Both paths absolute, since git reports a main worktree's as relative.
+	dirs="$(git rev-parse --path-format=absolute --git-dir --git-common-dir 2>&1)" || {
+		reason="cannot tell whether this is a linked worktree, so none was removed: $dirs"
+		return
+	}
+	[ "$(sed -n 1p <<<"$dirs")" != "$(sed -n 2p <<<"$dirs")" ] || return 0
+
+	top="$(git rev-parse --show-toplevel)"
+	main="$(git worktree list --porcelain | awk '/^worktree / { print substr($0, 10); exit }')"
+	if said="$(git -C "$main" worktree remove --force "$top" 2>&1)"; then
+		worktree_removed=true
+	else
+		reason="the bead is closed but git could not remove worktree $top: $said"
+	fi
+}
+
+# Closes bead $1 as merged in pull request $3, run once the forge confirms
+# the merge, then removes the run's linked worktree.
+cmd_close() {
+	local bead="" beads_dir="" pr_url=""
+	parse_flags "--bead --beads-dir --pr-url" "$@" || { usage; return 2; }
+	[ -n "$bead" ] && [ -n "$beads_dir" ] && [ -n "$pr_url" ] || {
+		echo "slice-wave: close needs --bead, --beads-dir and --pr-url" >&2
+		usage
+		return 2
+	}
+
+	local said
+	said="$(BEADS_DIR="$beads_dir" bd close "$bead" --reason "merged in $pr_url" 2>&1 >/dev/null)" || {
+		echo "slice-wave: the tracker refused to close bead $bead, so its worktree was left in place. bd said: $said" >&2
+		return 1
+	}
+
+	local worktree_removed=false reason=""
+	remove_linked_worktree
+	jq -n --argjson worktree_removed "$worktree_removed" --arg reason "$reason" \
+		'{closed: true, worktree_removed: $worktree_removed, reason: $reason}'
+	return 0
+}
+
 case "${1:-}" in
 	branch-name)
 		shift
@@ -842,6 +1017,16 @@ case "${1:-}" in
 	validate)
 		shift
 		cmd_validate "$@"
+		exit $?
+		;;
+	merge)
+		shift
+		cmd_merge "$@"
+		exit $?
+		;;
+	close)
+		shift
+		cmd_close "$@"
 		exit $?
 		;;
 	*)
