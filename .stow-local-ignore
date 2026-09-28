@@ -11,9 +11,6 @@
 # Installation and scripts
 ^/install\.sh$
 
-# Slice-pipeline e2e fixture script, run from the repo, not a dotfile.
-^/greet-dotfiles-3jc\.sh$
-
 # Vendored third-party content (subtrees). Pulled into ~/.claude via
 # symlinks under dot-claude/skills/, not stowed directly.
 ^/vendor
