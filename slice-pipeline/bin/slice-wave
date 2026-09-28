@@ -908,11 +908,11 @@ cmd_merge() {
 	parse_flags "--delivered --pr --repo" "$@" || { usage; return 2; }
 	# --repo may be empty on an undelivered slice, since validate's
 	# short-circuit reports no repository; only a merge needs one.
-	[ -n "$delivered" ] && [ -n "$pr" ] && { [ -n "$repo" ] || [ "$delivered" = false ]; } || {
+	if [ -z "$delivered" ] || [ -z "$pr" ] || { [ -z "$repo" ] && [ "$delivered" != false ]; }; then
 		echo "slice-wave: merge needs --delivered, --pr and, for a delivered slice, --repo" >&2
 		usage
 		return 2
-	}
+	fi
 	case "$pr" in
 		*[!0-9]*)
 			echo "slice-wave: --pr must be a pull request number, not '$pr'" >&2
