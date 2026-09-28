@@ -114,7 +114,9 @@ check_target_push() {
 	local branch="$1" said
 	# --force so a stale remote slice branch that HEAD does not contain reads
 	# as pushable; --dry-run writes nothing, so forcing costs nothing.
-	said="$(git push --dry-run --force --quiet origin "HEAD:refs/heads/$branch" 2>&1)" || {
+	# --no-verify because a dry run still fires the target's pre-push hook,
+	# whose tests or lint say nothing about the credential.
+	said="$(git push --dry-run --no-verify --force --quiet origin "HEAD:refs/heads/$branch" 2>&1)" || {
 		echo "slice-wave: git cannot push to origin (check the git credential for origin's URL, which is separate from gh's). git said: $said" >&2
 		return 1
 	}
@@ -871,28 +873,53 @@ merge_pr() {
 	# A merge queue, or a squash waiting on required checks, leaves the pull
 	# request open for a while after gh returns, so an open read is polled
 	# until $SLICE_WAVE_MERGE_LIMIT_SECONDS have passed since merge started.
+	# A failed read is polled too, since the forge may only be unreachable.
 	local poll="${SLICE_WAVE_MERGE_POLL_SECONDS:-30}" limit="${SLICE_WAVE_MERGE_LIMIT_SECONDS:-7200}"
+	local fields=state,url state="" read_error="" queued seen_queued=false
+	[ "$strategy" != merge-queue ] || fields+=,isInMergeQueue
 	while :; do
-		view="$(gh pr view "$pr" -R "$repo" --json state,url)"
-		case "$(jq -r .state <<<"$view")" in
-			MERGED)
-				merged=true
-				pr_url="$(jq -r .url <<<"$view")"
-				return
-				;;
-			CLOSED)
-				add_reason "pull request $pr was closed without merging"
-				return
-				;;
-			OPEN)
-				[ "$merge_failed" = false ] || {
-					add_reason "gh could not merge pull request $pr, which the forge reports open: $refused"
+		if view="$(gh pr view "$pr" -R "$repo" --json "$fields" 2>&1)"; then
+			read_error=""
+			state="$(jq -r .state <<<"$view" 2>/dev/null)"
+			case "$state" in
+				MERGED)
+					merged=true
+					pr_url="$(jq -r .url <<<"$view")"
 					return
-				}
-				;;
-		esac
+					;;
+				CLOSED)
+					add_reason "pull request $pr was closed without merging"
+					[ "$merge_failed" = false ] || add_reason "gh could not merge it: $refused"
+					return
+					;;
+				OPEN)
+					[ "$merge_failed" = false ] || {
+						add_reason "gh could not merge pull request $pr, which the forge reports open: $refused"
+						return
+					}
+					# gh only arms auto-merge while required checks are pending, so
+					# an unqueued read counts as a drop only after a queued one.
+					queued=false
+					[ "$strategy" != merge-queue ] || queued="$(jq -r .isInMergeQueue <<<"$view")"
+					if [ "$queued" = true ]; then
+						seen_queued=true
+					elif [ "$seen_queued" = true ]; then
+						add_reason "the merge queue dropped pull request $pr, which the forge reports open"
+						return
+					fi
+					;;
+			esac
+		else
+			read_error="$view"
+		fi
 		if [ "$SECONDS" -ge "$limit" ]; then
-			add_reason "pull request $pr is still open ${limit}s after merge started"
+			if [ -n "$read_error" ]; then
+				add_reason "could not read pull request $pr state: $read_error"
+			elif [ "$state" = OPEN ]; then
+				add_reason "pull request $pr is still open ${limit}s after merge started"
+			else
+				add_reason "the forge reports pull request $pr in unexpected state '$state' ${limit}s after merge started"
+			fi
 			[ "$merge_failed" = false ] || add_reason "gh could not merge it: $refused"
 			return
 		fi
@@ -900,16 +927,24 @@ merge_pr() {
 	done
 }
 
-# The workflow's returns node, so once its flags parse it exits 0
-# on every path and reports through the JSON object, never through its exit
+# The workflow's returns node, so once its flags are valid it exits 0 on
+# every path and reports through the JSON object, never through its exit
 # status.
 cmd_merge() {
 	local delivered="" pr="" repo=""
 	parse_flags "--delivered --pr --repo" "$@" || { usage; return 2; }
+	case "$delivered" in
+		true | false) ;;
+		*)
+			echo "slice-wave: --delivered must be true or false, not '$delivered'" >&2
+			usage
+			return 2
+			;;
+	esac
 	# --repo may be empty on an undelivered slice, since validate's
 	# short-circuit reports no repository; only a merge needs one.
-	if [ -z "$delivered" ] || [ -z "$pr" ] || { [ -z "$repo" ] && [ "$delivered" != false ]; }; then
-		echo "slice-wave: merge needs --delivered, --pr and, for a delivered slice, --repo" >&2
+	if [ -z "$pr" ] || { [ "$delivered" = true ] && [ -z "$repo" ]; }; then
+		echo "slice-wave: merge needs --pr and, for a delivered slice, --repo" >&2
 		usage
 		return 2
 	fi
@@ -931,11 +966,6 @@ cmd_merge() {
 			fi
 			;;
 		false) reason="the slice was not delivered, so nothing was merged" ;;
-		*)
-			echo "slice-wave: --delivered must be true or false, not '$delivered'" >&2
-			usage
-			return 2
-			;;
 	esac
 
 	jq -n --argjson merged "$merged" --arg strategy "$strategy" \

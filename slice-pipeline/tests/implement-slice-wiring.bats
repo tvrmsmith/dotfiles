@@ -25,6 +25,11 @@ setup() {
   export FIXTURES_DIR="${BATS_TEST_DIRNAME}/fixtures/axi"
   install_stubs
 
+  # See merge-and-close.bats: the merge body must not read the machine's
+  # real repos.json, and its poll must not sleep.
+  export XDG_CONFIG_HOME="$STUB_BIN/config"
+  export SLICE_WAVE_MERGE_POLL_SECONDS=0
+
   OLD_PATH="$PATH"
   # The workflow invokes a bare `slice-wave`, so this tree's copy has to be the
   # one that resolves. Putting it here rather than relying on the link

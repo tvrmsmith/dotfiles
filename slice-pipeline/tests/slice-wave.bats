@@ -214,6 +214,15 @@ teardown() {
   is_empty "$(git -C "$ORIGIN" for-each-ref)"
 }
 
+@test "claim's push check does not run the target's pre-push hook" {
+  printf '#!/bin/sh\ntouch "%s/pre-push-ran"\nexit 1\n' "$STUB_BIN" > "$REPO/.git/hooks/pre-push"
+  chmod +x "$REPO/.git/hooks/pre-push"
+  rc=0
+  ( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" ) >/dev/null || rc=$?
+  equals "$rc" 0
+  [ ! -e "$STUB_BIN/pre-push-ran" ] || { echo "the pre-push hook ran" >&2; exit 1; }
+}
+
 @test "claim passes the push check when origin holds a slice branch HEAD does not contain" {
   other="$(git -C "$REPO" -c user.email=t@example.com -c user.name=Test \
     commit-tree "$(git -C "$REPO" hash-object -t tree /dev/null)" -m other)"

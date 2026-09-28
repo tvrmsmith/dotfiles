@@ -41,7 +41,8 @@ read at run time and keyed by `owner/name`:
 {"owner/name": {"merge_queue": true}}
 ```
 
-A queued repository is enqueued with no strategy flag. If the file exists but
+A queued repository is enqueued with no strategy flag, and `merge` fails at
+once if the queue drops the pull request after holding it. If the file exists but
 jq cannot read it, `merge` refuses to merge rather than guess squash.
 
 Review `verify`'s `waivers` after a slice merges. The build runs unattended, so

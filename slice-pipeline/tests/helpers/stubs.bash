@@ -62,14 +62,17 @@ case "${1:-} ${2:-}" in
 	"pr view")
 		# GH_PR_VIEW_STATES lists one state per call, space-separated, so a
 		# test can script a merge that lands after a few polls. Calls past
-		# the end repeat the last state, and FAIL makes that call exit 1.
+		# the end repeat the last state, and FAIL makes that call exit 1. A
+		# state suffixed :queued reads as sitting in the merge queue.
 		calls="$(cat "$STUB_BIN/pr-view-calls" 2>/dev/null || echo 0)"
 		echo $((calls + 1)) > "$STUB_BIN/pr-view-calls"
 		set -- ${GH_PR_VIEW_STATES:-MERGED}
 		[ "$calls" -lt $# ] || calls=$(($# - 1))
 		shift "$calls"
 		[ "$1" != FAIL ] || { echo "gh: stub pr view configured to fail" >&2; exit 1; }
-		printf '{"state":"%s","url":"https://github.com/owner/repo/pull/42"}\n' "$1"
+		queued=false
+		[ "${1#*:}" != queued ] || queued=true
+		printf '{"state":"%s","url":"https://github.com/owner/repo/pull/42","isInMergeQueue":%s}\n' "${1%%:*}" "$queued"
 		;;
 	*) printf '{"nameWithOwner":"owner/repo","viewerPermission":"%s"}\n' "${GH_VIEWER_PERMISSION:-WRITE}" ;;
 esac

@@ -4,7 +4,7 @@ description: |
   it through no-mistakes to a green pull request with a findings record, merge
   it, and close the bead once the forge confirms the merge. The slice's spec
   lives in the bead's `design` field, the wave's agreed seams in its `notes`
-  field. Verify reads the branch, not a model's self-report, and close reads
+  field. Verify reads the branch, not a model's self-report, and merge reads
   the forge, not the merge command's exit status.
 
   Use when: a bead is ready and its spec lives in the bead. Run one per slice,

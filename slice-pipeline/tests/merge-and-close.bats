@@ -135,12 +135,67 @@ field() {
   equals "$(grep -c 'pr view' "$CALL_LOG")" 3
 }
 
+@test "merge fails at once when the merge queue drops a PR it had queued" {
+  mkdir -p "$XDG_CONFIG_HOME/slice-pipeline"
+  printf '{"owner/repo":{"merge_queue":true}}\n' > "$XDG_CONFIG_HOME/slice-pipeline/repos.json"
+  export GH_PR_VIEW_STATES="OPEN:queued OPEN MERGED"
+  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" merged)" false
+  contains "$(field "$out" reason)" "merge queue dropped"
+  equals "$(grep -c 'pr view' "$CALL_LOG")" 2
+}
+
+@test "merge keeps polling a queue PR waiting on checks and then sitting in the queue" {
+  mkdir -p "$XDG_CONFIG_HOME/slice-pipeline"
+  printf '{"owner/repo":{"merge_queue":true}}\n' > "$XDG_CONFIG_HOME/slice-pipeline/repos.json"
+  export GH_PR_VIEW_STATES="OPEN OPEN:queued OPEN:queued MERGED"
+  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" merged)" true
+  equals "$(grep -c 'pr view' "$CALL_LOG")" 4
+}
+
+@test "merge ignores the merge queue for a squashed PR" {
+  export GH_PR_VIEW_STATES="OPEN:queued OPEN MERGED"
+  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" merged)" true
+  equals "$(grep -c 'pr view' "$CALL_LOG")" 3
+}
+
 @test "merge reports a PR the forge closed without merging" {
   export GH_PR_VIEW_STATES=CLOSED
   rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "closed"
+}
+
+@test "merge reports gh's refusal with a PR the forge closed" {
+  export GH_PR_MERGE_EXIT=1 GH_PR_VIEW_STATES=CLOSED
+  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" merged)" false
+  contains "$(field "$out" reason)" "closed"
+  contains "$(field "$out" reason)" "Pull request is not mergeable"
+}
+
+@test "merge names gh's read error when no read succeeds before the time limit" {
+  export SLICE_WAVE_MERGE_LIMIT_SECONDS=0 GH_PR_VIEW_STATES=FAIL
+  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" merged)" false
+  contains "$(field "$out" reason)" "could not read pull request 42 state"
+  contains "$(field "$out" reason)" "stub pr view configured to fail"
+}
+
+@test "merge names a state the forge reports outside merged, closed and open" {
+  export SLICE_WAVE_MERGE_LIMIT_SECONDS=0 GH_PR_VIEW_STATES=UNKNOWN
+  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" merged)" false
+  contains "$(field "$out" reason)" "unexpected state 'UNKNOWN'"
 }
 
 @test "merge gives up on a PR still open when the time limit has passed" {
@@ -181,10 +236,11 @@ field() {
   is_empty "$(cat "$CALL_LOG")"
 }
 
-@test "merge exits 2 with the usage line when --delivered is neither true nor false" {
-  rc=0; out="$(merge --delivered maybe --pr 42 --repo owner/repo 2>"$STUB_BIN/err")" || rc=$?
+@test "merge exits 2 naming --delivered when it is neither true nor false" {
+  rc=0; out="$(merge --delivered maybe --pr 42 --repo '' 2>"$STUB_BIN/err")" || rc=$?
   equals "$rc" 2
   is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "--delivered must be true or false, not 'maybe'"
   contains "$(cat "$STUB_BIN/err")" "usage: slice-wave"
   is_empty "$(cat "$CALL_LOG")"
 }
@@ -231,6 +287,18 @@ add_linked_worktree() {
   equals "$(field "$out" worktree_removed)" true
   [ ! -e "$WT" ] || { echo "the worktree still exists" >&2; exit 1; }
   lacks "$(git -C "$REPO" worktree list)" "$(cd "$STUB_BIN" && pwd -P)/wt"
+}
+
+@test "close exits 0 with the bead closed when git cannot remove the worktree" {
+  add_linked_worktree
+  git -C "$REPO" worktree lock "$WT"
+  rc=0; out="$(close_in "$WT" --bead foo --beads-dir /tmp/beads-demo \
+    --pr-url https://github.com/owner/repo/pull/42)" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" closed)" true
+  equals "$(field "$out" worktree_removed)" false
+  contains "$(field "$out" reason)" "could not remove worktree"
+  [ -d "$WT" ] || { echo "the worktree was removed" >&2; exit 1; }
 }
 
 @test "close exits 1 and keeps the worktree when the tracker refuses to close the bead" {
