@@ -1,5 +1,6 @@
 load helpers/assert
 load helpers/e2e-cleanup
+load helpers/e2e-sandbox
 
 # The one suite that runs the real pipeline: a real GitHub target, this tree's
 # workflow under the real engine, and a real model building a real bead. The
@@ -14,23 +15,27 @@ load helpers/e2e-cleanup
 # check_target_no_mistakes in bin/slice-wave), so the scratch repo the old
 # version of this suite built - a local bare origin, never run through
 # `no-mistakes init` - no longer clears claim and cannot stand in for a real
-# target. This version clones a real repository instead.
+# target. This version clones a real sandbox repository instead.
 #
 # Opt-in, because a run spends model tokens, pushes a branch, and opens and
-# merges a pull request on a real repository, and can go red on a bad model
+# merges a pull request on the sandbox, and can go red on a bad model
 # run rather than on broken code:
 #
 #   SLICE_E2E=1 SLICE_E2E_REPO=owner/name bats slice-pipeline/tests/e2e.bats
 #
 # SLICE_E2E_REPO names a GitHub repository (owner/name) you can push to and
 # open pull requests on; the suite skips with a clear message when it is
-# unset. It clones that repository to scratch, runs `no-mistakes init` there
-# so claim's preflight passes, then drives one small bead through the real
-# pipeline: claim, a real model build, verify, a real no-mistakes validate
-# drive against that repository's forge, a real merge, and close. A green run
-# therefore leaves a merged pull request and its code on the target's default
-# branch. The script and test file names carry the bead id, so a rerun
-# against the same target never collides with an earlier run's merged files.
+# unset. It must be a sandbox kept only for this suite. setup_file refuses any
+# target without a committed .slice-e2e-sandbox marker before it pushes or
+# opens anything (see require_e2e_sandbox), since an unguarded run once merged
+# into this project's own main. It clones that repository to scratch, runs
+# `no-mistakes init` there so claim's preflight passes, then drives one small
+# bead through the real pipeline: claim, a real model build, verify, a real
+# no-mistakes validate drive against that repository's forge, a real merge,
+# and close. A green run therefore leaves a merged pull request and its code
+# on the target's default branch. The script and test file names carry the
+# bead id, so a rerun against the same target never collides with an earlier
+# run's merged files.
 # Teardown closes any pull request still open on the slice branch, deletes
 # that branch on the remote, and releases Archon's registration of the scratch
 # clone as the target repository's codebase. After a merge there is no open
@@ -77,7 +82,9 @@ setup_file() {
     command -v "$tool" >/dev/null || skip "no $tool"
   done
 
-  SCRATCH="$(mktemp -d)"
+  # The physical path, which is what Archon records, so teardown still matches
+  # its registration if the scratch dir is gone by then and cannot be resolved.
+  SCRATCH="$(cd "$(mktemp -d)" && pwd -P)"
   export SCRATCH
   export REPO="$SCRATCH/repo" SOURCE="$SCRATCH/source" RUN_LOG="$SCRATCH/run.log"
   export ARCHON_SNAPSHOT="$SCRATCH/archon-codebases.sql"
@@ -89,6 +96,12 @@ setup_file() {
     gh repo clone "$SLICE_E2E_REPO" "$REPO" -- --quiet >"$RUN_LOG" 2>&1
   fi || {
     echo "# cannot clone $SLICE_E2E_REPO; see $RUN_LOG" >&3
+    exit 1
+  }
+
+  # Must run before anything writes into the clone or reaches the forge.
+  require_e2e_sandbox "$SLICE_E2E_REPO" "$REPO" 2>&3 || {
+    echo "# $SLICE_E2E_REPO is not a slice e2e sandbox; see above" >&3
     exit 1
   }
 
@@ -137,11 +150,11 @@ setup_file() {
   RUN_ID="$(cd "$REPO" && archon workflow runs --json --limit 1 | jq -r '.runs[0].id // empty')"
   export RUN_ID
 
-  # Read from validate's node preview, the same way verify's sha is below.
-  # Only the returns node's result appears as a parsed object in --verbose's
-  # tree, and merge, not validate, is the returns node now.
-  PR_NUMBER="$(run_json --verbose | jq -r '
-    [.nodes[]? | select(.nodeId == "validate") | .outputPreview | fromjson? | .pr_number] | first // empty')"
+  # Read from merge, the returns node, whose parsed result the run record
+  # keeps whole. merge passes validate's pr_number through on every verdict.
+  # validate's node preview is cut at about 200 characters, which a long
+  # repository name in its pr_url and repo fields pushes pr_number past.
+  PR_NUMBER="$(run_json | jq -r '.terminal_record.returns.value.pr_number // empty')"
   export PR_NUMBER
 }
 
@@ -158,10 +171,15 @@ teardown_file() {
     echo "# Archon still registers the scratch clone as $SLICE_E2E_REPO's codebase; a later run from another clone fails until it is released, e.g. bash -c '. $TREE/tests/helpers/e2e-cleanup.bash; release_archon_registration $phys $snapshot'" >&3
     return 0
   fi
-  (cd "$REPO" && archon complete "e2e/$BEAD" >/dev/null 2>&1) ||
-    echo "# archon complete e2e/$BEAD failed; run 'archon isolation list' to find the worktree" >&3
-  close_slice_branch "$SLICE_E2E_REPO" "${BRANCH:-}" "$REPO" 2>&3
-  release_archon_registration "$SCRATCH" "$ARCHON_SNAPSHOT" 2>&3
+  # No snapshot means setup stopped before the run, at the clone or the
+  # sandbox guard, so there is no worktree, branch or registration to undo,
+  # and a target the guard refused must not be touched at all.
+  if [ -e "$ARCHON_SNAPSHOT" ]; then
+    (cd "$REPO" && archon complete "e2e/$BEAD" >/dev/null 2>&1) ||
+      echo "# archon complete e2e/$BEAD failed; run 'archon isolation list' to find the worktree" >&3
+    close_slice_branch "$SLICE_E2E_REPO" "${BRANCH:-}" "$REPO" 2>&3
+    release_archon_registration "$SCRATCH" "$ARCHON_SNAPSHOT" 2>&3
+  fi
   rm -rf "$SCRATCH"
 }
 
