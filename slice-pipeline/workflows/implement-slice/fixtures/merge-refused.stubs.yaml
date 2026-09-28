@@ -1,0 +1,51 @@
+# A merge that does not land leaves the bead open: validate delivers a green
+# PR, as in merged.stubs.yaml, but the forge refuses to merge it, so merge
+# reports merged: false and release hands the bead back to the frontier with
+# the PR still open.
+#
+# Archon's fixture language cannot assert the authored outcome (it checks
+# `expect`, the run status, not an authored field), so "the run reports
+# failure" is pinned by the nodes the run reaches instead: release, and never
+# close. `close` is left unstubbed, so reaching it fails this fixture with a
+# missing-stub error. That omission guards the rule that only a merge the
+# forge confirmed closes the bead, and so unblocks its dependents. If
+# `$merge.output.merged == false` ever stopped catching a refused merge,
+# `release` would drop out of `reached` and this fixture would go red.
+fixture:
+  expect: completed
+  reached: [claim, build, verify, validate, merge, release]
+  inputs:
+    bead: demo-slice-1
+    beads_dir: /tmp/beads
+
+claim:
+  bead: demo-slice-1
+  beads_dir: /tmp/beads
+  branch: slice/demo-slice-1
+build: "the slice is built and committed"
+verify:
+  verified: true
+  committed: true
+  tests_touched: true
+  branch: slice/demo-slice-1
+  sha: 1f0c6a4e2b7d9c3a5e8f10b2d4c6a8e0f2b4d6c8
+  reason: ""
+  waivers: []
+  waivers_error: ""
+validate:
+  delivered: true
+  outcome: checks-passed
+  pr_number: 42
+  pr_url: https://github.com/owner/repo/pull/42
+  repo: owner/repo
+  fix_rounds: 1
+  record_posted: true
+  reason: ""
+merge:
+  merged: false
+  strategy: squash
+  pr_number: 42
+  pr_url: ""
+  reason: "gh could not merge pull request 42, which the forge reports open: GraphQL: Pull request is not mergeable"
+release:
+  released: true
