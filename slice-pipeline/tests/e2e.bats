@@ -143,7 +143,11 @@ teardown_file() {
   [ -n "${SCRATCH:-}" ] || return 0
   if [ "${SLICE_E2E_KEEP:-}" = 1 ]; then
     echo "# kept scratch at $SCRATCH (run log: $RUN_LOG, run: ${RUN_ID:-none}, pr: ${PR_NUMBER:-none})" >&3
-    echo "# Archon still registers the scratch clone as $SLICE_E2E_REPO's codebase; a later run from another clone fails until it is released, e.g. bash -c '. $TREE/tests/helpers/e2e-cleanup.bash; release_archon_registration $SCRATCH'" >&3
+    # The physical path is what Archon recorded, and it can no longer be
+    # resolved once the kept scratch dir is deleted.
+    local phys
+    phys="$(cd "$SCRATCH" && pwd -P)" || phys="$SCRATCH"
+    echo "# Archon still registers the scratch clone as $SLICE_E2E_REPO's codebase; a later run from another clone fails until it is released, e.g. bash -c '. $TREE/tests/helpers/e2e-cleanup.bash; release_archon_registration $phys'" >&3
     return 0
   fi
   (cd "$REPO" && archon complete "e2e/$BEAD" >/dev/null 2>&1) ||
