@@ -51,19 +51,35 @@ its `log.sh` call and keeps the log outside every worktree. The assumption a dec
 in that row's `why`. `result` is `done`, `open`, or `parked: <what it waits on>`, and an open item
 closes with a later row, since the log is append-only.
 
-Close every response with a footer listing each item whose latest row is not `done`. Its first
-line carries the path from `agent-decision-log --path "afk-${CLAUDE_CODE_SESSION_ID:?}"`, which is
-how you find the log again after a compaction. `/resume-work` buckets this session by the
-`parked:` lines of its last turn.
+Close every response with a footer that groups items by their latest row. Each item is one plain
+sentence told to Trevor, not a copy of the row's cells: a parked item names what it waits on, and
+a done item ends on its evidence pointer when the row has one. The first line carries the path
+from `agent-decision-log --path "afk-${CLAUDE_CODE_SESSION_ID:?}"`, which is how you find the log
+again after a compaction and how Trevor opens the full trail. Omit an empty group.
+`/resume-work` buckets this session by the `Parked for Trevor:` group of its last turn.
 
 ```text
 AFK log: <path>
-- parked: <item> | <what it waits on>
-- open: <item>
+- Open:
+  - <item>.
+- Parked for Trevor:
+  - <item>, which needs <what it waits on>.
 ```
 
-Once no `open` line remains, that response is the hand-back show-me-your-work describes. Audit the
+Once no `open` item remains, that response is the hand-back show-me-your-work describes. Audit the
 log against the transcript, then have a fresh opus subagent review the trail. Put its Attention
 section above the footer, led by `reviewed by claude-opus`, since this machine has no other model
-family. End on a line exactly `AFK: idle`, which lets the guard pass the stop. Earlier responses
-carry the footer alone.
+family. The hand-back footer trades Open for Done, listing every item this AFK stretch finished,
+and ends on a line exactly `AFK: idle`, which lets the guard pass the stop:
+
+```text
+AFK log: <path>
+- Done:
+  - The test suite passed (run 4121).
+  - Both commits are made (a1b2c3d, e4f5a6b) and the bead notes are updated.
+- Parked for Trevor:
+  - Pushing the 2 commits to the open PR, which needs 1Password.
+  - The merge decision.
+
+AFK: idle
+```
