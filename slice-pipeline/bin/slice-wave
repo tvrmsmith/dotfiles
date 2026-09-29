@@ -1051,12 +1051,11 @@ cmd_merge() {
 # Sets the caller's outcome, cursor, head_sha, comments and reason from
 # watching pull request $1's tuicr session in repository $2 for a send past
 # cursor $3, a `<release_count>:<session path>` pair or empty for none yet.
-# Polls every $SLICE_WAVE_REVIEW_POLL_SECONDS until a send decides the round
-# or $SLICE_WAVE_REVIEW_WAIT_SECONDS have passed since review-round started.
+# Polls every $poll seconds until a send decides the round or $wait seconds
+# have passed since review-round started, both the caller's.
 # Returns 1, naming the state on stderr, once the pull request is not open.
 wait_for_send() {
 	local pr="$1" repo="$2" since="$3" slug="gh:$2/pr/$1"
-	local poll="${SLICE_WAVE_REVIEW_POLL_SECONDS:-15}" wait="${SLICE_WAVE_REVIEW_WAIT_SECONDS:-28800}"
 	local base_count="${since%%:*}" base_path="${since#*:}"
 	local pr_state pr_head count path session_head read_problem=""
 	while :; do
@@ -1088,11 +1087,10 @@ wait_for_send() {
 judge_session() {
 	local slug="$1"
 	if [ "$path" != "$base_path" ]; then
-		# A new session file is a reload onto a new head, whose count
-		# restarts, so it only moves the baseline.
+		# A session file the baseline does not name started after it, at
+		# release 0, so every release it holds is a send to judge.
 		base_path="$path"
-		base_count="$count"
-		return 1
+		base_count=0
 	fi
 	[ "$count" -gt "$base_count" ] || return 1
 
@@ -1131,18 +1129,47 @@ judge_session() {
 }
 
 # Sets the caller's pr_state and pr_head from pull request $1 in repository
-# $2, or returns 1 when gh cannot say.
+# $2, or returns 1 with read_problem saying why gh cannot say.
 read_pr_head() {
 	local view
-	view="$(gh pr view "$1" -R "$2" --json state,headRefOid 2>/dev/null)" || return 1
+	view="$(gh pr view "$1" -R "$2" --json state,headRefOid 2>&1)" || {
+		read_problem="gh pr view $1 -R $2 failed: $view"
+		return 1
+	}
 	pr_state="$(jq -r '.state // empty' <<<"$view" 2>/dev/null)"
 	pr_head="$(jq -r '.headRefOid // empty' <<<"$view" 2>/dev/null)"
-	[ -n "$pr_state" ] && [ -n "$pr_head" ]
+	[ -n "$pr_state" ] && [ -n "$pr_head" ] || {
+		read_problem="gh pr view $1 -R $2 reported no state and head: $view"
+		return 1
+	}
+}
+
+# Sets the caller's since to session $2's cursor in the `tuicr review list` of
+# repository $1, leaving it empty when the list holds no such session. A list
+# tuicr cannot give is retried every $poll seconds, since the session it hides
+# may already hold releases, and returns 1 with read_problem set once $wait
+# seconds have passed since review-round started.
+snapshot_session() {
+	local count path session_head rc
+	while :; do
+		rc=0
+		read_session "$1" "$2" || rc=$?
+		case "$rc" in
+			0)
+				since="$count:$path"
+				return 0
+				;;
+			2) return 0 ;;
+		esac
+		[ "$SECONDS" -lt "$wait" ] || return 1
+		sleep "$poll"
+	done
 }
 
 # Sets the caller's count, path and session_head from session $2 in the
-# `tuicr review list` of repository $1, or returns 1 with read_problem saying
-# why there is none to read.
+# `tuicr review list` of repository $1. Otherwise sets read_problem saying
+# why, and returns 2 when the list read but holds no such session, or 1 when
+# tuicr gave no list to read.
 read_session() {
 	local list session
 	list="$(tuicr review list --repo "$1" 2>&1)" || {
@@ -1163,7 +1190,7 @@ read_session() {
 	}
 	[ -n "$session" ] || {
 		read_problem="tuicr has no review session $2"
-		return 1
+		return 2
 	}
 	read_problem=""
 	{
@@ -1278,11 +1305,19 @@ cmd_review_round() {
 		}
 	fi
 
-	local outcome="" cursor="" head_sha="" comments=0 reason=""
+	local outcome="" cursor="" head_sha="" comments=0 reason="" read_problem=""
+	local poll="${SLICE_WAVE_REVIEW_POLL_SECONDS:-15}" wait="${SLICE_WAVE_REVIEW_WAIT_SECONDS:-28800}"
 	case "$delivered" in
 		true)
-			ensure_review_tab "$pr" "$repo" "review $bead #$pr" || return 1
-			wait_for_send "$pr" "$repo" "$since" || return 1
+			# A first round baselines on the session as it stands before the
+			# tab opens, so a send made in it before the first poll still counts.
+			if [ -z "$since" ] && ! snapshot_session "$repo" "gh:$repo/pr/$pr"; then
+				outcome=none
+				reason="tuicr gave no review list to snapshot within ${wait}s, so no review tab opened: $read_problem"
+			else
+				ensure_review_tab "$pr" "$repo" "review $bead #$pr" || return 1
+				wait_for_send "$pr" "$repo" "$since" || return 1
+			fi
 			;;
 		false)
 			outcome=undelivered

@@ -1,3 +1,6 @@
+# Each @test runs in its own subshell, so the stub knobs a test exports are
+# meant to stay local to it.
+# shellcheck disable=SC2030,SC2031
 load helpers/assert
 load helpers/stubs
 
@@ -62,16 +65,32 @@ teardown() {
 # script to accept them, and every other field this workflow substitutes is a
 # boolean, `approved` and `delivered` among them, so `true`. A
 # $LOOP_PREV.<node>.output.<field> token renders as '', as it does on a loop's
-# first iteration. Any further argument, `field=value`, overrides one field's
-# value, written the way Archon writes it into a bash body: shell quoted, so
-# an empty string arrives as ''.
+# first iteration, unless a `LOOP_PREV=<json>` argument supplies the previous
+# iteration's output, whose field it then renders shell quoted once <node>'s
+# output_format declares it. Any further argument, `field=value`, overrides
+# one field's value, written the way Archon writes it into a bash body: shell
+# quoted, so an empty string arrives as ''.
 run_node_body() {
-  local node="$1" body token field value override
+  local node="$1" body token field value override prev="" producer
   shift
+  for override in "$@"; do
+    [ "${override%%=*}" != LOOP_PREV ] || prev="${override#*=}"
+  done
   body="$(bun "$NODE" body "$WORKFLOW" "$node")" || return 2
   # shellcheck disable=SC2016 # A literal Archon token, not an expansion.
   while token="$(printf '%s' "$body" | grep -oE '\$LOOP_PREV\.[A-Za-z_][A-Za-z0-9_-]*\.output\.[A-Za-z_][A-Za-z0-9_]*' | head -n 1)" && [ -n "$token" ]; do
-    body="${body%%"$token"*}''${body#*"$token"}"
+    value="''"
+    if [ -n "$prev" ]; then
+      producer="${token#*.}"
+      producer="${producer%%.*}"
+      field="${token##*.}"
+      bun "$NODE" properties "$WORKFLOW" "$producer" | grep -qxF "$field" || {
+        echo "$token names a field node $producer's output_format does not declare" >&2
+        return 2
+      }
+      value="'$(printf '%s' "$prev" | jq -r --arg field "$field" '.[$field]')'"
+    fi
+    body="${body%%"$token"*}${value}${body#*"$token"}"
   done
   while token="$(printf '%s' "$body" | grep -oE '\$[A-Za-z_][A-Za-z0-9_-]*\.output\.[A-Za-z_][A-Za-z0-9_]*' | head -n 1)" && [ -n "$token" ]; do
     field="${token##*.}"
@@ -142,6 +161,28 @@ run_node_body() {
   equals "$rc" 0
   equals "$(printf '%s' "$out" | jq -r .outcome)" approved
   printf '%s' "$out" | bun "$NODE" check-output "$WORKFLOW" review-round
+}
+
+# A round that ends on comments hands its cursor to the next through
+# $LOOP_PREV, and the next round resumes from it: the comment the first round
+# counted stays counted there, so the empty send after it approves in one pass.
+@test "the review loop's next round resumes from the cursor the last round reported" {
+  export GH_PR_VIEW_STATES=OPEN
+  export SLICE_WAVE_REVIEW_POLL_SECONDS=0 SLICE_WAVE_REVIEW_WAIT_SECONDS=0
+  export TUICR_COMMENTS_JSON='[{"id":"c0","content":"fix this","released_in":2}]'
+  export TUICR_LIST_SEQUENCE='[{"slug":"gh:owner/repo/pr/42","path":"/state/sessions/a.json","release_count":1,"head_sha":null}]
+[{"slug":"gh:owner/repo/pr/42","path":"/state/sessions/a.json","release_count":2,"head_sha":"0123456789abcdef0123456789abcdef01234567"}]'
+  prev="$(run_node_body review-round)"
+  equals "$(printf '%s' "$prev" | jq -r .outcome)" comments
+  equals "$(printf '%s' "$prev" | jq -r .cursor)" 2:/state/sessions/a.json
+  printf '%s' "$prev" | bun "$NODE" check-output "$WORKFLOW" review-round
+
+  rm -f "$STUB_BIN/tuicr-list-calls"
+  export TUICR_LIST_SEQUENCE='[{"slug":"gh:owner/repo/pr/42","path":"/state/sessions/a.json","release_count":3,"head_sha":"0123456789abcdef0123456789abcdef01234567"}]'
+  rc=0; out="$(run_node_body review-round "LOOP_PREV=$prev")" || rc=$?
+  equals "$rc" 0
+  equals "$(printf '%s' "$out" | jq -r .outcome)" approved
+  equals "$(printf '%s' "$out" | jq -r .cursor)" 3:/state/sessions/a.json
 }
 
 # Every slice passes through review, so review-round runs on validate's

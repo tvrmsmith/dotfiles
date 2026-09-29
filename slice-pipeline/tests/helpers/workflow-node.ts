@@ -186,7 +186,7 @@ async function checkOutput(node: WorkflowNode): Promise<void> {
 
 const [command, yamlPath, nodeId] = process.argv.slice(2);
 if (!command || !yamlPath || !nodeId) {
-  unusable("usage: workflow-node.ts <body|until|check-output> <workflow.yaml> <node-id>");
+  unusable("usage: workflow-node.ts <body|until|properties|check-output> <workflow.yaml> <node-id>");
 }
 
 const node = loadNode(yamlPath, nodeId);
@@ -196,6 +196,9 @@ switch (command) {
     break;
   case "until":
     console.log(untilBody(node));
+    break;
+  case "properties":
+    console.log(Object.keys(asOutputFormat(node.output_format, node.id).properties).join("\n"));
     break;
   case "check-output":
     await checkOutput(node);

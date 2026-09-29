@@ -282,15 +282,15 @@ reads() {
   contains "$(field "$out" reason)" "head_sha"
 }
 
-@test "review-round keeps a new session file's count as the baseline through the deadline (example 8)" {
-  export SLICE_WAVE_REVIEW_WAIT_SECONDS=2
+@test "review-round judges a new session file's releases from release 0, so a send already in it approves (example 8)" {
   TUICR_LIST_SEQUENCE="$(session "$Q" 1 "$SHA")"
   export TUICR_LIST_SEQUENCE
   rc=0; out="$(round "3:$P")" || rc=$?
   equals "$rc" 0
-  equals "$(field "$out" outcome)" none
-  equals "$(field "$out" approved)" false
+  equals "$(field "$out" outcome)" approved
+  equals "$(field "$out" approved)" true
   equals "$(field "$out" cursor)" "1:$Q"
+  equals "$(field "$out" head_sha)" "$SHA"
 }
 
 @test "review-round does not approve a quit without a send (example 14)" {
@@ -323,8 +323,33 @@ reads() {
   equals "$rc" 0
   equals "$(field "$out" outcome)" none
   equals "$(field "$out" approved)" false
+  equals "$(field "$out" cursor)" ""
+  contains "$(field "$out" reason)" "stub review list configured to fail"
+  lacks "$(cat "$CALL_LOG")" "terminal create"
+  is_empty "$(cat "$STUB_BIN/err")"
+}
+
+@test "review-round keeps polling through a tuicr that exits 1 mid-round, then reports none naming it" {
+  export SLICE_WAVE_REVIEW_WAIT_SECONDS=2
+  TUICR_LIST_SEQUENCE="$(reads "$(session "$P" 0)" FAIL)"
+  export TUICR_LIST_SEQUENCE
+  rc=0; out="$(round '' 2>"$STUB_BIN/err")" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" outcome)" none
+  equals "$(field "$out" cursor)" "0:$P"
   contains "$(field "$out" reason)" "stub review list configured to fail"
   is_empty "$(cat "$STUB_BIN/err")"
+}
+
+@test "review-round never takes a failed first read as no session, so the releases it hid approve nothing" {
+  export SLICE_WAVE_REVIEW_WAIT_SECONDS=2
+  TUICR_LIST_SEQUENCE="$(reads FAIL "$(session "$P" 2 "$SHA")")"
+  export TUICR_LIST_SEQUENCE
+  rc=0; out="$(round '')" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" outcome)" none
+  equals "$(field "$out" approved)" false
+  equals "$(field "$out" cursor)" "2:$P"
 }
 
 @test "review-round keeps polling through a tuicr that prints no JSON, then reports none (example 10)" {
@@ -339,13 +364,28 @@ reads() {
 
 @test "review-round keeps polling through a failed gh read and judges the send once gh answers" {
   export SLICE_WAVE_REVIEW_WAIT_SECONDS=5
-  export GH_PR_VIEW_STATES="OPEN FAIL OPEN"
+  export GH_PR_VIEW_STATES="FAIL OPEN"
   TUICR_LIST_SEQUENCE="$(reads "$(session "$P" 0)" "$(session "$P" 1 "$SHA")")"
   export TUICR_LIST_SEQUENCE
   rc=0; out="$(round '' 2>"$STUB_BIN/err")" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" outcome)" approved
   equals "$(field "$out" cursor)" "1:$P"
+  is_empty "$(cat "$STUB_BIN/err")"
+}
+
+@test "review-round reports none naming gh's failure when gh never answers" {
+  export SLICE_WAVE_REVIEW_WAIT_SECONDS=2
+  export GH_PR_VIEW_STATES=FAIL
+  TUICR_LIST_SEQUENCE="$(session "$P" 3 "$SHA")"
+  export TUICR_LIST_SEQUENCE
+  rc=0; out="$(round "2:$P" 2>"$STUB_BIN/err")" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" outcome)" none
+  equals "$(field "$out" approved)" false
+  equals "$(field "$out" cursor)" "2:$P"
+  contains "$(field "$out" reason)" "gh pr view 42 -R owner/repo failed"
+  contains "$(field "$out" reason)" "stub pr view configured to fail"
   is_empty "$(cat "$STUB_BIN/err")"
 }
 
@@ -375,6 +415,20 @@ reads() {
   is_empty "$(cat "$STUB_BIN/err")"
 }
 
+@test "review-round never approves a send whose comments tuicr prints as no JSON" {
+  export SLICE_WAVE_REVIEW_WAIT_SECONDS=2
+  TUICR_LIST_SEQUENCE="$(session "$P" 3 "$SHA")"
+  export TUICR_LIST_SEQUENCE
+  export TUICR_COMMENTS_JSON='not json'
+  rc=0; out="$(round "2:$P" 2>"$STUB_BIN/err")" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" outcome)" none
+  equals "$(field "$out" approved)" false
+  equals "$(field "$out" cursor)" "2:$P"
+  contains "$(field "$out" reason)" "cannot read the tuicr comments"
+  is_empty "$(cat "$STUB_BIN/err")"
+}
+
 @test "review-round splits a cursor on its first colon, so the path keeps its spaces and colons" {
   path="/state/review sessions/pr:42.json"
   TUICR_LIST_SEQUENCE="$(session "$path" 3 "$SHA")"
@@ -391,7 +445,7 @@ reads() {
   # shellcheck disable=SC2016 # The stub expands $CALL_LOG when it runs, not here.
   printf '#!/bin/bash\nprintf "sleep\\t%%s\\n" "$*" >> "$CALL_LOG"\n' > "$STUB_BIN/sleep"
   chmod +x "$STUB_BIN/sleep"
-  TUICR_LIST_SEQUENCE="$(reads "$(session "$P" 0)" "$(session "$P" 1 "$SHA")")"
+  TUICR_LIST_SEQUENCE="$(reads "$(session "$P" 0)" "$(session "$P" 0)" "$(session "$P" 1 "$SHA")")"
   export TUICR_LIST_SEQUENCE
   rc=0; out="$(round '')" || rc=$?
   equals "$rc" 0
@@ -541,12 +595,37 @@ assert_orca_failure() {
   equals "$(field "$out" cursor)" "1:$P"
 }
 
-@test "review-round takes the first session seen after none as its baseline, never as a send" {
+@test "review-round judges the first session seen after none from release 0, so a send already in it approves" {
   export SLICE_WAVE_REVIEW_WAIT_SECONDS=30
-  TUICR_LIST_SEQUENCE="$(reads '[]' "$(session "$P" 1 "$SHA")" "$(session "$P" 2 "$SHA")")"
+  TUICR_LIST_SEQUENCE="$(reads '[]' '[]' "$(session "$P" 1 "$SHA")" "$(session "$P" 2 "$SHA")")"
   export TUICR_LIST_SEQUENCE
   rc=0; out="$(round '')" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" outcome)" approved
+  equals "$(field "$out" cursor)" "1:$P"
+}
+
+# The engineer sends before the round's first poll after the tab opens, so
+# the first session the round sees already holds the send.
+@test "review-round approves a first-round send made before its first poll, snapshotting before the tab opens" {
+  TUICR_LIST_SEQUENCE="$(reads '[]' "$(session "$P" 1 "$SHA")")"
+  export TUICR_LIST_SEQUENCE
+  rc=0; out="$(round '')" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" outcome)" approved
+  equals "$(field "$out" approved)" true
+  equals "$(field "$out" cursor)" "1:$P"
+  equals "$(field "$out" head_sha)" "$SHA"
+  equals "$(grep -E '^(tuicr	review list|orca	terminal create)' "$CALL_LOG" | cut -f1 | head -n 2 | tr '\n' ' ')" "tuicr orca "
+}
+
+@test "review-round keeps a session that predates the tab at its count, so its old sends approve nothing" {
+  export SLICE_WAVE_REVIEW_WAIT_SECONDS=2
+  TUICR_LIST_SEQUENCE="$(session "$P" 2 "$SHA")"
+  export TUICR_LIST_SEQUENCE
+  rc=0; out="$(round '')" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" outcome)" none
+  equals "$(field "$out" approved)" false
   equals "$(field "$out" cursor)" "2:$P"
 }

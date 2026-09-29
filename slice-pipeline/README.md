@@ -36,7 +36,10 @@ target's main checkout, titled `review <bead> #<pr>` and running
 approves, and only then does `merge` run, pinned by `--match-head-commit` to
 the head that was reviewed. A send with comments does not approve. The run
 waits again, and fixing the comments is the next slice's job. Quitting tuicr
-without a send is not approval either. With no send within 8 hours, `review`
+without a send is not approval either. A round counts every send tuicr
+records after the tab opens, including one in the fresh session file tuicr
+starts when it reloads onto a new head. Sends a session held before the tab
+opened never count. With no send within 8 hours, `review`
 starts another wait, up to 20 of them. After that the run fails with the bead
 still claimed and the pull request open, and `archon workflow resume <run-id>`
 picks the review back up. A pull request closed or merged outside the pipeline
