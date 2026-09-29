@@ -624,5 +624,10 @@
   "preferredNotifChannel": "auto",
   "showTurnDuration": true,
   "teammateMode": "in-process",
-  "useAutoModeDuringPlan": false
+  "useAutoModeDuringPlan": false,
+  "modelSettings": {
+    "claude-opus-5-5": {
+      "effortLevel": "high"
+    }
+  }
 }
