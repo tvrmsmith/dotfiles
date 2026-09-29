@@ -69,19 +69,27 @@ fixtures through `archon workflow test`, and fails if any function in
 SLICE_E2E=1 SLICE_E2E_REPO=owner/name bats tests/e2e.bats
 ```
 
-Runs the real pipeline once, against a real GitHub repository named by
-`SLICE_E2E_REPO` that you can push to and open pull requests on: claim's own
-forge and no-mistakes preflight checks refuse anything else, including a
-scratch repo with no remote. It clones that repository to scratch, runs
+Runs the real pipeline once, against a sandbox GitHub repository named by
+`SLICE_E2E_REPO` that you can push to and open pull requests on. It has to be a
+real forge repository, since claim's own forge and no-mistakes preflight
+checks refuse a scratch repo with no remote. It also has to be disposable,
+because a green run merges into it. The suite refuses any target unless it
+can confirm a committed `.slice-e2e-sandbox` file at the root of its default
+branch. It checks the clone it pushes to and, through gh, the repository it
+merges on, before it pushes or opens anything, and a failed gh check refuses
+too, quoting gh's own error. Make a sandbox once with
+`gh repo create --private` and commit that file to its default branch.
+
+The suite clones the sandbox to scratch, runs
 `no-mistakes init` there, then drives one small bead through the real
 pipeline (claim, a real model build, verify, a real no-mistakes validate
 drive, merge and close) and checks the branch, the committed code, the closed
 bead, the merged pull request, its findings record comment and the removed
 worktree directly. A green run merges a small script and its test into the
-repository, named after the bead so reruns do not collide. Teardown closes any
-pull request still open on the slice branch, deletes that branch, and releases
-Archon's registration of the scratch clone as the target repository's
-codebase. It spends model tokens and merges into a real repository, and can go
+sandbox's default branch, named after the bead so reruns do not collide.
+Teardown closes any pull request still open on the slice branch, deletes that
+branch, and releases Archon's registration of the scratch clone as the target
+repository's codebase. It spends model tokens and merges into the sandbox, and can go
 red on a bad model run, so it skips unless `SLICE_E2E=1`, and skips with a
 clear message when `SLICE_E2E_REPO` is unset.
 `SLICE_E2E_CLONE_URL` optionally overrides the URL it clones from, for a

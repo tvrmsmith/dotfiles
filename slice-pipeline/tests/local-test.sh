@@ -27,7 +27,7 @@ case "$OUT" in
 esac
 mkdir -p "$OUT" || exit 1
 
-SUITES="tests/slice-wave.bats tests/validate.bats tests/merge-and-close.bats tests/implement-slice-wiring.bats tests/e2e-cleanup.bats"
+SUITES="tests/slice-wave.bats tests/validate.bats tests/merge-and-close.bats tests/implement-slice-wiring.bats tests/e2e-cleanup.bats tests/e2e-sandbox.bats"
 WORKFLOW_DIR="workflows/implement-slice"
 COV_SOURCE="bin/slice-wave"
 
