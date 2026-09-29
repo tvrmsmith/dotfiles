@@ -73,10 +73,11 @@ Runs the real pipeline once, against a sandbox GitHub repository named by
 `SLICE_E2E_REPO` that you can push to and open pull requests on. It has to be a
 real forge repository, since claim's own forge and no-mistakes preflight
 checks refuse a scratch repo with no remote. It also has to be disposable,
-because a green run merges into it. The suite refuses any target whose
-default branch lacks a committed `.slice-e2e-sandbox` file at its root. It
-checks the clone it pushes to and, through gh, the repository it merges on,
-before it pushes or opens anything. Make a sandbox once with
+because a green run merges into it. The suite refuses any target unless it
+can confirm a committed `.slice-e2e-sandbox` file at the root of its default
+branch. It checks the clone it pushes to and, through gh, the repository it
+merges on, before it pushes or opens anything, and a failed gh check refuses
+too, quoting gh's own error. Make a sandbox once with
 `gh repo create --private` and commit that file to its default branch.
 
 The suite clones the sandbox to scratch, runs
