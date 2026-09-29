@@ -51,6 +51,15 @@ teardown() { rm -rf "$TMP"; }
   [ -e "$LOG" ] || { printf 'the new log is missing\n' >&2; exit 1; }
 }
 
+@test "a write to a log idle for over 30 days keeps its earlier rows" {
+  # A session resumed after a month appends to its old log; the sweep runs after
+  # the append, so the log being written is never the one swept.
+  bash "$SCRIPT" afk-s1 frame a b c d
+  touch -t "$(date -v-31d +%Y%m%d%H%M)" "$LOG"
+  bash "$SCRIPT" afk-s1 build e f g h
+  equals "$(wc -l < "$LOG" | tr -d ' ')" "3"
+}
+
 @test "cell sanitising is delegated to log.sh" {
   bash "$SCRIPT" afk-s1 frame a b c -1
   IFS=$'\t' read -r _ _ _ _ _ result <<< "$(sed -n 2p "$LOG")"
