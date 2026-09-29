@@ -35,6 +35,14 @@ GIT_SKILLS=(
   "pstack|backnotprop-pstack|main|skills/show-me-your-work|https://github.com/backnotprop/pstack.git"
 )
 
+# Vendored skills an agent must be able to load on its own, as vendor/<prefix>/<subpath>.
+# Upstream pstack marks every skill user-invoked only, but the SessionStart hook and
+# CLAUDE.md tell agents to load unslop, so its disable-model-invocation line is
+# stripped after each fetch.
+MODEL_INVOCABLE=(
+  "pstack/skills/unslop"
+)
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
@@ -116,6 +124,12 @@ fetch_git_skill() {
       exit 1
       ;;
   esac
+  local keep
+  for keep in "${MODEL_INVOCABLE[@]}"; do
+    if [[ "$dest" == "vendor/$keep" ]]; then
+      sed -i.bak '/^disable-model-invocation: true$/d' "$dest/SKILL.md" && rm -f "$dest/SKILL.md.bak"
+    fi
+  done
 }
 
 list() {
