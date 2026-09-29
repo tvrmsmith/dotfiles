@@ -645,12 +645,18 @@ bead_intent() {
 # the last run id seen, else the branch's latest run, since an elapsed error
 # carries no run block.
 #
+# A daemon too loaded to answer one call ends the drive with a `did not reply
+# within` error while the run itself carries on, so that error reattaches the
+# same way, $SLICE_WAVE_DRIVE_RETRY_SECONDS (30) apart. A reattach answered
+# by the same error counts against ten in a row; the one after the tenth
+# means the daemon is stuck, and is reported.
+#
 # Stops reattaching once $SLICE_WAVE_DRIVE_LIMIT_SECONDS (3.5 hours) have
 # passed since validate started, prints the last TOON and returns 1, leaving
 # the run to carry on. That keeps validate reporting ahead of its node's 4 h
 # timeout, whose kill would persist no outcome and so skip merge and release.
 drive_run() {
-	local intent="$1" toon run_id="" id limit="${SLICE_WAVE_DRIVE_LIMIT_SECONDS:-12600}"
+	local intent="$1" toon run_id="" id limit="${SLICE_WAVE_DRIVE_LIMIT_SECONDS:-12600}" timeouts=0
 	toon="$(no-mistakes axi run --yes --intent "$intent" 2>&1)"
 	while :; do
 		id="$(toon_value "$toon" run.id)"
@@ -661,6 +667,13 @@ drive_run() {
 					printf '%s\n' "$toon"
 					return 1
 				fi
+				timeouts=0
+				toon="$(no-mistakes axi run --yes 2>&1)"
+				;;
+			*"did not reply within"*)
+				timeouts=$((timeouts + 1))
+				[ "$timeouts" -le 10 ] && [ "$SECONDS" -lt "$limit" ] || break
+				sleep "${SLICE_WAVE_DRIVE_RETRY_SECONDS:-30}"
 				toon="$(no-mistakes axi run --yes 2>&1)"
 				;;
 			*"--intent is required"*)

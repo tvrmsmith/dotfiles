@@ -254,6 +254,42 @@ validate() {
   equals "$(grep -c "$(printf '^no-mistakes\taxi run --yes$')" "$CALL_LOG")" 2
 }
 
+@test "validate reattaches without an intent when the daemon misses a reply" {
+  export SLICE_WAVE_DRIVE_RETRY_SECONDS=0
+  export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/daemon-timeout.toon:1 $FIXTURES_DIR/checks-passed.toon:0"
+  out="$(validate --verified true)"
+  equals "$(printf '%s' "$out" | jq -r .delivered)" true
+  equals "$(printf '%s' "$out" | jq -r .reason)" ""
+  runs="$(awk -F'\t' '$1 == "no-mistakes" { print $2 }' "$CALL_LOG")"
+  contains "$(printf '%s\n' "$runs" | head -1)" " --intent Demo slice"
+  equals "$(printf '%s\n' "$runs" | tail -1)" "axi run --yes"
+}
+
+@test "validate reports the daemon timeout once the daemon misses every retry" {
+  export SLICE_WAVE_DRIVE_RETRY_SECONDS=0
+  export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/daemon-timeout.toon:1"
+  out="$(validate --verified true)"
+  equals "$(grep -c "$(printf '^no-mistakes\taxi run --yes$')" "$CALL_LOG")" 10
+  equals "$(printf '%s' "$out" | jq -r .delivered)" false
+  contains "$(printf '%s' "$out" | jq -r .reason)" "daemon health did not reply within 250ms"
+}
+
+@test "validate reports a daemon timeout without retrying once past its time limit" {
+  export SLICE_WAVE_DRIVE_LIMIT_SECONDS=0
+  export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/daemon-timeout.toon:1 $FIXTURES_DIR/checks-passed.toon:0"
+  out="$(validate --verified true)"
+  equals "$(grep -c "$(printf '^no-mistakes\taxi run')" "$CALL_LOG")" 1
+  contains "$(printf '%s' "$out" | jq -r .reason)" "daemon health did not reply within 250ms"
+}
+
+@test "validate counts only consecutive daemon timeouts against the retry limit" {
+  export SLICE_WAVE_DRIVE_RETRY_SECONDS=0
+  timeouts="$(for _ in $(seq 9); do printf '%s ' "$FIXTURES_DIR/daemon-timeout.toon:1"; done)"
+  export NO_MISTAKES_RUN_SEQUENCE="$timeouts $FIXTURES_DIR/wait-elapsed.toon:1 $timeouts $FIXTURES_DIR/checks-passed.toon:0"
+  out="$(validate --verified true)"
+  equals "$(printf '%s' "$out" | jq -r .delivered)" true
+}
+
 @test "validate reads the last run it saw by id when a reattach finds the run already ended" {
   # Shaped by hand: no-mistakes prints no run block beside an elapsed error
   # today, so this pins what validate does if it ever does.
