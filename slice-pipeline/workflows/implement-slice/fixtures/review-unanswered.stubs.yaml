@@ -1,0 +1,42 @@
+# Nobody reviews: validate delivers a green PR, but no empty send ever comes
+# from its review tab, and quitting the tab is not approval either. Here
+# `review-round` is left unstubbed, so it fails with a missing stub and fails
+# the review group with it, the way 20 rounds without approval, a failed
+# round, or a PR closed outside the pipeline fail it in a real run.
+#
+# `merge`, `close` and `release` are all left unstubbed, so reaching any of
+# them would add a failed node and break the exact `fail-node` set. That is
+# the guard: merge is reachable only through an approving review, and a
+# failed review releases nothing, so the bead stays claimed by this run for
+# `archon workflow resume <run-id>` to re-enter review.
+fixture:
+  expect: failed
+  fail-node: [review-round, review]
+  reached: [claim, build, verify, validate]
+  inputs:
+    bead: demo-slice-1
+    beads_dir: /tmp/beads
+
+claim:
+  bead: demo-slice-1
+  beads_dir: /tmp/beads
+  branch: slice/demo-slice-1
+build: "the slice is built and committed"
+verify:
+  verified: true
+  committed: true
+  tests_touched: true
+  branch: slice/demo-slice-1
+  sha: 1f0c6a4e2b7d9c3a5e8f10b2d4c6a8e0f2b4d6c8
+  reason: ""
+  waivers: []
+  waivers_error: ""
+validate:
+  delivered: true
+  outcome: checks-passed
+  pr_number: 42
+  pr_url: https://github.com/owner/repo/pull/42
+  repo: owner/repo
+  fix_rounds: 1
+  record_posted: true
+  reason: ""

@@ -1,10 +1,11 @@
 # Nothing landed: build never got a commit onto the branch, so verify reports
-# verified: false, validate short-circuits to delivered: false, merge
+# verified: false, validate short-circuits to delivered: false, review
+# short-circuits to outcome undelivered without opening a tab, merge
 # short-circuits to merged: false, and release runs to hand the bead back.
 #
 # `expect: completed` with a failed authored outcome is the point, not a
-# mistake: verify, validate and merge (given a true or false flag) all exit
-# 0 on every verdict so their artifacts survive, and the run completing
+# mistake: verify, validate, review and merge (given a true or false flag)
+# all exit 0 on every verdict so their artifacts survive, and the run completing
 # while the outcome is failed is exactly what a caller must tell apart by
 # reading the authored outcome (`merged`) instead of the run status.
 #
@@ -15,13 +16,13 @@
 # reaching it fails this fixture with a missing-stub error: nothing was
 # merged, so the bead must stay open.
 #
-# There is also no dedicated "never paused" key in the fixture language.
-# `expect: completed` on every fixture in this directory IS that assertion: a
-# gate anywhere on this path would report the run's outcome as `paused`
-# instead, and fail them all.
+# `expect: completed` does not prove this path has no approval gate:
+# `archon workflow test` auto-approves gates, so a gate here would still
+# report completed. Nothing in this directory checks for one (dotfiles-co3.21
+# tracks that check).
 fixture:
   expect: completed
-  reached: [claim, build, verify, validate, merge, release]
+  reached: [claim, build, verify, validate, review-round, review, merge, release]
   inputs:
     bead: demo-slice-1
     beads_dir: /tmp/beads
@@ -49,11 +50,18 @@ validate:
   fix_rounds: 0
   record_posted: false
   reason: "verification did not pass, so validation was skipped"
+review-round:
+  outcome: undelivered
+  approved: false
+  cursor: ""
+  head_sha: ""
+  comments: 0
+  reason: "the slice was not delivered, so review was skipped"
 merge:
   merged: false
   strategy: ""
   pr_number: 0
   pr_url: ""
-  reason: "the slice was not delivered, so nothing was merged"
+  reason: "the slice was not approved in review, so nothing was merged"
 release:
   released: true

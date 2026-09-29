@@ -1,11 +1,13 @@
 name: implement-slice
 description: |
   Build one vertical slice from its bead, land its commit on the branch, drive
-  it through no-mistakes to a green pull request with a findings record, merge
-  it, and close the bead once the forge confirms the merge. The slice's spec
-  lives in the bead's `design` field, the wave's agreed seams in its `notes`
-  field. Verify reads the branch, not a model's self-report, and merge reads
-  the forge, not the merge command's exit status.
+  it through no-mistakes to a green pull request with a findings record, open
+  a review tab on that pull request and wait for an engineer's empty send,
+  merge the head they approved, and close the bead once the forge confirms the
+  merge. The slice's spec lives in the bead's `design` field, the wave's
+  agreed seams in its `notes` field. Verify reads the branch, not a model's
+  self-report, review reads the review tool, not a prompt, and merge reads the
+  forge, not the merge command's exit status.
 
   Use when: a bead is ready and its spec lives in the bead. Run one per slice,
   normally as a fan_out child.
@@ -106,8 +108,8 @@ nodes:
         waivers_error: {type: string}
       required: [verified, committed, tests_touched, branch, sha, reason, waivers, waivers_error]
 
-  # No `when:`: a skipped validate would skip merge behind it, and merge is
-  # the returns node, which persists no authored outcome when skipped. The
+  # No `when:`: a skipped validate would skip review and merge behind it, and
+  # merge is the returns node, which persists no authored outcome when skipped. The
   # script's own --verified false short-circuit already handles the
   # unverified path with no external call. depends_on verify alone, under the default trigger rule (not all_done): verify
   # itself exits 0 on every verdict (see its comment above), so it never
@@ -132,20 +134,65 @@ nodes:
         reason: {type: string}
       required: [delivered, outcome, pr_number, pr_url, repo, fix_rounds, record_posted, reason]
 
-  # The returns node: no `when:`, since a skipped returns node persists no
-  # authored outcome, and the script's own --delivered false short-circuit
-  # already handles the undelivered path with no external call, accepting
-  # the empty repo and zero pull request validate reports there. depends_on
-  # validate alone, under the default trigger rule: validate exits 0 on every
-  # path (see its comment above), so it never fails this dependency. The
-  # timeout covers the script's own 2-hour merge-queue deadline, so a merge
-  # still waiting on the queue reports merged false before this kills it.
-  # Archon shell-quotes a substituted node output in a bash body, so an empty
-  # repo arrives as ''.
-  - id: merge
+  # Every slice passes through here, delivered or not: no `when:` and no input
+  # skips it, because a skipped review would skip merge, the returns node,
+  # behind it. On an undelivered slice review-round short-circuits with no
+  # external call and reports outcome undelivered, which ends the loop at once.
+  # A delivered slice gets a review tab in the target's main checkout, and each
+  # round waits up to 8 hours for the engineer to send from it. Only an empty
+  # send on the pull request's current head ends the loop approved; a send with
+  # comments, or no send in time, runs another round from the cursor the last
+  # one reached. The group carries no timeout of its own, since the engine
+  # applies a loop group's timeout to until_bash alone.
+  #
+  # A review that fails, whether 20 rounds pass with no approval, a round
+  # fails, or the pull request is closed or merged outside the pipeline, fails
+  # this node and skips merge, close and release behind it. The run fails with
+  # the bead still claimed by it and the pull request left open, and
+  # `archon workflow resume <run-id>` re-enters review. Releasing the bead
+  # there would hand a slice with an open, reviewed pull request back to the
+  # frontier for a second worker to build again.
+  #
+  # review-round's timeout sits above the script's own 8-hour wait, so a round
+  # still waiting reports outcome none before this kills it. On the first
+  # iteration $LOOP_PREV renders as '', which review-round reads as no cursor
+  # yet.
+  - id: review
     depends_on: [validate]
+    loop_group:
+      until_bash: test $review-round.output.outcome = approved || test $review-round.output.outcome = undelivered
+      max_iterations: 20
+      nodes:
+        - id: review-round
+          timeout: 29400000
+          bash: slice-wave review-round --bead "$INPUTS_BEAD" --delivered $validate.output.delivered --pr $validate.output.pr_number --repo $validate.output.repo --since $LOOP_PREV.review-round.output.cursor
+          output_format:
+            type: object
+            properties:
+              outcome: {type: string}
+              approved: {type: boolean}
+              cursor: {type: string}
+              head_sha: {type: string}
+              comments: {type: integer}
+              reason: {type: string}
+            required: [outcome, approved, cursor, head_sha, comments, reason]
+
+  # The returns node: no `when:`, since a skipped returns node persists no
+  # authored outcome, and the script's own --approved false short-circuit
+  # already handles every unapproved path with no external call, accepting the
+  # empty head, empty repo and zero pull request an undelivered slice reports
+  # there. It reads its go signal from review alone: `approved` is true only
+  # after an empty send on the pull request's head, and --head-sha pins the
+  # merge to that head, so a push after the review cannot ride along. It
+  # depends on review under the default trigger rule, so a failed review skips
+  # it (see review's comment above). The timeout covers the script's own
+  # 2-hour merge-queue deadline, so a merge still waiting on the queue reports
+  # merged false before this kills it. Archon shell-quotes a substituted node
+  # output in a bash body, so an empty repo or head arrives as ''.
+  - id: merge
+    depends_on: [validate, review]
     timeout: 9000000
-    bash: slice-wave merge --delivered $validate.output.delivered --pr $validate.output.pr_number --repo $validate.output.repo
+    bash: slice-wave merge --approved $review.output.approved --head-sha $review.output.head_sha --pr $validate.output.pr_number --repo $validate.output.repo
     output_format:
       type: object
       properties:
@@ -178,16 +225,17 @@ nodes:
   # An unmerged slice goes back to the frontier open and unclaimed, whether it
   # was never delivered or its green pull request did not merge; that pull
   # request is left open for a person to look at. Depends on claim as well as
-  # merge, under the default trigger rule (not all_done): merge always
-  # resolves (it is the returns node and, given a true or false --delivered,
-  # exits 0 on every path, same as validate), so requiring it to succeed
-  # costs nothing; its `merged` field, not its own success, is what the
-  # `when` reads.
+  # merge, under the default trigger rule (not all_done): merge resolves
+  # whenever review does (it is the returns node and, given a true or false
+  # --approved, exits 0 on every path, same as validate), so requiring it to
+  # succeed costs nothing; its `merged` field, not its own success, is what
+  # the `when` reads. A failed review skips this node on purpose, keeping the
+  # bead claimed for a resume.
   # Requiring claim to have succeeded is what stops this node from releasing a
   # bead this run never claimed, which would clear the assignee of whoever
-  # actually holds it. An unverified run still lands here: validate and merge
-  # both short-circuit without contacting anything, and merge's false is what
-  # this `when` catches. The timeout covers one `bd update`.
+  # actually holds it. An unverified run still lands here: validate, review
+  # and merge all short-circuit without contacting anything, and merge's false
+  # is what this `when` catches. The timeout covers one `bd update`.
   - id: release
     depends_on: [claim, merge]
     when: "$merge.output.merged == false"
