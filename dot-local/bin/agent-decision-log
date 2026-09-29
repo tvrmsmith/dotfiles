@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# agent-decision-log — append one row to an unattended agent's decision log.
+#
+# Usage:
+#   agent-decision-log <name> <phase> <decision> <why> <evidence> <result>
+#   agent-decision-log --path <name>
+#
+# Every unattended agent (the afk skill now, the slice workflow later) logs to one
+# directory under one cleanup rule, outside every worktree, so removing a
+# worktree cannot delete a log. The row format, header, and cell sanitising
+# belong to the vendored show-me-your-work log.sh. This wrapper owns only where
+# the file lives and when old ones go.
+set -euo pipefail
+
+# Follow a symlink chain to the file itself. BSD readlink has no -f, and a link
+# body is relative to the link's own directory, not to $PWD — this file is
+# reached through ~/.local/bin/agent-decision-log -> ../../dev/personal/dotfiles/....
+canon() {
+	local src="$1" dir
+	while [ -h "$src" ]; do
+		dir="$(cd -P "$(dirname "$src")" && pwd)"
+		src="$(readlink "$src")"
+		[ "${src#/}" = "$src" ] && src="$dir/$src"
+	done
+	printf '%s/%s\n' "$(cd -P "$(dirname "$src")" && pwd)" "$(basename "$src")"
+}
+
+self="$(canon "${BASH_SOURCE[0]}")"
+repo="$(dirname "$(dirname "$(dirname "$self")")")"
+log_sh="$repo/vendor/pstack/skills/show-me-your-work/scripts/log.sh"
+
+usage() {
+	printf 'usage: agent-decision-log <name> <phase> <decision> <why> <evidence> <result>\n' >&2
+	printf '       agent-decision-log --path <name>\n' >&2
+	exit 1
+}
+
+path_only=0
+if [ "${1:-}" = "--path" ]; then
+	path_only=1
+	shift
+	[ "$#" -eq 1 ] || usage
+else
+	[ "$#" -eq 6 ] || usage
+fi
+
+# A name becomes a filename, so it may not hold a slash or lead with a dot.
+name="$1"
+if ! [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9]$ ]]; then
+	printf 'agent-decision-log: invalid name: %s\n' "$name" >&2
+	exit 1
+fi
+
+dir="${XDG_STATE_HOME:-$HOME/.local/state}/agent-decision-logs"
+file="$dir/$name.tsv"
+
+if [ "$path_only" -eq 1 ]; then
+	printf '%s\n' "$file"
+	exit 0
+fi
+
+"$log_sh" "$file" "$2" "$3" "$4" "$5" "$6"
+
+find "$dir" -maxdepth 1 -type f -name '*.tsv' -mtime +30 -delete 2>/dev/null || true
