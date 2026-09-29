@@ -40,14 +40,30 @@ touching money, secrets, or credentials.
 
 ## The log
 
-Close every response with the whole log, reprinted each turn so it survives a compaction. The
-guard then blocks the stop unless the last line is exactly `AFK: idle`, which you write only
-once every item below reads done or parked.
+Log each decision, finished item, and parked item as a row when it happens:
+
+```bash
+agent-decision-log "afk-${CLAUDE_CODE_SESSION_ID:?}" <phase> <decision> <why> <evidence> <result>
+```
+
+Read `~/.claude/skills/show-me-your-work/SKILL.md` for what a row holds. This command replaces
+its `log.sh` call and keeps the log outside every worktree. The assumption a decision rests on goes
+in that row's `why`. `result` is `done`, `open`, or `parked: <what it waits on>`, and an open item
+closes with a later row, since the log is append-only.
+
+Close every response with a footer listing each item whose latest row is not `done`. Its first
+line carries the path from `agent-decision-log --path "afk-${CLAUDE_CODE_SESSION_ID:?}"`, which is
+how you find the log again after a compaction. `/resume-work` buckets this session by the
+`parked:` lines of its last turn.
 
 ```text
-AFK log
-- done: <what landed> | <commit sha / path>
-- decided: <choice> | <reason>
-- assumed: <assumption it was built on>
-- parked: <item> | <what it is waiting on>
+AFK log: <path>
+- parked: <item> | <what it waits on>
+- open: <item>
 ```
+
+Once no `open` line remains, that response is the hand-back show-me-your-work describes. Audit the
+log against the transcript, then have a fresh opus subagent review the trail. Put its Attention
+section above the footer, led by `reviewed by claude-opus`, since this machine has no other model
+family. End on a line exactly `AFK: idle`, which lets the guard pass the stop. Earlier responses
+carry the footer alone.
