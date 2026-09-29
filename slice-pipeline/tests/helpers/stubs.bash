@@ -69,7 +69,7 @@ fi
 # test can script a merge that lands after a few polls. Reads past the end
 # repeat the last state, and FAIL makes that read exit 1. A state suffixed
 # :queued reads as sitting in the merge queue. Every read reports
-# GH_PR_HEAD_OID as the head commit.
+# GH_PR_HEAD_OID as the head commit, empty when it is set empty.
 pr_read() {
 	local calls
 	calls="$(cat "$STUB_BIN/pr-view-calls" 2>/dev/null || echo 0)"
@@ -81,7 +81,7 @@ pr_read() {
 	local queued=false
 	[ "${1#*:}" != queued ] || queued=true
 	pr="$(printf '{"state":"%s","url":"https://github.com/owner/repo/pull/42","isInMergeQueue":%s,"id":"PR_stub42","headRefOid":"%s"}' \
-		"${1%%:*}" "$queued" "${GH_PR_HEAD_OID:-0123456789abcdef0123456789abcdef01234567}")"
+		"${1%%:*}" "$queued" "${GH_PR_HEAD_OID-0123456789abcdef0123456789abcdef01234567}")"
 }
 case "${1:-} ${2:-}" in
 	"pr list") printf '%s\n' "${GH_PR_LIST_JSON:-[]}" ;;

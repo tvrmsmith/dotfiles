@@ -352,6 +352,17 @@ reads() {
   equals "$(field "$out" cursor)" "2:$P"
 }
 
+@test "review-round never takes a first read it cannot parse as no session, so the releases it hid approve nothing" {
+  export SLICE_WAVE_REVIEW_WAIT_SECONDS=2
+  TUICR_LIST_SEQUENCE="$(reads 'not json' "$(session "$P" 2 "$SHA")")"
+  export TUICR_LIST_SEQUENCE
+  rc=0; out="$(round '')" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" outcome)" none
+  equals "$(field "$out" approved)" false
+  equals "$(field "$out" cursor)" "2:$P"
+}
+
 @test "review-round keeps polling through a tuicr that prints no JSON, then reports none (example 10)" {
   export SLICE_WAVE_REVIEW_WAIT_SECONDS=2
   export TUICR_LIST_SEQUENCE='not json'
@@ -359,6 +370,9 @@ reads() {
   equals "$rc" 0
   equals "$(field "$out" outcome)" none
   equals "$(field "$out" approved)" false
+  equals "$(field "$out" cursor)" ""
+  contains "$(field "$out" reason)" "cannot read the tuicr review list"
+  lacks "$(cat "$CALL_LOG")" "terminal create"
   is_empty "$(cat "$STUB_BIN/err")"
 }
 
@@ -371,6 +385,23 @@ reads() {
   equals "$rc" 0
   equals "$(field "$out" outcome)" approved
   equals "$(field "$out" cursor)" "1:$P"
+  is_empty "$(cat "$STUB_BIN/err")"
+}
+
+# A head gh leaves empty would match the empty head of a send tuicr reports
+# with head_sha null, and approve it.
+@test "review-round judges nothing while gh reports no head, and reports none naming it" {
+  export SLICE_WAVE_REVIEW_WAIT_SECONDS=2
+  export GH_PR_HEAD_OID=''
+  TUICR_LIST_SEQUENCE="$(reads "$(session "$P" 0)" "$(session "$P" 1)")"
+  export TUICR_LIST_SEQUENCE
+  rc=0; out="$(round '' 2>"$STUB_BIN/err")" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" outcome)" none
+  equals "$(field "$out" approved)" false
+  equals "$(field "$out" head_sha)" ""
+  equals "$(field "$out" cursor)" "0:$P"
+  contains "$(field "$out" reason)" "reported no state and head"
   is_empty "$(cat "$STUB_BIN/err")"
 }
 
@@ -429,14 +460,17 @@ reads() {
   is_empty "$(cat "$STUB_BIN/err")"
 }
 
+# A cursor split anywhere else would name a path tuicr never reports, and a
+# path the baseline does not name has every release judged, approving here.
 @test "review-round splits a cursor on its first colon, so the path keeps its spaces and colons" {
+  export SLICE_WAVE_REVIEW_WAIT_SECONDS=2
   path="/state/review sessions/pr:42.json"
-  TUICR_LIST_SEQUENCE="$(session "$path" 3 "$SHA")"
+  TUICR_LIST_SEQUENCE="$(session "$path" 2 "$SHA")"
   export TUICR_LIST_SEQUENCE
   rc=0; out="$(round "2:$path")" || rc=$?
   equals "$rc" 0
-  equals "$(field "$out" outcome)" approved
-  equals "$(field "$out" cursor)" "3:$path"
+  equals "$(field "$out" outcome)" none
+  equals "$(field "$out" cursor)" "2:$path"
 }
 
 @test "review-round sleeps 15 seconds between passes by default" {
@@ -585,14 +619,17 @@ assert_orca_failure() {
   lacks "$(cat "$CALL_LOG")" "terminal create"
 }
 
+# A lost baseline would judge the returning session from release 0 and
+# approve the releases it held before the tab opened.
 @test "review-round keeps its baseline through a read where the session has disappeared" {
-  export SLICE_WAVE_REVIEW_WAIT_SECONDS=30
-  TUICR_LIST_SEQUENCE="$(reads "$(session "$P" 0)" '[]' "$(session "$P" 1 "$SHA")")"
+  export SLICE_WAVE_REVIEW_WAIT_SECONDS=2
+  TUICR_LIST_SEQUENCE="$(reads "$(session "$P" 2 "$SHA")" '[]' "$(session "$P" 2 "$SHA")")"
   export TUICR_LIST_SEQUENCE
   rc=0; out="$(round '')" || rc=$?
   equals "$rc" 0
-  equals "$(field "$out" outcome)" approved
-  equals "$(field "$out" cursor)" "1:$P"
+  equals "$(field "$out" outcome)" none
+  equals "$(field "$out" approved)" false
+  equals "$(field "$out" cursor)" "2:$P"
 }
 
 @test "review-round judges the first session seen after none from release 0, so a send already in it approves" {
