@@ -56,14 +56,16 @@ commit_marker() {
   : > "$CLONE/.slice-e2e-sandbox"
   rc=0; require_e2e_sandbox owner/sandbox "$CLONE" 2>"$STUB_BIN/err" || rc=$?
   equals "$rc" 1
+  contains "$(cat "$STUB_BIN/err")" "no committed .slice-e2e-sandbox"
   is_empty "$(cat "$CALL_LOG")"
 }
 
-@test "marker committed in the clone but gh fails on the forge" {
+@test "marker committed in the clone but gh fails on the forge: the refusal carries gh's own output" {
   commit_marker
   export GH_EXIT_CODE=1
   rc=0; require_e2e_sandbox owner/sandbox "$CLONE" 2>"$STUB_BIN/err" || rc=$?
   equals "$rc" 1
-  contains "$(cat "$STUB_BIN/err")" "owner/sandbox"
-  contains "$(cat "$STUB_BIN/err")" ".slice-e2e-sandbox"
+  contains "$(cat "$STUB_BIN/err")" "cannot confirm owner/sandbox carries .slice-e2e-sandbox on its default branch"
+  contains "$(cat "$STUB_BIN/err")" "gh said: gh: stub configured to fail"
+  contains "$(cat "$CALL_LOG")" "$(printf 'gh\tapi repos/owner/sandbox/contents/.slice-e2e-sandbox')"
 }

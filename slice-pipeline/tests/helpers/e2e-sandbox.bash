@@ -16,8 +16,9 @@ require_e2e_sandbox() {
 		return 1
 	fi
 
-	if ! gh api "repos/$repo/contents/.slice-e2e-sandbox" >/dev/null 2>&1; then
-		echo "# $repo carries no .slice-e2e-sandbox on its default branch; the e2e refuses to push to or merge into an unmarked repository" >&2
+	local out
+	if ! out="$(gh api "repos/$repo/contents/.slice-e2e-sandbox" 2>&1)"; then
+		echo "# cannot confirm $repo carries .slice-e2e-sandbox on its default branch; the e2e refuses to push to or merge into an unconfirmed repository; gh said: $out" >&2
 		return 1
 	fi
 }

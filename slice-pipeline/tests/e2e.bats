@@ -135,6 +135,11 @@ setup_file() {
   mkdir -p "$SOURCE/.archon/workflows/slice-pipeline"
   cp -R "$TREE/workflows/implement-slice" "$SOURCE/.archon/workflows/slice-pipeline/"
 
+  # Tells teardown that setup reached the run, so there may be a worktree,
+  # branch or registration to undo. Unset, the target may be one the guard
+  # refused, which teardown must not touch.
+  export E2E_REACHED_RUN=1
+
   # Before the run, so teardown can tell a codebase row Archon rewrote to point
   # at the scratch clone from one the run created.
   snapshot_archon_registrations "$ARCHON_SNAPSHOT" 2>&3
@@ -162,19 +167,18 @@ teardown_file() {
   [ -n "${SCRATCH:-}" ] || return 0
   if [ "${SLICE_E2E_KEEP:-}" = 1 ]; then
     echo "# kept scratch at $SCRATCH (run log: $RUN_LOG, run: ${RUN_ID:-none}, pr: ${PR_NUMBER:-none})" >&3
-    # The physical path is what Archon recorded, and it can no longer be
-    # resolved once the kept scratch dir is deleted. The snapshot is copied
-    # out of the scratch dir for the same reason.
-    local phys snapshot
-    phys="$(cd "$SCRATCH" && pwd -P)" || phys="$SCRATCH"
+    [ "${E2E_REACHED_RUN:-}" = 1 ] || return 0
+    # The snapshot is copied out of the scratch dir so the release command
+    # still works once the kept scratch dir is deleted.
+    local snapshot
     snapshot="$(mktemp)" && cp "$ARCHON_SNAPSHOT" "$snapshot" || snapshot="$ARCHON_SNAPSHOT"
-    echo "# Archon still registers the scratch clone as $SLICE_E2E_REPO's codebase; a later run from another clone fails until it is released, e.g. bash -c '. $TREE/tests/helpers/e2e-cleanup.bash; release_archon_registration $phys $snapshot'" >&3
+    echo "# Archon still registers the scratch clone as $SLICE_E2E_REPO's codebase; a later run from another clone fails until it is released, e.g. bash -c '. $TREE/tests/helpers/e2e-cleanup.bash; release_archon_registration $SCRATCH $snapshot'" >&3
     return 0
   fi
-  # No snapshot means setup stopped before the run, at the clone or the
-  # sandbox guard, so there is no worktree, branch or registration to undo,
-  # and a target the guard refused must not be touched at all.
-  if [ -e "$ARCHON_SNAPSHOT" ]; then
+  # Setup can stop before the run at the clone, the sandbox guard, no-mistakes
+  # init or bd, leaving no worktree, branch or registration to undo, and a
+  # target the guard refused must not be touched at all.
+  if [ "${E2E_REACHED_RUN:-}" = 1 ]; then
     (cd "$REPO" && archon complete "e2e/$BEAD" >/dev/null 2>&1) ||
       echo "# archon complete e2e/$BEAD failed; run 'archon isolation list' to find the worktree" >&3
     close_slice_branch "$SLICE_E2E_REPO" "${BRANCH:-}" "$REPO" 2>&3
@@ -243,7 +247,7 @@ diagnose() {
 
 @test "the forge reports the pull request merged" {
   [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" -gt 0 ] 2>/dev/null || {
-    echo "no pr_number in validate's output; see $RUN_LOG" >&2
+    echo "no pr_number in merge's return value; see $RUN_LOG" >&2
     exit 1
   }
   state="$(gh pr view "$PR_NUMBER" -R "$SLICE_E2E_REPO" --json state --jq .state)"
@@ -256,7 +260,7 @@ diagnose() {
 
 @test "the findings record comment landed on the pull request" {
   [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" -gt 0 ] 2>/dev/null || {
-    echo "no pr_number in validate's output; see $RUN_LOG" >&2
+    echo "no pr_number in merge's return value; see $RUN_LOG" >&2
     exit 1
   }
   record="$(gh api "repos/$SLICE_E2E_REPO/issues/$PR_NUMBER/comments" \
