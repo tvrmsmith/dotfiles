@@ -84,7 +84,11 @@ setup_file() {
 
   # The physical path, which is what Archon records, so teardown still matches
   # its registration if the scratch dir is gone by then and cannot be resolved.
-  SCRATCH="$(cd "$(mktemp -d)" && pwd -P)"
+  SCRATCH="$(mktemp -d)" && SCRATCH="$(cd "$SCRATCH" && pwd -P)" && [ -n "$SCRATCH" ] || {
+    unset SCRATCH
+    echo "# cannot create a scratch dir" >&3
+    exit 1
+  }
   export SCRATCH
   export REPO="$SCRATCH/repo" SOURCE="$SCRATCH/source" RUN_LOG="$SCRATCH/run.log"
   export ARCHON_SNAPSHOT="$SCRATCH/archon-codebases.sql"
