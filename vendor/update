@@ -32,6 +32,7 @@ NPM_SKILLS=(
 GIT_SKILLS=(
   "tuicr|tvrmsmith-tuicr|groupdiff|skills/tuicr|git@github-personal:tvrmsmith/tuicr.git"
   "pstack|backnotprop-pstack|main|skills/unslop|https://github.com/backnotprop/pstack.git"
+  "pstack|backnotprop-pstack|main|skills/show-me-your-work|https://github.com/backnotprop/pstack.git"
 )
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -162,13 +163,17 @@ for e in "${NPM_SKILLS[@]}"; do
     fetch_npm_skill "$e"; exit 0
   fi
 done
+# A prefix can own several GIT_SKILLS entries (pstack ships more than one skill).
+matched=()
 for e in "${GIT_SKILLS[@]}"; do
   IFS='|' read -r prefix _ _ _ _ <<<"$e"
-  if [[ "$prefix" == "$target" ]]; then
-    require_clean_tree
-    fetch_git_skill "$e"; exit 0
-  fi
+  if [[ "$prefix" == "$target" ]]; then matched+=("$e"); fi
 done
+if [[ ${#matched[@]} -gt 0 ]]; then
+  require_clean_tree
+  for e in "${matched[@]}"; do fetch_git_skill "$e"; done
+  exit 0
+fi
 
 echo "error: no registered subtree named '$target'" >&2
 echo "registered:" >&2

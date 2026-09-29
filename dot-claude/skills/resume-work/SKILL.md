@@ -49,9 +49,10 @@ this skill brings. Read the `recap` and `call` of each `?` row and split it two 
 
 Age then overrides `GO`, and `ERRORED` with it: see Stale rows, under Send.
 
-A session that ran under `/afk` ends its last turn with an `AFK log`, and the `parked:` lines in
-that log are the whole bucket test. Every item parked and nothing it can take alone is `DECIDE`,
-which was all six stopped rows the day this was written. Read the log, not the summary above it.
+A session that ran under `/afk` ends its last turn with an `AFK log:` footer, and the `parked:`
+lines in that footer are the whole bucket test. Every item parked and nothing it can take alone is
+`DECIDE`, which was all six stopped rows the day this was written. Read the footer, not the
+summary above it.
 
 `DECIDE` now has two entries: the script's, a live selector or permission prompt Orca reports as
 `waiting`, and this one, stopped with everything parked. They read the same on the board and differ
