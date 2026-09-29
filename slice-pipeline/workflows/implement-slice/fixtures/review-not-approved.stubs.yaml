@@ -1,0 +1,56 @@
+# Wiring of the go signal only. A real run never reaches merge this way: a
+# round that ends with outcome none fails the loop's until_bash, so review
+# runs another round instead of completing. `archon workflow test` never runs
+# until_bash, so this fixture can hand merge an unapproved verdict, and all it
+# pins is that merge reads review's verdict: `--approved false` reaches the
+# merge body, merge merges nothing, and release hands the bead back.
+#
+# `close` is left unstubbed, so reaching it fails this fixture with a
+# missing-stub error: an unapproved slice must never close its bead.
+fixture:
+  expect: completed
+  reached: [claim, build, verify, validate, review-round, review, merge, release]
+  resolved-text-contains:
+    merge: "--approved false"
+  inputs:
+    bead: demo-slice-1
+    beads_dir: /tmp/beads
+
+claim:
+  bead: demo-slice-1
+  beads_dir: /tmp/beads
+  branch: slice/demo-slice-1
+build: "the slice is built and committed"
+verify:
+  verified: true
+  committed: true
+  tests_touched: true
+  branch: slice/demo-slice-1
+  sha: 1f0c6a4e2b7d9c3a5e8f10b2d4c6a8e0f2b4d6c8
+  reason: ""
+  waivers: []
+  waivers_error: ""
+validate:
+  delivered: true
+  outcome: checks-passed
+  pr_number: 42
+  pr_url: https://github.com/owner/repo/pull/42
+  repo: owner/repo
+  fix_rounds: 1
+  record_posted: true
+  reason: ""
+review-round:
+  outcome: none
+  approved: false
+  cursor: "1:/state/sessions/a.json"
+  head_sha: ""
+  comments: 0
+  reason: "no send arrived within the wait"
+merge:
+  merged: false
+  strategy: ""
+  pr_number: 0
+  pr_url: ""
+  reason: "the slice was not approved in review, so nothing was merged"
+release:
+  released: true

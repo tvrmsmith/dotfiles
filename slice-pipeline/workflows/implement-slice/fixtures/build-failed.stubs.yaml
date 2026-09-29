@@ -1,14 +1,14 @@
 # Build failed: `build` is left unstubbed, so it fails with a missing stub.
 # verify joins on all_done, so it still runs, and its false verdict lets
-# validate and merge short-circuit and release hand the bead back. If verify
-# ever lost all_done, it would be skipped, validate, merge and release with
-# it, and `reached` would go red. `close` is left unstubbed, so reaching it
+# validate, review and merge short-circuit and release hand the bead back. If
+# verify ever lost all_done, it would be skipped, and validate, review, merge
+# and release with it, and `reached` would go red. `close` is left unstubbed, so reaching it
 # would add a second failed node and break the exact `fail-node` set: an
 # unbuilt slice must never close its bead.
 fixture:
   expect: failed
   fail-node: build
-  reached: [claim, verify, validate, merge, release]
+  reached: [claim, verify, validate, review-round, review, merge, release]
   inputs:
     bead: demo-slice-1
     beads_dir: /tmp/beads
@@ -35,11 +35,18 @@ validate:
   fix_rounds: 0
   record_posted: false
   reason: "verification did not pass, so validation was skipped"
+review-round:
+  outcome: undelivered
+  approved: false
+  cursor: ""
+  head_sha: ""
+  comments: 0
+  reason: "the slice was not delivered, so review was skipped"
 merge:
   merged: false
   strategy: ""
   pr_number: 0
   pr_url: ""
-  reason: "the slice was not delivered, so nothing was merged"
+  reason: "the slice was not approved in review, so nothing was merged"
 release:
   released: true

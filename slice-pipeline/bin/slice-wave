@@ -8,7 +8,7 @@
 set -uo pipefail
 
 usage() {
-	echo "usage: slice-wave <branch-name|claim|release|verify-commit|validate|merge|close> ..." >&2
+	echo "usage: slice-wave <branch-name|claim|release|verify-commit|validate|review-round|merge|close> ..." >&2
 }
 
 # Prints the branch git-check-ref-format accepts for $1, or returns 2 with
@@ -46,10 +46,10 @@ cmd_branch_name() {
 	printf '%s\n' "$branch"
 }
 
-# Sets the caller's `bead`, `beads_dir`, `verified`, `delivered`, `pr`, `repo`
-# and `pr_url` locals from the flag of the same name, accepting only the flags
-# named in the space-separated list $1. Returns 2 on any other flag or a flag with no value
-# after it.
+# Sets the caller's `bead`, `beads_dir`, `verified`, `delivered`, `approved`,
+# `head_sha`, `pr`, `repo`, `pr_url` and `since` locals from the flag of the
+# same name, accepting only the flags named in the space-separated list $1.
+# Returns 2 on any other flag or a flag with no value after it.
 parse_flags() {
 	local accepted=" $1 "
 	shift
@@ -64,9 +64,12 @@ parse_flags() {
 			--beads-dir) beads_dir="$2" ;;
 			--verified) verified="$2" ;;
 			--delivered) delivered="$2" ;;
+			--approved) approved="$2" ;;
+			--head-sha) head_sha="$2" ;;
 			--pr) pr="$2" ;;
 			--repo) repo="$2" ;;
 			--pr-url) pr_url="$2" ;;
+			--since) since="$2" ;;
 		esac
 		shift 2
 	done
@@ -840,6 +843,12 @@ cmd_validate() {
 	return 0
 }
 
+# True when $1 is a full commit id as gh and tuicr print one: 40 lowercase
+# hex digits.
+is_commit_sha() {
+	[ "${#1}" -eq 40 ] && case "$1" in *[!0-9a-f]*) false ;; esac
+}
+
 # Sets the caller's `strategy` to how repository $1 merges: merge-queue when
 # the machine-local repos.json gives it a merge_queue of true, else squash.
 # The file is machine-local because which repositories run a merge queue is a
@@ -904,15 +913,17 @@ dequeue_pr() {
 }
 
 # Sets the caller's merged, strategy, pr_url and reason locals from merging
-# pull request $1 in repository $2. Merged is what the forge reports
-# afterwards, never the merge command's exit status.
+# pull request $1 in repository $2, pinned to head commit $3. Merged is what
+# the forge reports afterwards, never the merge command's exit status.
 merge_pr() {
-	local pr="$1" repo="$2"
+	local pr="$1" repo="$2" head_sha="$3"
 	merge_strategy "$repo" || return
 	# A merge queue takes no strategy flag: gh enqueues the pull request and
-	# the queue branch decides how it lands.
+	# the queue branch decides how it lands. Either way the forge refuses the
+	# merge once the head has moved past the commit review approved.
 	local merge_args=(pr merge "$pr" -R "$repo")
 	[ "$strategy" = merge-queue ] || merge_args+=(--squash)
+	merge_args+=(--match-head-commit "$head_sha")
 	local refused="" merge_failed=false
 	refused="$(gh "${merge_args[@]}" 2>&1 >/dev/null)" || merge_failed=true
 
@@ -988,20 +999,20 @@ merge_pr() {
 # every path and reports through the JSON object, never through its exit
 # status.
 cmd_merge() {
-	local delivered="" pr="" repo=""
-	parse_flags "--delivered --pr --repo" "$@" || { usage; return 2; }
-	case "$delivered" in
+	local approved="" head_sha="" pr="" repo=""
+	parse_flags "--approved --head-sha --pr --repo" "$@" || { usage; return 2; }
+	case "$approved" in
 		true | false) ;;
 		*)
-			echo "slice-wave: --delivered must be true or false, not '$delivered'" >&2
+			echo "slice-wave: --approved must be true or false, not '$approved'" >&2
 			usage
 			return 2
 			;;
 	esac
-	# --repo may be empty on an undelivered slice, since validate's
-	# short-circuit reports no repository; only a merge needs one.
-	if [ -z "$pr" ] || { [ "$delivered" = true ] && [ -z "$repo" ]; }; then
-		echo "slice-wave: merge needs --pr and, for a delivered slice, --repo" >&2
+	# --repo may be empty on a slice review never approved, since an
+	# undelivered slice reports no repository; only a merge needs one.
+	if [ -z "$pr" ] || { [ "$approved" = true ] && [ -z "$repo" ]; }; then
+		echo "slice-wave: merge needs --pr and, for an approved slice, --repo" >&2
 		usage
 		return 2
 	fi
@@ -1012,17 +1023,22 @@ cmd_merge() {
 			return 2
 			;;
 	esac
+	if [ "$approved" = true ] && ! is_commit_sha "$head_sha"; then
+		echo "slice-wave: --head-sha must be the 40-hex commit review approved, not '$head_sha'" >&2
+		usage
+		return 2
+	fi
 
 	local merged=false strategy="" pr_url="" reason=""
-	case "$delivered" in
+	case "$approved" in
 		true)
 			if [ "$pr" -eq 0 ]; then
-				reason="the delivered slice names no pull request, so nothing was merged"
+				reason="the approved slice names no pull request, so nothing was merged"
 			else
-				merge_pr "$pr" "$repo"
+				merge_pr "$pr" "$repo" "$head_sha"
 			fi
 			;;
-		false) reason="the slice was not delivered, so nothing was merged" ;;
+		false) reason="the slice was not approved in review, so nothing was merged" ;;
 	esac
 
 	jq -n --argjson merged "$merged" --arg strategy "$strategy" \
@@ -1030,6 +1046,291 @@ cmd_merge() {
 		'{merged: $merged, strategy: $strategy, pr_number: $pr_number,
 		  pr_url: $pr_url, reason: $reason}'
 	return 0
+}
+
+# Sets the caller's outcome, cursor, head_sha, comments and reason from
+# watching pull request $1's tuicr session in repository $2 for a send past
+# cursor $3, a `<release_count>:<session path>` pair or empty for none yet.
+# Polls every $poll seconds until a send decides the round or $wait seconds
+# have passed since review-round started, both the caller's.
+# Returns 1, naming the state on stderr, once the pull request is not open.
+wait_for_send() {
+	local pr="$1" repo="$2" since="$3" slug="gh:$2/pr/$1"
+	local base_count="${since%%:*}" base_path="${since#*:}"
+	local pr_state pr_head count path session_head read_problem=""
+	while :; do
+		# A failed gh read leaves the head unknown, so this pass judges
+		# nothing and the next one sees the same session again.
+		if read_pr_head "$pr" "$repo"; then
+			[ "$pr_state" = OPEN ] || {
+				echo "slice-wave: pull request $pr is $pr_state, so review ended without a merge" >&2
+				return 1
+			}
+			if read_session "$repo" "$slug" && judge_session "$slug"; then
+				return 0
+			fi
+		fi
+		[ "$SECONDS" -lt "$wait" ] || break
+		sleep "$poll"
+	done
+	outcome=none
+	cursor="${base_path:+$base_count:$base_path}"
+	[ -z "$read_problem" ] || add_reason "$read_problem"
+	reason="no send arrived within ${wait}s${reason:+; $reason}"
+}
+
+# Judges the caller's session read (count, path, session_head) against its
+# baseline (base_count, base_path) and pull request head pr_head. Returns 0
+# with outcome, cursor, comments and head_sha set when a send decides the
+# round; otherwise moves the baseline as the read requires and returns 1,
+# setting read_problem when the comments could not be read.
+judge_session() {
+	local slug="$1"
+	if [ "$path" != "$base_path" ]; then
+		# A session file the baseline does not name started after it, at
+		# release 0, so every release it holds is a send to judge.
+		base_path="$path"
+		base_count=0
+	fi
+	[ "$count" -gt "$base_count" ] || return 1
+
+	# Comments that cannot be read cannot be ruled out, so the send waits
+	# for the next pass rather than counting as empty.
+	local listed sent
+	listed="$(tuicr review comments --session "$slug" 2>&1)" || {
+		read_problem="tuicr review comments failed: $listed"
+		return 1
+	}
+	sent="$(jq --argjson after "$base_count" --argjson upto "$count" \
+		'map(select(.released_in != null and .released_in > $after and .released_in <= $upto)) | length' \
+		<<<"$listed" 2>&1)" || {
+		read_problem="cannot read the tuicr comments of $slug: $sent"
+		return 1
+	}
+	cursor="$count:$path"
+	if [ "$sent" -gt 0 ]; then
+		outcome=comments
+		comments="$sent"
+		return 0
+	elif [ "$session_head" = "$pr_head" ]; then
+		outcome=approved
+		head_sha="$session_head"
+		return 0
+	fi
+	# An empty send on a stale head approves nothing, and the engineer sends
+	# again once tuicr shows the new head.
+	if [ -z "$session_head" ]; then
+		add_reason "tuicr reported no head_sha for the send at release $count, so it cannot count as approval"
+	else
+		add_reason "the send at release $count reviewed head $session_head, not the pull request's head $pr_head"
+	fi
+	base_count="$count"
+	return 1
+}
+
+# Sets the caller's pr_state and pr_head from pull request $1 in repository
+# $2, or returns 1 with read_problem saying why gh cannot say.
+read_pr_head() {
+	local view
+	view="$(gh pr view "$1" -R "$2" --json state,headRefOid 2>&1)" || {
+		read_problem="gh pr view $1 -R $2 failed: $view"
+		return 1
+	}
+	pr_state="$(jq -r '.state // empty' <<<"$view" 2>/dev/null)"
+	pr_head="$(jq -r '.headRefOid // empty' <<<"$view" 2>/dev/null)"
+	[ -n "$pr_state" ] && [ -n "$pr_head" ] || {
+		read_problem="gh pr view $1 -R $2 reported no state and head: $view"
+		return 1
+	}
+}
+
+# Sets the caller's since to session $2's cursor in the `tuicr review list` of
+# repository $1, leaving it empty when the list holds no such session. A list
+# tuicr cannot give is retried every $poll seconds, since the session it hides
+# may already hold releases, and returns 1 with read_problem set once $wait
+# seconds have passed since review-round started.
+snapshot_session() {
+	local count path session_head rc
+	while :; do
+		rc=0
+		read_session "$1" "$2" || rc=$?
+		case "$rc" in
+			0)
+				since="$count:$path"
+				return 0
+				;;
+			2) return 0 ;;
+		esac
+		[ "$SECONDS" -lt "$wait" ] || return 1
+		sleep "$poll"
+	done
+}
+
+# Sets the caller's count, path and session_head from session $2 in the
+# `tuicr review list` of repository $1. Otherwise sets read_problem saying
+# why, and returns 2 when the list read but holds no such session, or 1 when
+# tuicr gave no list to read.
+read_session() {
+	local list session
+	list="$(tuicr review list --repo "$1" 2>&1)" || {
+		read_problem="tuicr review list failed: $list"
+		return 1
+	}
+	# The path gets a line of its own, since it may hold spaces, and a head
+	# absent between two IFS-whitespace separators would collapse away.
+	session="$(jq -r --arg slug "$2" '
+		map(select(.slug == $slug)) | first
+		| if . == null then empty
+		  elif (.release_count | type) == "number" and (.release_count | floor) == .release_count
+		    and (.path | type) == "string"
+		  then "\(.release_count) \(.head_sha // "")\n\(.path)"
+		  else error("session \($slug) carries no whole release_count and path") end' <<<"$list" 2>&1)" || {
+		read_problem="cannot read the tuicr review list: $session"
+		return 1
+	}
+	[ -n "$session" ] || {
+		read_problem="tuicr has no review session $2"
+		return 2
+	}
+	read_problem=""
+	{
+		read -r count session_head
+		IFS= read -r path
+	} <<<"$session"
+}
+
+# Opens the review tab titled $3 in Orca, running tuicr on pull request $1
+# of repository $2, unless a tab of that title is already open.
+ensure_review_tab() {
+	local pr="$1" repo="$2" title="$3" terminals main registered worktree="" candidate
+	terminals="$(orca_json terminal list --json --include-visual-layouts)" || return 1
+	# Only the tab title counts: a program in the pane can overwrite the
+	# terminal's own. A split nests groups, so tabs are searched at any depth.
+	jq -e --arg title "$title" \
+		'[.result.visualLayouts[]?.root | .. | objects | .tabs? | arrays | .[].title] | index($title) != null' \
+		<<<"$terminals" >/dev/null && return 0
+
+	main="$(git worktree list --porcelain | awk '/^worktree / { print substr($0, 10); exit }')"
+	main="$(cd "$main" && pwd -P)"
+	registered="$(orca_json repo list --json)" || return 1
+	while IFS= read -r candidate; do
+		[ "$(cd "$candidate" 2>/dev/null && pwd -P)" = "$main" ] || continue
+		worktree="$candidate"
+		break
+	done < <(jq -r '.result.repos[]?.path // empty' <<<"$registered")
+	if [ -z "$worktree" ]; then
+		orca_json repo add --path "$main" --json >/dev/null || return 1
+		worktree="$main"
+	fi
+	local created
+	created="$(orca_json terminal create --worktree "path:$worktree" --title "$title" \
+		--command "tuicr pr $repo#$pr" --json)" || return 1
+	# The tab appearing is the engineer's only notice, so one Orca could not
+	# show fails review rather than waiting on a send nobody knows to make.
+	jq -e '.result.terminal.surface == "visible"' <<<"$created" >/dev/null || {
+		echo "slice-wave: orca opened the review tab but did not show it, so nobody would know to review. orca said: $created" >&2
+		return 1
+	}
+}
+
+# Runs `orca "$@"` and prints its JSON, or names the failure and orca's
+# output on stderr and returns 1 when orca exits non-zero or its envelope's
+# .ok is not true.
+orca_json() {
+	local said
+	if ! said="$(orca "$@" 2>&1)" || ! jq -e '.ok == true' <<<"$said" >/dev/null 2>&1; then
+		echo "slice-wave: orca $1 $2 failed, so no review tab opened. orca said: $said" >&2
+		return 1
+	fi
+	printf '%s\n' "$said"
+}
+
+# True when $1 is empty or a `<release_count>:<session path>` cursor. The
+# count ends at the first colon, since the path may hold more.
+is_cursor() {
+	case "$1" in
+		"") return 0 ;;
+		*:*) ;;
+		*) return 1 ;;
+	esac
+	case "${1%%:*}" in
+		"" | *[!0-9]*) return 1 ;;
+	esac
+}
+
+# Opens the review tab for a delivered slice's pull request and waits for
+# the engineer to send from it. The workflow's review loop reads this output
+# on every path, so once its flags are valid it reports through the JSON
+# object rather than its exit status, save for the failures that end review.
+cmd_review_round() {
+	# Unset until parse_flags sees the flag, so the empty value the undelivered
+	# path passes still counts as given. bash 3.2's bare `local` assigns an
+	# empty string, hence the unset; the names stay local after it.
+	local bead delivered pr repo since
+	unset bead delivered pr repo since
+	parse_flags "--bead --delivered --pr --repo --since" "$@" || { usage; return 2; }
+	if [ -z "${bead+set}" ] || [ -z "${delivered+set}" ] || [ -z "${pr+set}" ] ||
+		[ -z "${repo+set}" ] || [ -z "${since+set}" ]; then
+		echo "slice-wave: review-round needs --bead, --delivered, --pr, --repo and --since" >&2
+		usage
+		return 2
+	fi
+	case "$delivered" in
+		true | false) ;;
+		*)
+			echo "slice-wave: --delivered must be true or false, not '$delivered'" >&2
+			usage
+			return 2
+			;;
+	esac
+	# Only a delivered slice has a pull request to review; the undelivered
+	# path passes pr 0 and an empty repo.
+	if [ "$delivered" = true ]; then
+		case "$pr" in
+			"" | 0 | *[!0-9]*)
+				echo "slice-wave: a delivered review-round needs --pr as a pull request number, not '$pr'" >&2
+				usage
+				return 2
+				;;
+		esac
+		[ -n "$repo" ] || {
+			echo "slice-wave: a delivered review-round needs --repo" >&2
+			usage
+			return 2
+		}
+		is_cursor "$since" || {
+			echo "slice-wave: --since must be empty or <release_count>:<session path>, not '$since'" >&2
+			usage
+			return 2
+		}
+	fi
+
+	local outcome="" cursor="" head_sha="" comments=0 reason="" read_problem=""
+	local poll="${SLICE_WAVE_REVIEW_POLL_SECONDS:-15}" wait="${SLICE_WAVE_REVIEW_WAIT_SECONDS:-28800}"
+	case "$delivered" in
+		true)
+			# A first round baselines on the session as it stands before the
+			# tab opens, so a send made in it before the first poll still counts.
+			if [ -z "$since" ] && ! snapshot_session "$repo" "gh:$repo/pr/$pr"; then
+				outcome=none
+				reason="tuicr gave no review list to snapshot within ${wait}s, so no review tab opened: $read_problem"
+			else
+				ensure_review_tab "$pr" "$repo" "review $bead #$pr" || return 1
+				wait_for_send "$pr" "$repo" "$since" || return 1
+			fi
+			;;
+		false)
+			outcome=undelivered
+			reason="the slice was not delivered, so there is nothing to review"
+			;;
+	esac
+
+	local approved=false
+	[ "$outcome" != approved ] || approved=true
+	jq -n --arg outcome "$outcome" --argjson approved "$approved" --arg cursor "$cursor" \
+		--arg head_sha "$head_sha" --argjson comments "$comments" --arg reason "$reason" \
+		'{outcome: $outcome, approved: $approved, cursor: $cursor, head_sha: $head_sha,
+		  comments: $comments, reason: $reason}'
 }
 
 # Sets the caller's worktree_removed and reason locals from removing the
@@ -1104,6 +1405,11 @@ case "${1:-}" in
 	validate)
 		shift
 		cmd_validate "$@"
+		exit $?
+		;;
+	review-round)
+		shift
+		cmd_review_round "$@"
 		exit $?
 		;;
 	merge)

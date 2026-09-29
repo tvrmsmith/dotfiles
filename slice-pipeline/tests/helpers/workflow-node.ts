@@ -23,6 +23,7 @@ interface WorkflowNode {
   id: string;
   bash?: string;
   output_format?: unknown;
+  loop_group?: { nodes?: WorkflowNode[]; until_bash?: string };
 }
 
 // "array" is checkable only because a property carries nothing but `type`: an
@@ -103,9 +104,19 @@ function typeMatches(declared: string, actual: string): boolean {
   return declared === actual;
 }
 
+/** Searches loop_group bodies too, where a node's id is unique across the file. */
+function findNode(nodes: WorkflowNode[], nodeId: string): WorkflowNode | undefined {
+  for (const candidate of nodes) {
+    if (candidate?.id === nodeId) return candidate;
+    const inBody = findNode(candidate?.loop_group?.nodes ?? [], nodeId);
+    if (inBody) return inBody;
+  }
+  return undefined;
+}
+
 function loadNode(yamlPath: string, nodeId: string): WorkflowNode {
   const workflow = Bun.YAML.parse(readFileText(yamlPath)) as { nodes?: WorkflowNode[] };
-  const node = (workflow?.nodes ?? []).find((candidate) => candidate?.id === nodeId);
+  const node = findNode(workflow?.nodes ?? [], nodeId);
   if (!node) unusable(`no node '${nodeId}' in ${yamlPath}`);
   return node;
 }
@@ -123,6 +134,13 @@ function commandBody(node: WorkflowNode): string {
     unusable(`node '${node.id}' has no bash body`);
   }
   return node.bash;
+}
+
+function untilBody(node: WorkflowNode): string {
+  if (typeof node.loop_group?.until_bash !== "string") {
+    unusable(`node '${node.id}' is no loop_group with an until_bash`);
+  }
+  return node.loop_group.until_bash;
 }
 
 async function checkOutput(node: WorkflowNode): Promise<void> {
@@ -168,13 +186,19 @@ async function checkOutput(node: WorkflowNode): Promise<void> {
 
 const [command, yamlPath, nodeId] = process.argv.slice(2);
 if (!command || !yamlPath || !nodeId) {
-  unusable("usage: workflow-node.ts <body|check-output> <workflow.yaml> <node-id>");
+  unusable("usage: workflow-node.ts <body|until|properties|check-output> <workflow.yaml> <node-id>");
 }
 
 const node = loadNode(yamlPath, nodeId);
 switch (command) {
   case "body":
     console.log(commandBody(node));
+    break;
+  case "until":
+    console.log(untilBody(node));
+    break;
+  case "properties":
+    console.log(Object.keys(asOutputFormat(node.output_format, node.id).properties).join("\n"));
     break;
   case "check-output":
     await checkOutput(node);

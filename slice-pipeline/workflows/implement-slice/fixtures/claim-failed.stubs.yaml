@@ -9,13 +9,13 @@
 # verify still runs under all_done, and its verdict is pinned false: a run
 # that never claimed the bead is never on its branch, so verify-commit
 # credits nothing. validate depends on verify alone, not claim, so it still
-# runs too and short-circuits on that false verdict, and merge, depending on
-# validate alone, short-circuits behind it. release's dependency on claim,
+# runs too and short-circuits on that false verdict, and review and merge,
+# depending on validate and not claim, short-circuit behind it. release's dependency on claim,
 # not merge's own success, is what stops it running here.
 fixture:
   expect: failed
   fail-node: claim
-  reached: [verify, validate, merge]
+  reached: [verify, validate, review-round, review, merge]
   inputs:
     bead: demo-slice-1
     beads_dir: /tmp/beads
@@ -38,9 +38,16 @@ validate:
   fix_rounds: 0
   record_posted: false
   reason: "verification did not pass, so validation was skipped"
+review-round:
+  outcome: undelivered
+  approved: false
+  cursor: ""
+  head_sha: ""
+  comments: 0
+  reason: "the slice was not delivered, so review was skipped"
 merge:
   merged: false
   strategy: ""
   pr_number: 0
   pr_url: ""
-  reason: "the slice was not delivered, so nothing was merged"
+  reason: "the slice was not approved in review, so nothing was merged"

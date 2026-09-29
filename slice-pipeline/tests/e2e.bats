@@ -1,6 +1,7 @@
 load helpers/assert
 load helpers/e2e-cleanup
 load helpers/e2e-sandbox
+load helpers/e2e-review
 
 # The one suite that runs the real pipeline: a real GitHub target, this tree's
 # workflow under the real engine, and a real model building a real bead. The
@@ -149,11 +150,19 @@ setup_file() {
   snapshot_archon_registrations "$ARCHON_SNAPSHOT" 2>&3
 
   # This tree's bin first, so the nodes run the slice-wave under test rather
-  # than whatever install.sh last linked onto the machine.
-  local rc=0
+  # than whatever install.sh last linked onto the machine. In the background,
+  # because the run waits in review for a send only this suite makes; nothing
+  # skips review. fd 3 is closed on it so bats does not wait on the run. A
+  # failed send would leave the run waiting through 20 rounds of 8 hours, so
+  # the run and everything under it is killed instead.
+  local rc=0 run_pid
   (cd "$REPO" && PATH="$TREE/bin:$PATH" archon workflow run implement-slice \
     --workflow-source "$SOURCE" --branch "e2e/$BEAD" \
-    --input bead="$BEAD" --input beads_dir="$BEADS_DIR") >>"$RUN_LOG" 2>&1 || rc=$?
+    --input bead="$BEAD" --input beads_dir="$BEADS_DIR") >>"$RUN_LOG" 2>&1 3>&- &
+  run_pid=$!
+  send_empty_review "$BEAD" "$SLICE_E2E_REPO" "$run_pid" 2>&3 || stop_run "$run_pid"
+  export REVIEW_TAB_TITLE REVIEW_HANDLE REVIEW_PR
+  wait "$run_pid" || rc=$?
   export RUN_RC="$rc"
 
   RUN_ID="$(cd "$REPO" && archon workflow runs --json --limit 1 | jq -r '.runs[0].id // empty')"
@@ -170,7 +179,7 @@ setup_file() {
 teardown_file() {
   [ -n "${SCRATCH:-}" ] || return 0
   if [ "${SLICE_E2E_KEEP:-}" = 1 ]; then
-    echo "# kept scratch at $SCRATCH (run log: $RUN_LOG, run: ${RUN_ID:-none}, pr: ${PR_NUMBER:-none})" >&3
+    echo "# kept scratch at $SCRATCH (run log: $RUN_LOG, run: ${RUN_ID:-none}, pr: ${PR_NUMBER:-none}, review tab pane: ${REVIEW_HANDLE:-none})" >&3
     [ "${E2E_REACHED_RUN:-}" = 1 ] || return 0
     # The snapshot is copied out of the scratch dir so the release command
     # still works once the kept scratch dir is deleted.
@@ -183,6 +192,7 @@ teardown_file() {
   # init or bd, leaving no worktree, branch or registration to undo, and a
   # target the guard refused must not be touched at all.
   if [ "${E2E_REACHED_RUN:-}" = 1 ]; then
+    close_review_tab "${REVIEW_HANDLE:-}" 2>&3
     (cd "$REPO" && archon complete "e2e/$BEAD" >/dev/null 2>&1) ||
       echo "# archon complete e2e/$BEAD failed; run 'archon isolation list' to find the worktree" >&3
     close_slice_branch "$SLICE_E2E_REPO" "${BRANCH:-}" "$REPO" 2>&3
@@ -280,4 +290,22 @@ diagnose() {
     printf 'the findings record carries no findings-history line:\n%s\n' "$record" >&2
     exit 1
   }
+}
+
+@test "a review tab titled for the bead and its pull request opened" {
+  [ -n "${REVIEW_TAB_TITLE:-}" ] || { echo "Orca never showed a review tab for $BEAD; see $RUN_LOG" >&2; exit 1; }
+  equals "$REVIEW_TAB_TITLE" "review $BEAD #$PR_NUMBER"
+}
+
+@test "the review's tuicr session released once or more, and its batch carried no comments" {
+  [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" -gt 0 ] 2>/dev/null || {
+    echo "no pr_number in validate's output; see $RUN_LOG" >&2
+    exit 1
+  }
+  slug="gh:$SLICE_E2E_REPO/pr/$PR_NUMBER"
+  releases="$(tuicr review list --repo "$SLICE_E2E_REPO" | jq -r --arg slug "$slug" '[.[] | select(.slug == $slug) | .release_count] | first // empty')"
+  [ -n "$releases" ] || { echo "tuicr holds no session $slug" >&2; exit 1; }
+  [ "$releases" -ge 1 ] || { echo "session $slug released $releases times" >&2; exit 1; }
+  sent="$(tuicr review comments --session "$slug" | jq '[.[] | select(.released_in != null)] | length')"
+  equals "$sent" 0
 }
