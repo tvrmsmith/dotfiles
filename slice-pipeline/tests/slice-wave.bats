@@ -52,7 +52,7 @@ teardown() {
   rc=0; out="$("$HELPER" resurrect --bead foo 2>"$STUB_BIN/err")" || rc=$?
   equals "$rc" 2
   is_empty "$out"
-  contains "$(cat "$STUB_BIN/err")" "usage: slice-wave <branch-name|claim|release|verify-commit|validate|merge|close> ..."
+  contains "$(cat "$STUB_BIN/err")" "usage: slice-wave <branch-name|claim|release|verify-commit|validate|review-round|merge|close> ..."
 }
 
 @test "no subcommand at all prints the usage line to stderr and exits 2" {

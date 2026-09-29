@@ -1,17 +1,17 @@
-# Landed but not shipped: verify sees a commit, but no-mistakes never gets it
-# to checks-passed, so validate reports delivered: false, review opens no
-# tab, merge merges nothing, and release hands the bead back.
+# Wiring of the go signal only. A real run never reaches merge this way: a
+# round that ends with outcome none fails the loop's until_bash, so review
+# runs another round instead of completing. `archon workflow test` never runs
+# until_bash, so this fixture can hand merge an unapproved verdict, and all it
+# pins is that merge reads review's verdict: `--approved false` reaches the
+# merge body, merge merges nothing, and release hands the bead back.
 #
-# Archon's fixture language cannot assert the authored outcome directly (a
-# known runner limit: it checks `expect`, the run status, not an authored
-# field), so `reached` carries the assertion instead. If
-# `$merge.output.merged == false` ever stopped catching an undelivered
-# slice, `release` would drop out of `reached` and this fixture would go red.
 # `close` is left unstubbed, so reaching it fails this fixture with a
-# missing-stub error: a PR that never went green must not close the bead.
+# missing-stub error: an unapproved slice must never close its bead.
 fixture:
   expect: completed
   reached: [claim, build, verify, validate, review-round, review, merge, release]
+  resolved-text-contains:
+    merge: "--approved false"
   inputs:
     bead: demo-slice-1
     beads_dir: /tmp/beads
@@ -31,21 +31,21 @@ verify:
   waivers: []
   waivers_error: ""
 validate:
-  delivered: false
-  outcome: failed
+  delivered: true
+  outcome: checks-passed
   pr_number: 42
   pr_url: https://github.com/owner/repo/pull/42
   repo: owner/repo
-  fix_rounds: 3
+  fix_rounds: 1
   record_posted: true
-  reason: "no-mistakes ended failed, not checks-passed or passed"
+  reason: ""
 review-round:
-  outcome: undelivered
+  outcome: none
   approved: false
-  cursor: ""
+  cursor: "1:/state/sessions/a.json"
   head_sha: ""
   comments: 0
-  reason: "the slice was not delivered, so review was skipped"
+  reason: "no send arrived within the wait"
 merge:
   merged: false
   strategy: ""

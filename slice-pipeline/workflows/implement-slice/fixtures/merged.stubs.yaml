@@ -1,7 +1,14 @@
-# Landed, shipped and merged: verify sees a commit and a green suite,
-# validate drives it through no-mistakes to a checks-passed PR, merge reports
-# the forge confirmed the merge, and close closes the bead. The authored
-# outcome (`merged`) is a success.
+# Landed, shipped, reviewed and merged: verify sees a commit and a green
+# suite, validate drives it through no-mistakes to a checks-passed PR,
+# review-round opens its review tab and reads an empty send as approval of
+# the PR's head, merge reports the forge confirmed the merge of that head, and
+# close closes the bead. The authored outcome (`merged`) is a success.
+#
+# `resolved-text-contains` pins the hand-offs a stub would otherwise hide:
+# review-round is handed validate's pull request, and merge is handed
+# review's verdict and the head it approved, not validate's. Archon
+# shell-quotes a substituted string output, hence the quotes around the repo
+# and the head.
 #
 # `release` is deliberately left unstubbed: the fixture language has no
 # negative `reached` assertion, so an unstubbed node that gets reached fails
@@ -10,7 +17,10 @@
 # slice, this fixture goes red.
 fixture:
   expect: completed
-  reached: [claim, build, verify, validate, merge, close]
+  reached: [claim, build, verify, validate, review-round, review, merge, close]
+  resolved-text-contains:
+    review-round: "--delivered true --pr 42 --repo 'owner/repo'"
+    merge: "--approved true --head-sha '1f0c6a4e2b7d9c3a5e8f10b2d4c6a8e0f2b4d6c8'"
   inputs:
     bead: demo-slice-1
     beads_dir: /tmp/beads
@@ -37,6 +47,13 @@ validate:
   repo: owner/repo
   fix_rounds: 1
   record_posted: true
+  reason: ""
+review-round:
+  outcome: approved
+  approved: true
+  cursor: "1:/state/sessions/a.json"
+  head_sha: 1f0c6a4e2b7d9c3a5e8f10b2d4c6a8e0f2b4d6c8
+  comments: 0
   reason: ""
 merge:
   merged: true

@@ -10,6 +10,9 @@ load helpers/stubs
 # scripted per test.
 HELPER="${BATS_TEST_DIRNAME}/../bin/slice-wave"
 
+# The head commit review approved, which merge pins the forge to.
+SHA=89abcdef0123456789abcdef0123456789abcdef
+
 setup() {
   command -v jq >/dev/null || skip "no jq"
 
@@ -54,24 +57,25 @@ reads() {
   grep -c -e 'pr view' -e 'pullRequest(number' "$CALL_LOG"
 }
 
-@test "merge calls no tool and merges nothing when the slice was not delivered" {
-  rc=0; out="$(merge --delivered false --pr 42 --repo owner/repo)" || rc=$?
+@test "merge calls no tool and merges nothing when the slice was not approved in review" {
+  rc=0; out="$(merge --approved false --head-sha '' --pr 42 --repo owner/repo)" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" merged)" false
+  contains "$(field "$out" reason)" "nothing was merged"
+  contains "$(field "$out" reason)" "not approved in review"
+  is_empty "$(cat "$CALL_LOG")"
+}
+
+@test "merge accepts the empty repo and zero PR validate reports for a slice review did not approve" {
+  rc=0; out="$(merge --approved false --head-sha '' --pr 0 --repo '')" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "nothing was merged"
   is_empty "$(cat "$CALL_LOG")"
 }
 
-@test "merge accepts the empty repo and zero PR validate reports for an undelivered slice" {
-  rc=0; out="$(merge --delivered false --pr 0 --repo '')" || rc=$?
-  equals "$rc" 0
-  equals "$(field "$out" merged)" false
-  contains "$(field "$out" reason)" "nothing was merged"
-  is_empty "$(cat "$CALL_LOG")"
-}
-
-@test "merge exits 2 with the usage line when a delivered slice has an empty --repo" {
-  rc=0; out="$(merge --delivered true --pr 42 --repo '' 2>"$STUB_BIN/err")" || rc=$?
+@test "merge exits 2 with the usage line when an approved slice has an empty --repo" {
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo '' 2>"$STUB_BIN/err")" || rc=$?
   equals "$rc" 2
   is_empty "$out"
   contains "$(cat "$STUB_BIN/err")" "usage: slice-wave"
@@ -79,9 +83,10 @@ reads() {
 }
 
 @test "merge squashes when no repos.json exists and reports the merge the forge confirms" {
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   contains "$(cat "$CALL_LOG")" "$(printf 'gh\tpr merge 42 -R owner/repo --squash')"
+  contains "$(grep 'pr merge' "$CALL_LOG")" "--match-head-commit $SHA"
   equals "$(field "$out" merged)" true
   equals "$(field "$out" strategy)" squash
   equals "$(field "$out" pr_url)" "https://github.com/owner/repo/pull/42"
@@ -90,9 +95,9 @@ reads() {
 @test "merge enqueues with no strategy flag when repos.json puts the repo on a merge queue" {
   mkdir -p "$XDG_CONFIG_HOME/slice-pipeline"
   printf '{"owner/repo":{"merge_queue":true}}\n' > "$XDG_CONFIG_HOME/slice-pipeline/repos.json"
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
-  equals "$(grep 'pr merge' "$CALL_LOG")" "$(printf 'gh\tpr merge 42 -R owner/repo')"
+  equals "$(grep 'pr merge' "$CALL_LOG")" "$(printf 'gh\tpr merge 42 -R owner/repo --match-head-commit %s' "$SHA")"
   equals "$(field "$out" strategy)" merge-queue
   equals "$(field "$out" merged)" true
   equals "$(field "$out" pr_url)" "https://github.com/owner/repo/pull/42"
@@ -102,25 +107,25 @@ reads() {
 @test "merge squashes when repos.json names only other repositories" {
   mkdir -p "$XDG_CONFIG_HOME/slice-pipeline"
   printf '{"other/repo":{"merge_queue":true}}\n' > "$XDG_CONFIG_HOME/slice-pipeline/repos.json"
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
-  equals "$(grep 'pr merge' "$CALL_LOG")" "$(printf 'gh\tpr merge 42 -R owner/repo --squash')"
+  equals "$(grep 'pr merge' "$CALL_LOG")" "$(printf 'gh\tpr merge 42 -R owner/repo --squash --match-head-commit %s' "$SHA")"
   equals "$(field "$out" strategy)" squash
 }
 
 @test "merge squashes a repository repos.json lists with merge_queue false" {
   mkdir -p "$XDG_CONFIG_HOME/slice-pipeline"
   printf '{"owner/repo":{"merge_queue":false}}\n' > "$XDG_CONFIG_HOME/slice-pipeline/repos.json"
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
-  equals "$(grep 'pr merge' "$CALL_LOG")" "$(printf 'gh\tpr merge 42 -R owner/repo --squash')"
+  equals "$(grep 'pr merge' "$CALL_LOG")" "$(printf 'gh\tpr merge 42 -R owner/repo --squash --match-head-commit %s' "$SHA")"
   equals "$(field "$out" strategy)" squash
 }
 
 @test "merge merges nothing and names repos.json when jq cannot parse it" {
   mkdir -p "$XDG_CONFIG_HOME/slice-pipeline"
   printf 'not json\n' > "$XDG_CONFIG_HOME/slice-pipeline/repos.json"
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "repos.json"
@@ -129,7 +134,7 @@ reads() {
 
 @test "merge reports gh's refusal after one read when the merge fails and the PR stays open" {
   export GH_PR_MERGE_EXIT=1 GH_PR_VIEW_STATES=OPEN
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "Pull request is not mergeable"
@@ -138,7 +143,7 @@ reads() {
 
 @test "merge polls an open PR until the forge reports it merged" {
   export GH_PR_VIEW_STATES="OPEN OPEN MERGED"
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" true
   equals "$(reads)" 3
@@ -152,7 +157,7 @@ queue_repo() {
 @test "merge fails once a re-read confirms the merge queue dropped a PR it had queued" {
   queue_repo
   export GH_PR_VIEW_STATES="OPEN:queued OPEN OPEN MERGED"
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "merge queue dropped"
@@ -162,7 +167,7 @@ queue_repo() {
 @test "merge reports merged when the re-read after an unqueued read finds the PR merged" {
   queue_repo
   export GH_PR_VIEW_STATES="OPEN:queued OPEN MERGED"
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" true
   equals "$(reads)" 3
@@ -171,7 +176,7 @@ queue_repo() {
 @test "merge disables auto-merge and dequeues a PR still queued at the time limit" {
   queue_repo
   export SLICE_WAVE_MERGE_LIMIT_SECONDS=0 GH_PR_VIEW_STATES=OPEN:queued
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "dequeued at the deadline"
@@ -183,7 +188,7 @@ queue_repo() {
 @test "merge only disables auto-merge on a queue PR not yet queued at the time limit" {
   queue_repo
   export SLICE_WAVE_MERGE_LIMIT_SECONDS=0 GH_PR_VIEW_STATES=OPEN
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "dequeued at the deadline"
@@ -194,7 +199,7 @@ queue_repo() {
 @test "merge reports merged when the read after the deadline dequeue finds the PR merged" {
   queue_repo
   export SLICE_WAVE_MERGE_LIMIT_SECONDS=0 GH_PR_VIEW_STATES="OPEN:queued MERGED"
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" true
   is_empty "$(field "$out" reason)"
@@ -203,7 +208,7 @@ queue_repo() {
 @test "merge names a dequeue gh refused at the time limit" {
   queue_repo
   export SLICE_WAVE_MERGE_LIMIT_SECONDS=0 GH_PR_VIEW_STATES=OPEN:queued GH_API_GRAPHQL_EXIT=1
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "could not dequeue pull request 42"
@@ -214,7 +219,7 @@ queue_repo() {
 @test "merge keeps polling a queue PR waiting on checks and then sitting in the queue" {
   queue_repo
   export GH_PR_VIEW_STATES="OPEN OPEN:queued OPEN:queued MERGED"
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" true
   equals "$(reads)" 4
@@ -222,7 +227,7 @@ queue_repo() {
 
 @test "merge ignores the merge queue for a squashed PR" {
   export GH_PR_VIEW_STATES="OPEN:queued OPEN MERGED"
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" true
   equals "$(reads)" 3
@@ -230,7 +235,7 @@ queue_repo() {
 
 @test "merge reports a PR the forge closed without merging" {
   export GH_PR_VIEW_STATES=CLOSED
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "closed"
@@ -238,7 +243,7 @@ queue_repo() {
 
 @test "merge reports gh's refusal with a PR the forge closed" {
   export GH_PR_MERGE_EXIT=1 GH_PR_VIEW_STATES=CLOSED
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "closed"
@@ -247,7 +252,7 @@ queue_repo() {
 
 @test "merge names gh's read error when no read succeeds before the time limit" {
   export SLICE_WAVE_MERGE_LIMIT_SECONDS=0 GH_PR_VIEW_STATES=FAIL
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "could not read pull request 42 state"
@@ -256,7 +261,7 @@ queue_repo() {
 
 @test "merge names a state the forge reports outside merged, closed and open" {
   export SLICE_WAVE_MERGE_LIMIT_SECONDS=0 GH_PR_VIEW_STATES=UNKNOWN
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "unexpected state 'UNKNOWN'"
@@ -264,7 +269,7 @@ queue_repo() {
 
 @test "merge gives up on a PR still open when the time limit has passed" {
   export SLICE_WAVE_MERGE_LIMIT_SECONDS=0 GH_PR_VIEW_STATES=OPEN
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "still open"
@@ -273,20 +278,20 @@ queue_repo() {
 
 @test "merge trusts the forge over a failed merge command when the PR merged" {
   export GH_PR_MERGE_EXIT=1 GH_PR_VIEW_STATES=MERGED
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" true
 }
 
 @test "merge reads again after a failed read" {
   export GH_PR_VIEW_STATES="FAIL MERGED"
-  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo)" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" true
 }
 
-@test "merge calls no tool when a delivered slice names no pull request" {
-  rc=0; out="$(merge --delivered true --pr 0 --repo owner/repo)" || rc=$?
+@test "merge calls no tool when an approved slice names no pull request" {
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 0 --repo owner/repo)" || rc=$?
   equals "$rc" 0
   equals "$(field "$out" merged)" false
   contains "$(field "$out" reason)" "no pull request"
@@ -294,24 +299,43 @@ queue_repo() {
 }
 
 @test "merge exits 2 with the usage line when --repo is missing" {
-  rc=0; out="$(merge --delivered true --pr 42 2>"$STUB_BIN/err")" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr 42 2>"$STUB_BIN/err")" || rc=$?
   equals "$rc" 2
   is_empty "$out"
   contains "$(cat "$STUB_BIN/err")" "usage: slice-wave"
   is_empty "$(cat "$CALL_LOG")"
 }
 
-@test "merge exits 2 naming --delivered when it is neither true nor false" {
-  rc=0; out="$(merge --delivered maybe --pr 42 --repo '' 2>"$STUB_BIN/err")" || rc=$?
+@test "merge exits 2 naming --approved when it is neither true nor false" {
+  rc=0; out="$(merge --approved maybe --head-sha "$SHA" --pr 42 --repo '' 2>"$STUB_BIN/err")" || rc=$?
   equals "$rc" 2
   is_empty "$out"
-  contains "$(cat "$STUB_BIN/err")" "--delivered must be true or false, not 'maybe'"
+  contains "$(cat "$STUB_BIN/err")" "--approved must be true or false, not 'maybe'"
   contains "$(cat "$STUB_BIN/err")" "usage: slice-wave"
+  is_empty "$(cat "$CALL_LOG")"
+}
+
+@test "merge exits 2 with the usage line on --delivered, which --approved replaced" {
+  rc=0; out="$(merge --delivered true --pr 42 --repo owner/repo 2>"$STUB_BIN/err")" || rc=$?
+  equals "$rc" 2
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "unknown flag --delivered"
+  contains "$(cat "$STUB_BIN/err")" "usage: slice-wave"
+  is_empty "$(cat "$CALL_LOG")"
+}
+
+@test "merge exits 2 with the usage line and calls nothing when an approved slice's --head-sha is not 40 lowercase hex" {
+  for bad in '' abc "${SHA:0:39}" "$(printf '%s' "$SHA" | tr a-f A-F)" "${SHA}0"; do
+    rc=0; out="$(merge --approved true --head-sha "$bad" --pr 42 --repo owner/repo 2>"$STUB_BIN/err")" || rc=$?
+    equals "$rc" 2
+    is_empty "$out"
+    contains "$(cat "$STUB_BIN/err")" "usage: slice-wave"
+  done
   is_empty "$(cat "$CALL_LOG")"
 }
 
 @test "merge exits 2 with the usage line when --pr is not a number" {
-  rc=0; out="$(merge --delivered true --pr abc --repo owner/repo 2>"$STUB_BIN/err")" || rc=$?
+  rc=0; out="$(merge --approved true --head-sha "$SHA" --pr abc --repo owner/repo 2>"$STUB_BIN/err")" || rc=$?
   equals "$rc" 2
   is_empty "$out"
   contains "$(cat "$STUB_BIN/err")" "usage: slice-wave"
