@@ -254,40 +254,90 @@ validate() {
   equals "$(grep -c "$(printf '^no-mistakes\taxi run --yes$')" "$CALL_LOG")" 2
 }
 
-@test "validate reattaches without an intent when the daemon misses a reply" {
-  export SLICE_WAVE_DRIVE_RETRY_SECONDS=0
+# Replaces sleep with a stub that logs its argument to $CALL_LOG, so a retry
+# test runs at once and can assert the spacing it asked for.
+stub_sleep() {
+  cat > "$STUB_BIN/sleep" <<'STUB'
+#!/bin/bash
+printf 'sleep\t%s\n' "$*" >> "$CALL_LOG"
+STUB
+  chmod +x "$STUB_BIN/sleep"
+}
+
+# Writes a daemon timeout whose text names no run, as a miss before the run
+# exists would, and prints its path.
+timeout_without_run() {
+  printf '%s\n' 'error: "get active run: get_active_run timed out and daemon health probe failed: read response: daemon health did not reply within 250ms"' \
+    > "$STUB_BIN/timeout-no-run.toon"
+  printf '%s' "$STUB_BIN/timeout-no-run.toon"
+}
+
+@test "validate reattaches without an intent, 30 seconds on, when the daemon misses a reply" {
+  stub_sleep
   export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/daemon-timeout.toon:1 $FIXTURES_DIR/checks-passed.toon:0"
   out="$(validate --verified true)"
   equals "$(printf '%s' "$out" | jq -r .delivered)" true
   equals "$(printf '%s' "$out" | jq -r .reason)" ""
-  runs="$(awk -F'\t' '$1 == "no-mistakes" { print $2 }' "$CALL_LOG")"
-  contains "$(printf '%s\n' "$runs" | head -1)" " --intent Demo slice"
-  equals "$(printf '%s\n' "$runs" | tail -1)" "axi run --yes"
+  calls="$(awk -F'\t' '$1 == "no-mistakes" || $1 == "sleep" { print $1 " " $2 }' "$CALL_LOG")"
+  contains "$(printf '%s\n' "$calls" | head -1)" "no-mistakes axi run --yes --intent Demo slice"
+  equals "$(printf '%s\n' "$calls" | tail -2)" "$(printf 'sleep 30\nno-mistakes axi run --yes')"
 }
 
 @test "validate reports the daemon timeout once the daemon misses every retry" {
-  export SLICE_WAVE_DRIVE_RETRY_SECONDS=0
+  stub_sleep
+  export SLICE_WAVE_DRIVE_RETRY_SECONDS=5
   export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/daemon-timeout.toon:1"
   out="$(validate --verified true)"
   equals "$(grep -c "$(printf '^no-mistakes\taxi run --yes$')" "$CALL_LOG")" 10
+  equals "$(grep -c "$(printf '^sleep\t5$')" "$CALL_LOG")" 10
   equals "$(printf '%s' "$out" | jq -r .delivered)" false
   contains "$(printf '%s' "$out" | jq -r .reason)" "daemon health did not reply within 250ms"
 }
 
-@test "validate reports a daemon timeout without retrying once past its time limit" {
+@test "validate leaves the run carrying on when the daemon misses a reply past its time limit" {
   export SLICE_WAVE_DRIVE_LIMIT_SECONDS=0
   export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/daemon-timeout.toon:1 $FIXTURES_DIR/checks-passed.toon:0"
   out="$(validate --verified true)"
   equals "$(grep -c "$(printf '^no-mistakes\taxi run')" "$CALL_LOG")" 1
-  contains "$(printf '%s' "$out" | jq -r .reason)" "daemon health did not reply within 250ms"
+  equals "$(printf '%s' "$out" | jq -r .delivered)" false
+  contains "$(printf '%s' "$out" | jq -r .reason)" "the no-mistakes drive was still running"
 }
 
 @test "validate counts only consecutive daemon timeouts against the retry limit" {
-  export SLICE_WAVE_DRIVE_RETRY_SECONDS=0
+  stub_sleep
   timeouts="$(for _ in $(seq 9); do printf '%s ' "$FIXTURES_DIR/daemon-timeout.toon:1"; done)"
   export NO_MISTAKES_RUN_SEQUENCE="$timeouts $FIXTURES_DIR/wait-elapsed.toon:1 $timeouts $FIXTURES_DIR/checks-passed.toon:0"
   out="$(validate --verified true)"
   equals "$(printf '%s' "$out" | jq -r .delivered)" true
+}
+
+@test "validate reads the run a daemon timeout names when the run ends during the miss" {
+  stub_sleep
+  export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/daemon-timeout.toon:1 $FIXTURES_DIR/intent-required-with-sync.toon:1"
+  export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/checks-passed.toon"
+  out="$(validate --verified true)"
+  equals "$(awk -F'\t' '$1 == "no-mistakes" { last = $2 } END { print last }' "$CALL_LOG")" \
+    "axi status --run 01SLOWRUN00000000000000000"
+  equals "$(printf '%s' "$out" | jq -r .delivered)" true
+}
+
+@test "validate reports a daemon timeout, not the branch's latest run, when no run was ever seen" {
+  stub_sleep
+  export NO_MISTAKES_RUN_SEQUENCE="$(timeout_without_run):1 $FIXTURES_DIR/intent-required-with-sync.toon:1"
+  export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/checks-passed.toon"
+  out="$(validate --verified true)"
+  lacks "$(cat "$CALL_LOG")" "$(printf 'no-mistakes\taxi status')"
+  equals "$(printf '%s' "$out" | jq -r .delivered)" false
+  contains "$(printf '%s' "$out" | jq -r .reason)" "get_active_run timed out"
+}
+
+@test "validate reads the branch's latest run after an elapsed wait and a daemon timeout naming no run" {
+  stub_sleep
+  export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/wait-elapsed.toon:1 $(timeout_without_run):1 $FIXTURES_DIR/intent-required-with-sync.toon:1"
+  export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/failed.toon"
+  out="$(validate --verified true)"
+  equals "$(awk -F'\t' '$1 == "no-mistakes" { last = $2 } END { print last }' "$CALL_LOG")" "axi status"
+  equals "$(printf '%s' "$out" | jq -r .outcome)" failed
 }
 
 @test "validate reads the last run it saw by id when a reattach finds the run already ended" {
