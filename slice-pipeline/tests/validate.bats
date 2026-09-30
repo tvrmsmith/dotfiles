@@ -323,7 +323,8 @@ timeout_without_run() {
 
 @test "validate reports a daemon timeout, not the branch's latest run, when no run was ever seen" {
   stub_sleep
-  export NO_MISTAKES_RUN_SEQUENCE="$(timeout_without_run):1 $FIXTURES_DIR/intent-required-with-sync.toon:1"
+  timeout="$(timeout_without_run)"
+  export NO_MISTAKES_RUN_SEQUENCE="$timeout:1 $FIXTURES_DIR/intent-required-with-sync.toon:1"
   export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/checks-passed.toon"
   out="$(validate --verified true)"
   lacks "$(cat "$CALL_LOG")" "$(printf 'no-mistakes\taxi status')"
@@ -333,7 +334,8 @@ timeout_without_run() {
 
 @test "validate reads the branch's latest run after an elapsed wait and a daemon timeout naming no run" {
   stub_sleep
-  export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/wait-elapsed.toon:1 $(timeout_without_run):1 $FIXTURES_DIR/intent-required-with-sync.toon:1"
+  timeout="$(timeout_without_run)"
+  export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/wait-elapsed.toon:1 $timeout:1 $FIXTURES_DIR/intent-required-with-sync.toon:1"
   export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/failed.toon"
   out="$(validate --verified true)"
   equals "$(awk -F'\t' '$1 == "no-mistakes" { last = $2 } END { print last }' "$CALL_LOG")" "axi status"
