@@ -642,13 +642,13 @@ bead_intent() {
 # run carries on. Reattaching omits --intent on purpose: passed when no run is
 # active, it starts a new one. So a reattach refused for want of an intent
 # means the run ended between calls, and its outcome is read from status: by
-# the last run id seen, else the branch's latest run, since an elapsed error
-# carries no run block.
+# the last run id seen, else, after an elapsed wait, the branch's latest run,
+# since an elapsed error carries no run block.
 #
 # A daemon too loaded to answer one call ends the drive with a `did not reply
 # within` error while the run itself carries on, so that error reattaches the
-# same way, $SLICE_WAVE_DRIVE_RETRY_SECONDS (30) apart. A reattach answered
-# by the same error counts against ten in a row; the one after the tenth
+# same way, $SLICE_WAVE_DRIVE_RETRY_SECONDS (30) apart. Misses in a row,
+# the first call's included, earn up to ten reattaches; a miss on the tenth
 # means the daemon is stuck, and is reported. The error names its run only in
 # its text, which is read for the id. A miss can also land before the run
 # exists, so a refused reattach with no id and no earlier elapsed wait

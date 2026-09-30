@@ -308,6 +308,7 @@ timeout_without_run() {
   timeouts="$(for _ in $(seq 9); do printf '%s ' "$FIXTURES_DIR/daemon-timeout.toon:1"; done)"
   export NO_MISTAKES_RUN_SEQUENCE="$timeouts $FIXTURES_DIR/wait-elapsed.toon:1 $timeouts $FIXTURES_DIR/checks-passed.toon:0"
   out="$(validate --verified true)"
+  equals "$(grep -c "$(printf '^no-mistakes\taxi run --yes$')" "$CALL_LOG")" 19
   equals "$(printf '%s' "$out" | jq -r .delivered)" true
 }
 
@@ -327,9 +328,19 @@ timeout_without_run() {
   export NO_MISTAKES_RUN_SEQUENCE="$timeout:1 $FIXTURES_DIR/intent-required-with-sync.toon:1"
   export NO_MISTAKES_STATUS_FIXTURE="$FIXTURES_DIR/checks-passed.toon"
   out="$(validate --verified true)"
+  equals "$(grep -c "$(printf '^no-mistakes\taxi run --yes$')" "$CALL_LOG")" 1
   lacks "$(cat "$CALL_LOG")" "$(printf 'no-mistakes\taxi status')"
   equals "$(printf '%s' "$out" | jq -r .delivered)" false
   contains "$(printf '%s' "$out" | jq -r .reason)" "get_active_run timed out"
+}
+
+@test "validate reattaches after a daemon timeout naming no run and delivers the run that went on" {
+  stub_sleep
+  timeout="$(timeout_without_run)"
+  export NO_MISTAKES_RUN_SEQUENCE="$timeout:1 $FIXTURES_DIR/checks-passed.toon:0"
+  out="$(validate --verified true)"
+  equals "$(grep -c "$(printf '^no-mistakes\taxi run --yes$')" "$CALL_LOG")" 1
+  equals "$(printf '%s' "$out" | jq -r .delivered)" true
 }
 
 @test "validate reads the branch's latest run after an elapsed wait and a daemon timeout naming no run" {
