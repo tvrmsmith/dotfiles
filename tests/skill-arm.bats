@@ -31,7 +31,14 @@ start_out() {
     '{session_id: $s, cwd: $c, hook_event_name: "SessionStart"} + $x' | bash "$HOOK"
 }
 
+# Pipes a SubagentStart payload for session $1 at cwd $2 into the hook's --subagent mode.
+subagent_out() {
+  jq -n --arg s "$1" --arg c "$2" '{session_id: $s, cwd: $c, hook_event_name: "SubagentStart"}' |
+    bash "$HOOK" --subagent
+}
+
 ctx_of() { printf '%s' "$1" | jq -r '.hookSpecificOutput.additionalContext'; }
+event_of() { printf '%s' "$1" | jq -r '.hookSpecificOutput.hookEventName'; }
 last_arm() { tail -n 1 "$LOG" | jq -r '.arm'; }
 
 @test "branch b19 hashes to guidance" {
@@ -80,13 +87,23 @@ last_arm() { tail -n 1 "$LOG" | jq -r '.arm'; }
   equals "$(last_arm)" unassigned
 }
 
+@test "with origin/HEAD set, other branches including main get a real arm" {
+  make_repo r trunk
+  git -C "$TMP/r" update-ref refs/remotes/origin/trunk HEAD
+  git -C "$TMP/r" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/trunk
+  git -C "$TMP/r" checkout -q -b b22
+  equals "$(ctx_of "$(start_out s1 "$TMP/r")")" "$REVIEW_ONLY"
+  git -C "$TMP/r" checkout -q -b main
+  equals "$(ctx_of "$(start_out s2 "$TMP/r")")" "$GUIDANCE"
+  equals "$(jq -r '.branch + " " + .arm' "$LOG")" $'b22 review-only\nmain guidance'
+}
+
 @test "main and master are default when origin/HEAD is unset" {
   make_repo a main
   make_repo b master
   start_out s1 "$TMP/a" >/dev/null
-  equals "$(last_arm)" unassigned
   start_out s2 "$TMP/b" >/dev/null
-  equals "$(last_arm)" unassigned
+  equals "$(jq -r '.branch + " " + .arm' "$LOG")" $'main unassigned\nmaster unassigned'
 }
 
 @test "a cwd outside any git repo is unassigned" {
@@ -148,7 +165,7 @@ last_arm() { tail -n 1 "$LOG" | jq -r '.arm'; }
 @test "sha1sum alone picks the same arm when shasum is absent" {
   make_repo r b19
   # A PATH holding only the hook's tools, with sha1sum and no shasum. b19 is a
-  # guidance branch, so an empty hash from a broken fallback lands in review-only.
+  # guidance branch, so an empty hash from a broken fallback lands in unassigned.
   mkdir "$TMP/bin"
   for tool in cat date git jq mkdir sha1sum; do
     ln -s "$(command -v "$tool")" "$TMP/bin/$tool"
@@ -156,6 +173,39 @@ last_arm() { tail -n 1 "$LOG" | jq -r '.arm'; }
   out="$(jq -n --arg c "$TMP/r" '{session_id: "s1", cwd: $c}' | PATH="$TMP/bin" "$BASH" "$HOOK")"
   equals "$(ctx_of "$out")" "$GUIDANCE"
   equals "$(last_arm)" guidance
+}
+
+@test "no hash tool on PATH leaves a review-only branch unassigned with guidance" {
+  make_repo r b22
+  mkdir "$TMP/bin"
+  for tool in cat date git jq mkdir; do
+    ln -s "$(command -v "$tool")" "$TMP/bin/$tool"
+  done
+  out="$(jq -n --arg c "$TMP/r" '{session_id: "s1", cwd: $c}' | PATH="$TMP/bin" "$BASH" "$HOOK" 2>/dev/null)"
+  equals "$(ctx_of "$out")" "$GUIDANCE"
+  equals "$(last_arm)" unassigned
+}
+
+@test "--subagent on a review-only branch emits SubagentStart review-only text and writes no log" {
+  make_repo r b22
+  out="$(subagent_out s1 "$TMP/r")"
+  equals "$(event_of "$out")" SubagentStart
+  equals "$(ctx_of "$out")" "$REVIEW_ONLY"
+  [ ! -e "$LOG" ] || { echo "log written" >&2; exit 1; }
+}
+
+@test "--subagent on a guidance branch emits SubagentStart guidance text" {
+  make_repo r b19
+  out="$(subagent_out s1 "$TMP/r")"
+  equals "$(event_of "$out")" SubagentStart
+  equals "$(ctx_of "$out")" "$GUIDANCE"
+}
+
+@test "--subagent with NM_GATE=1 emits SubagentStart guidance on a review-only branch" {
+  make_repo r b22
+  out="$(NM_GATE=1 subagent_out s1 "$TMP/r")"
+  equals "$(event_of "$out")" SubagentStart
+  equals "$(ctx_of "$out")" "$GUIDANCE"
 }
 
 @test "an unwritable log location still emits the text and exits 0" {

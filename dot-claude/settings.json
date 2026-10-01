@@ -410,6 +410,11 @@
             "type": "command",
             "command": "$HOME/.claude/hooks/unslop-inject.sh --subagent",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/skill-arm.sh --subagent",
+            "timeout": 5
           }
         ]
       },

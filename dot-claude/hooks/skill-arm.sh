@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# SessionStart hook, arms an A/B experiment on loading the coding-standards skill.
+# SessionStart / SubagentStart hook, arms an A/B experiment on loading the
+# coding-standards skill.
 #
 # Each (origin URL, branch) pair hashes to one arm, so every session, resume,
 # compact, and second checkout of the same branch lands in the same arm. The
@@ -16,8 +17,17 @@
 # schema (ts, session_id, repo, branch, arm) is an approved cross-repo
 # contract, so add no fields. A failed log write never blocks the session.
 #
+# --subagent runs on SubagentStart. Subagents never fire SessionStart, so it
+# injects the same arm's text from the payload cwd and writes no log row,
+# keeping the log at one row per session start.
+#
 # Output protocol: https://docs.claude.com/en/docs/claude-code/hooks
 set -euo pipefail
+
+EVENT="SessionStart"
+if [ "${1-}" = "--subagent" ]; then
+  EVENT="SubagentStart"
+fi
 
 # shellcheck disable=SC2016  # the backticks are markdown, not command substitution
 GUIDANCE='**Implementation phase**: ALWAYS load the `coding-standards:coding-standards` skill before writing or modifying code, and follow it.'
@@ -25,7 +35,7 @@ GUIDANCE='**Implementation phase**: ALWAYS load the `coding-standards:coding-sta
 REVIEW_ONLY='**Implementation phase**: write or modify code without loading the `coding-standards:coding-standards` skill. The review step applies it.'
 
 emit() {
-  jq -n --arg ctx "$1" '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $ctx}}'
+  jq -n --arg event "$EVENT" --arg ctx "$1" '{hookSpecificOutput: {hookEventName: $event, additionalContext: $ctx}}'
 }
 
 sha1_of() {
@@ -63,8 +73,13 @@ text="$GUIDANCE"
 if [ -n "$origin" ] && [ -n "$branch" ] && ! is_default_branch "$branch"; then
   case "$(sha1_of "$origin#$branch")" in
     [0-7]*) arm=guidance ;;
-    *) arm=review-only; text="$REVIEW_ONLY" ;;
+    [89a-f]*) arm=review-only; text="$REVIEW_ONLY" ;;
   esac
+fi
+
+if [ "$EVENT" = "SubagentStart" ]; then
+  emit "$text"
+  exit 0
 fi
 
 log_dir="${XDG_STATE_HOME:-$HOME/.local/state}/coding-standards"
