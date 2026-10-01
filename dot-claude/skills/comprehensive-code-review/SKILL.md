@@ -53,7 +53,8 @@ Give each agent the prompt below, substituting only `{ASPECT}`, `{SCOPE}`, `{ASP
 - `{ASPECT_FILES}` — the reference doc in the aspect's step-2 cell, as an absolute path.
 - `{REQUIRED_SKILLS}` — that aspect's Required skills cell, comma-separated.
 
-A Required skills cell of `—` drops line 1 and renumbers what's left.
+A Required skills cell of `—` drops line 1 and renumbers what's left, drops `[tag] ` from the
+format line, and drops the line after the format line.
 
 Spec conformance and Correctness each take one extra line after `Scope:` — `Spec: <bead id, JIRA key, or absolute path from step 1>`. Spec conformance checks the diff against it. Correctness uses it only to tell a wrong result from an intended one. Every other aspect works from the diff alone.
 
@@ -61,7 +62,7 @@ Spec conformance and Correctness each take one extra line after `Scope:` — `Sp
 Adversarially review this change for {ASPECT}. Treat the diff as guilty until shown correct.
 
 Scope: {SCOPE}
-1. Invoke these skills before you start and follow them over generic guidance: {REQUIRED_SKILLS}.
+1. Invoke these skills before you start and follow them over generic guidance: {REQUIRED_SKILLS}. A finding that applies a section of them carries a tag: the `##` heading it falls under, then ` / ` and the named rule inside that section, a `###` heading or a bold-named item, when one applies, as in `[Code smells / Feature Envy]`.
 2. Read {ASPECT_FILES} and follow them exactly.
 Follow through to any further skill or file the above tells you to load.
 Issue independent tool calls in one message.
@@ -69,7 +70,8 @@ Report findings only, leaving the worktree exactly as you found it.
 Report only what survives scrutiny.
 Open with a one-line judgment for the aspect, saying "no findings" explicitly when it ran clean.
 Label every finding by severity and use this exact format:
-  `severity — description [file:line] → concrete fix`
+  `severity — [tag] description [file:line] → concrete fix`
+A finding with no tag drops `[tag] `.
 Severity: Critical, Important, or Suggestion, calibrated by the definitions in the reference doc.
 ```
 
@@ -80,7 +82,7 @@ Step 3 is done when every agent in the batch has returned a report that runs to 
 
 ## 4. Aggregate
 
-Merge every aspect except Spec conformance into one report, deduped, grouped by the severity labels above.
+Merge every aspect except Spec conformance into one report, deduped, grouped by the severity labels above. A merged finding keeps every section tag its sources carried.
 
 Present **Spec conformance** as its own section, un-merged. Include that section every time: where no spec existed, the section says so. Every aspect selected in step 2 appears in the report, with "no findings" stated explicitly where it ran clean. Close with a recommended action order.
 
