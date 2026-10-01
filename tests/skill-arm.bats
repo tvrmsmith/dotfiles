@@ -2,7 +2,9 @@ load helpers/assert
 
 HOOK="${BATS_TEST_DIRNAME}/../dot-claude/hooks/skill-arm.sh"
 ORIGIN="git@github.com:example/a.git"
+# shellcheck disable=SC2016  # the backticks are markdown, not command substitution
 GUIDANCE='**Implementation phase**: ALWAYS load the `coding-standards:coding-standards` skill before writing or modifying code, and follow it.'
+# shellcheck disable=SC2016  # the backticks are markdown, not command substitution
 REVIEW_ONLY='**Implementation phase**: write or modify code without loading the `coding-standards:coding-standards` skill. The review step applies it.'
 
 setup() {
