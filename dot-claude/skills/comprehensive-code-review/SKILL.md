@@ -62,7 +62,7 @@ Spec conformance and Correctness each take one extra line after `Scope:` — `Sp
 Adversarially review this change for {ASPECT}. Treat the diff as guilty until shown correct.
 
 Scope: {SCOPE}
-1. Invoke these skills before you start and follow them over generic guidance: {REQUIRED_SKILLS}. A finding that applies a section of them carries a tag: the section heading, then ` / ` and the bold-named rule when one applies, as in `[Code smells / Feature Envy]`.
+1. Invoke these skills before you start and follow them over generic guidance: {REQUIRED_SKILLS}. A finding that applies a section of them carries a tag: the `##` heading it falls under, then ` / ` and the named rule inside that section, a `###` heading or a bold-named item, when one applies, as in `[Code smells / Feature Envy]`.
 2. Read {ASPECT_FILES} and follow them exactly.
 Follow through to any further skill or file the above tells you to load.
 Issue independent tool calls in one message.
@@ -82,7 +82,7 @@ Step 3 is done when every agent in the batch has returned a report that runs to 
 
 ## 4. Aggregate
 
-Merge every aspect except Spec conformance into one report, deduped, grouped by the severity labels above. Every finding keeps its section tag through the merge.
+Merge every aspect except Spec conformance into one report, deduped, grouped by the severity labels above. A merged finding keeps every section tag its sources carried.
 
 Present **Spec conformance** as its own section, un-merged. Include that section every time: where no spec existed, the section says so. Every aspect selected in step 2 appears in the report, with "no findings" stated explicitly where it ran clean. Close with a recommended action order.
 
