@@ -53,7 +53,8 @@ Give each agent the prompt below, substituting only `{ASPECT}`, `{SCOPE}`, `{ASP
 - `{ASPECT_FILES}` — the reference doc in the aspect's step-2 cell, as an absolute path.
 - `{REQUIRED_SKILLS}` — that aspect's Required skills cell, comma-separated.
 
-A Required skills cell of `—` drops line 1 and renumbers what's left.
+A Required skills cell of `—` drops line 1 and renumbers what's left, drops `[tag] ` from the
+format line, and drops the line after the format line.
 
 Spec conformance and Correctness each take one extra line after `Scope:` — `Spec: <bead id, JIRA key, or absolute path from step 1>`. Spec conformance checks the diff against it. Correctness uses it only to tell a wrong result from an intended one. Every other aspect works from the diff alone.
 
