@@ -303,7 +303,12 @@
             "type": "command",
             "command": "$HOME/.claude/hooks/unslop-inject.sh",
             "timeout": 5
-          },
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
           {
             "type": "command",
             "command": "$HOME/.claude/hooks/skill-arm.sh",

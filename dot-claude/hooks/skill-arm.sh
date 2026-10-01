@@ -3,7 +3,7 @@
 # coding-standards skill.
 #
 # Each (origin URL, branch) pair hashes to one arm, so every session, resume,
-# compact, and second checkout of the same branch lands in the same arm. The
+# clear, compact, and second checkout of the same branch lands in the same arm. The
 # sha1 of "<origin>#<branch>" decides it, first hex char 0-7 keeps the
 # "load the skill" guidance and 8-f gets the review-only text, where the
 # review step applies the standards instead. Sessions with no stable branch
@@ -13,7 +13,7 @@
 #
 # NM_GATE=1 marks a no-mistakes gate run. It gets the guidance text and no log row.
 #
-# Every non-gate start appends one row to
+# Every non-gate SessionStart (startup, resume, clear, compact) appends one row to
 # ${XDG_STATE_HOME:-$HOME/.local/state}/coding-standards/arms.jsonl, whose
 # schema (ts, session_id, repo, branch, arm) is an approved cross-repo
 # contract, so add no fields. A failed log write never blocks the session.

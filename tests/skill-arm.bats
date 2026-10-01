@@ -10,6 +10,7 @@ REVIEW_ONLY='**Implementation phase**: write or modify code without loading the 
 setup() {
   TMP="$(mktemp -d)"
   export XDG_STATE_HOME="$TMP/state"
+  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
   LOG="$XDG_STATE_HOME/coding-standards/arms.jsonl"
   unset NM_GATE
 }
@@ -18,9 +19,12 @@ teardown() { rm -rf "$TMP"; }
 # Makes a fixture repo at $TMP/$1 on branch $2 with origin $3 (default $ORIGIN).
 make_repo() {
   local dir="$TMP/$1" branch="$2" origin="${3-$ORIGIN}"
-  git init -q -b "$branch" "$dir"
-  git -C "$dir" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
-  [ -z "$origin" ] || git -C "$dir" remote add origin "$origin"
+  if ! { git init -q -b "$branch" "$dir" &&
+    git -C "$dir" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init &&
+    { [ -z "$origin" ] || git -C "$dir" remote add origin "$origin"; }; }; then
+    echo "make_repo $1 failed" >&2
+    exit 1
+  fi
 }
 
 # Pipes a SessionStart payload for session $1 at cwd $2 (extra jq fields in $3) into the hook.
@@ -128,6 +132,14 @@ last_arm() { tail -n 1 "$LOG" | jq -r '.arm'; }
   equals "$(ctx_of "$second")" "$REVIEW_ONLY"
   equals "$(wc -l <"$LOG" | tr -d ' ')" 2
   equals "$(jq -r '.session_id + " " + .arm' "$LOG" | sort -u)" "s1 review-only"
+}
+
+@test "a session started by /clear logs its own row with the same arm" {
+  make_repo r b22
+  start_out s1 "$TMP/r" '{"source":"startup"}' >/dev/null
+  out="$(start_out s2 "$TMP/r" '{"source":"clear"}')"
+  equals "$(ctx_of "$out")" "$REVIEW_ONLY"
+  equals "$(jq -r '.session_id + " " + .arm' "$LOG")" $'s1 review-only\ns2 review-only'
 }
 
 @test "a second checkout with the same origin lands in the same arm" {
