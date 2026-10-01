@@ -59,13 +59,15 @@ session_id="$(printf '%s' "$input" | jq -r '.session_id // ""')"
 cwd="$(printf '%s' "$input" | jq -r '.cwd // ""')"
 
 origin="$(git -C "$cwd" remote get-url origin 2>/dev/null || true)"
-branch="$(git -C "$cwd" symbolic-ref --short HEAD 2>/dev/null || true)"
+branch="$(git -C "$cwd" branch --show-current 2>/dev/null || true)"
 
 is_default_branch() {
   local default
-  default="$(git -C "$cwd" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  # Full refs, because --short turns ambiguous by prefixing heads/ or remotes/
+  # when a tag or local branch shares the name.
+  default="$(git -C "$cwd" symbolic-ref -q refs/remotes/origin/HEAD 2>/dev/null || true)"
   if [ -n "$default" ]; then
-    [ "$1" = "${default#origin/}" ]
+    [ "$1" = "${default#refs/remotes/origin/}" ]
   else
     [ "$1" = main ] || [ "$1" = master ]
   fi

@@ -91,6 +91,23 @@ last_arm() { tail -n 1 "$LOG" | jq -r '.arm'; }
   equals "$(last_arm)" unassigned
 }
 
+@test "the default branch stays unassigned beside a local branch named origin/<default>" {
+  make_repo r trunk
+  git -C "$TMP/r" update-ref refs/remotes/origin/trunk HEAD
+  git -C "$TMP/r" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/trunk
+  git -C "$TMP/r" branch origin/trunk
+  start_out s1 "$TMP/r" >/dev/null
+  equals "$(last_arm)" unassigned
+}
+
+@test "a tag named like the branch leaves its arm and logged name unchanged" {
+  make_repo r b22
+  git -C "$TMP/r" tag b22
+  out="$(start_out s1 "$TMP/r")"
+  equals "$(ctx_of "$out")" "$REVIEW_ONLY"
+  equals "$(tail -n 1 "$LOG" | jq -c '{branch, arm}')" '{"branch":"b22","arm":"review-only"}'
+}
+
 @test "with origin/HEAD set, other branches including main get a real arm" {
   make_repo r trunk
   git -C "$TMP/r" update-ref refs/remotes/origin/trunk HEAD
