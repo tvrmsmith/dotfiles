@@ -242,6 +242,13 @@ last_arm() { tail -n 1 "$LOG" | jq -r '.arm'; }
   equals "$(ctx_of "$(subagent_out s1 "$TMP/r")")" "$REVIEW_ONLY"
 }
 
+@test "--subagent ignores another session's row and hashes its cwd" {
+  make_repo r b19
+  start_out s1 "$TMP/r" >/dev/null
+  git -C "$TMP/r" checkout -q -b b22
+  equals "$(ctx_of "$(subagent_out s2 "$TMP/r")")" "$REVIEW_ONLY"
+}
+
 @test "--subagent finds its session's row past a corrupt log line" {
   make_repo r b22
   mkdir -p "$(dirname "$LOG")"
