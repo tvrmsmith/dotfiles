@@ -8,7 +8,8 @@
 # "load the skill" guidance and 8-f gets the review-only text, where the
 # review step applies the standards instead. Sessions with no stable branch
 # identity (no origin, detached HEAD, not a repo, default branch) are
-# "unassigned" and get the guidance text, so they never skew either arm.
+# "unassigned" and get the guidance text, so they never skew either arm. A
+# failed or empty hash also stays unassigned rather than logging a fake arm.
 #
 # NM_GATE=1 marks a no-mistakes gate run. It gets the guidance text and no log row.
 #
