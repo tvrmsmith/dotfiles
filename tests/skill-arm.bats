@@ -145,6 +145,19 @@ last_arm() { tail -n 1 "$LOG" | jq -r '.arm'; }
   equals "$(tail -n 1 "$LOG" | jq -r '.branch')" 'we"ird'
 }
 
+@test "sha1sum alone picks the same arm when shasum is absent" {
+  make_repo r b19
+  # A PATH holding only the hook's tools, with sha1sum and no shasum. b19 is a
+  # guidance branch, so an empty hash from a broken fallback lands in review-only.
+  mkdir "$TMP/bin"
+  for tool in cat date git jq mkdir sha1sum; do
+    ln -s "$(command -v "$tool")" "$TMP/bin/$tool"
+  done
+  out="$(jq -n --arg c "$TMP/r" '{session_id: "s1", cwd: $c}' | PATH="$TMP/bin" "$BASH" "$HOOK")"
+  equals "$(ctx_of "$out")" "$GUIDANCE"
+  equals "$(last_arm)" guidance
+}
+
 @test "an unwritable log location still emits the text and exits 0" {
   make_repo r b22
   # A directory where the log file goes fails the append, the last command in
