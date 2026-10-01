@@ -303,6 +303,11 @@
             "type": "command",
             "command": "$HOME/.claude/hooks/unslop-inject.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/skill-arm.sh",
+            "timeout": 5
           }
         ]
       },
