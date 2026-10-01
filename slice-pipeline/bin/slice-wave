@@ -642,32 +642,60 @@ bead_intent() {
 # run carries on. Reattaching omits --intent on purpose: passed when no run is
 # active, it starts a new one. So a reattach refused for want of an intent
 # means the run ended between calls, and its outcome is read from status: by
-# the last run id seen, else the branch's latest run, since an elapsed error
-# carries no run block.
+# the last run id seen, else, after an elapsed wait, the branch's latest run,
+# since an elapsed error carries no run block.
+#
+# A daemon too loaded to answer one call ends the drive with a `did not reply
+# within` error while the run itself carries on, so that error reattaches the
+# same way, $SLICE_WAVE_DRIVE_RETRY_SECONDS (30) apart. Misses in a row,
+# the first call's included, earn up to ten reattaches; a miss on the tenth
+# means the daemon is stuck, and is reported. The error names its run only in
+# its text, which is read for the id. A miss can also land before the run
+# exists, so a refused reattach with no id and no earlier elapsed wait
+# reports the miss: the branch's latest run could be an older one.
 #
 # Stops reattaching once $SLICE_WAVE_DRIVE_LIMIT_SECONDS (3.5 hours) have
 # passed since validate started, prints the last TOON and returns 1, leaving
 # the run to carry on. That keeps validate reporting ahead of its node's 4 h
 # timeout, whose kill would persist no outcome and so skip merge and release.
 drive_run() {
-	local intent="$1" toon run_id="" id limit="${SLICE_WAVE_DRIVE_LIMIT_SECONDS:-12600}"
+	local intent="$1" toon run_id="" id error limit="${SLICE_WAVE_DRIVE_LIMIT_SECONDS:-12600}"
+	local timeouts=0 missed="" started=false
 	toon="$(no-mistakes axi run --yes --intent "$intent" 2>&1)"
 	while :; do
 		id="$(toon_value "$toon" run.id)"
 		[ -z "$id" ] || run_id="$id"
-		case "$(toon_value "$toon" error)" in
-			*"elapsed while driving the run"*)
+		error="$(toon_value "$toon" error)"
+		case "$error" in
+			*"elapsed while driving the run"* | *"did not reply within"*)
 				if [ "$SECONDS" -ge "$limit" ]; then
 					printf '%s\n' "$toon"
 					return 1
 				fi
+				;;
+		esac
+		case "$error" in
+			*"elapsed while driving the run"*)
+				timeouts=0
+				started=true
+				toon="$(no-mistakes axi run --yes 2>&1)"
+				;;
+			*"did not reply within"*)
+				id="$(printf '%s\n' "$error" | sed -n 's/.* run \([0-9A-Z]\{26\}\):.*/\1/p')"
+				[ -z "$id" ] || run_id="$id"
+				timeouts=$((timeouts + 1))
+				[ "$timeouts" -le 10 ] || break
+				missed="$toon"
+				sleep "${SLICE_WAVE_DRIVE_RETRY_SECONDS:-30}"
 				toon="$(no-mistakes axi run --yes 2>&1)"
 				;;
 			*"--intent is required"*)
 				if [ -n "$run_id" ]; then
 					toon="$(no-mistakes axi status --run "$run_id" 2>&1)"
-				else
+				elif [ "$started" = true ]; then
 					toon="$(no-mistakes axi status 2>&1)"
+				else
+					toon="$missed"
 				fi
 				break
 				;;
