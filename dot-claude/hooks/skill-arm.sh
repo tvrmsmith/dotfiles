@@ -19,8 +19,10 @@
 # contract, so add no fields. A failed log write never blocks the session.
 #
 # --subagent runs on SubagentStart. Subagents never fire SessionStart, so it
-# injects the same arm's text from the payload cwd and writes no log row,
-# keeping the log at one row per session start.
+# injects the arm its session last logged and writes no log row. Reading the
+# log rather than the payload cwd keeps one session in one arm after a branch
+# switch, and for a worktree-isolated subagent, whose cwd is its own worktree.
+# A session with no row (failed log write) falls back to hashing the cwd.
 #
 # Output protocol: https://docs.claude.com/en/docs/claude-code/hooks
 set -euo pipefail
@@ -69,27 +71,44 @@ is_default_branch() {
   fi
 }
 
+text_for() {
+  if [ "$1" = review-only ]; then
+    printf '%s' "$REVIEW_ONLY"
+  else
+    printf '%s' "$GUIDANCE"
+  fi
+}
+
+log_dir="${XDG_STATE_HOME:-$HOME/.local/state}/coding-standards"
+log="$log_dir/arms.jsonl"
+
+# fromjson? skips a torn or corrupt line instead of ending the scan there.
+logged_arm() {
+  [ -n "$session_id" ] || return 0
+  jq -rR --arg s "$session_id" 'fromjson? | select(.session_id == $s) | .arm' "$log" 2>/dev/null |
+    tail -n 1
+}
+
 arm=unassigned
-text="$GUIDANCE"
 if [ -n "$origin" ] && [ -n "$branch" ] && ! is_default_branch "$branch"; then
   case "$(sha1_of "$origin#$branch")" in
     [0-7]*) arm=guidance ;;
-    [89a-f]*) arm=review-only; text="$REVIEW_ONLY" ;;
+    [89a-f]*) arm=review-only ;;
   esac
 fi
 
 if [ "$EVENT" = "SubagentStart" ]; then
-  emit "$text"
+  inherited="$(logged_arm || true)"
+  emit "$(text_for "${inherited:-$arm}")"
   exit 0
 fi
 
-log_dir="${XDG_STATE_HOME:-$HOME/.local/state}/coding-standards"
 {
   mkdir -p "$log_dir" &&
     jq -nc --argjson ts "$(date +%s)" --arg session_id "$session_id" \
       --arg repo "$origin" --arg branch "$branch" --arg arm "$arm" \
       '{ts: $ts, session_id: $session_id, repo: $repo, branch: $branch, arm: $arm}' \
-      >>"$log_dir/arms.jsonl"
+      >>"$log"
 } 2>/dev/null || true
 
-emit "$text"
+emit "$(text_for "$arm")"

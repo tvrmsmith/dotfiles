@@ -213,6 +213,44 @@ last_arm() { tail -n 1 "$LOG" | jq -r '.arm'; }
   equals "$(ctx_of "$out")" "$GUIDANCE"
 }
 
+@test "--subagent keeps its session's logged arm after the branch changes" {
+  make_repo r b19
+  start_out s1 "$TMP/r" >/dev/null
+  git -C "$TMP/r" checkout -q -b b22
+  equals "$(ctx_of "$(subagent_out s1 "$TMP/r")")" "$GUIDANCE"
+}
+
+@test "--subagent of an unassigned session gets guidance on a review-only branch" {
+  make_repo r main
+  start_out s1 "$TMP/r" >/dev/null
+  git -C "$TMP/r" checkout -q -b b22
+  equals "$(ctx_of "$(subagent_out s1 "$TMP/r")")" "$GUIDANCE"
+}
+
+@test "--subagent in its own worktree keeps the session's arm" {
+  make_repo r b22
+  start_out s1 "$TMP/r" >/dev/null
+  git -C "$TMP/r" worktree add -q -b b19 "$TMP/wt"
+  equals "$(ctx_of "$(subagent_out s1 "$TMP/wt")")" "$REVIEW_ONLY"
+}
+
+@test "--subagent follows the session's latest row" {
+  make_repo r b19
+  start_out s1 "$TMP/r" >/dev/null
+  git -C "$TMP/r" checkout -q -b b22
+  start_out s1 "$TMP/r" '{"source":"resume"}' >/dev/null
+  equals "$(ctx_of "$(subagent_out s1 "$TMP/r")")" "$REVIEW_ONLY"
+}
+
+@test "--subagent finds its session's row past a corrupt log line" {
+  make_repo r b22
+  mkdir -p "$(dirname "$LOG")"
+  printf '{"ts":1,"session_id":"s0",\n' >"$LOG"
+  start_out s1 "$TMP/r" >/dev/null
+  git -C "$TMP/r" checkout -q -b b19
+  equals "$(ctx_of "$(subagent_out s1 "$TMP/r")")" "$REVIEW_ONLY"
+}
+
 @test "--subagent with NM_GATE=1 emits SubagentStart guidance on a review-only branch" {
   make_repo r b22
   out="$(NM_GATE=1 subagent_out s1 "$TMP/r")"
