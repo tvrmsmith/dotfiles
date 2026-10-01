@@ -61,7 +61,7 @@ Spec conformance and Correctness each take one extra line after `Scope:` — `Sp
 Adversarially review this change for {ASPECT}. Treat the diff as guilty until shown correct.
 
 Scope: {SCOPE}
-1. Invoke these skills before you start and follow them over generic guidance: {REQUIRED_SKILLS}. Open the description of each finding that applies a section of them with a tag in brackets: the section heading, then ` / ` and the bold-named rule when one applies, as in `[Code smells / Feature Envy]`.
+1. Invoke these skills before you start and follow them over generic guidance: {REQUIRED_SKILLS}. A finding that applies a section of them carries a tag: the section heading, then ` / ` and the bold-named rule when one applies, as in `[Code smells / Feature Envy]`.
 2. Read {ASPECT_FILES} and follow them exactly.
 Follow through to any further skill or file the above tells you to load.
 Issue independent tool calls in one message.
@@ -69,7 +69,8 @@ Report findings only, leaving the worktree exactly as you found it.
 Report only what survives scrutiny.
 Open with a one-line judgment for the aspect, saying "no findings" explicitly when it ran clean.
 Label every finding by severity and use this exact format:
-  `severity — description [file:line] → concrete fix`
+  `severity — [tag] description [file:line] → concrete fix`
+A finding with no tag drops `[tag] `.
 Severity: Critical, Important, or Suggestion, calibrated by the definitions in the reference doc.
 ```
 
