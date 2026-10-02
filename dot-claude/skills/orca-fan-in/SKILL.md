@@ -104,13 +104,14 @@ If the two differ, or the brief carried no `Slug:` line, there is nothing to che
 this fallback does not apply.
 
 When `displayName` matches the brief's slug, take
-`result.worktree.cliProvenance.callerTerminalHandle`, and only that field — the parent worktree
-can hold several agent terminals, and this one alone names the terminal that spawned this
-session.
+`result.worktree.cliProvenance.callerTerminalHandle` first. It names the exact terminal that
+spawned this session, where the parent worktree can hold several agent terminals. Keep the whole
+`worktree show` result: step 4 re-acquires from its parent worktree when this handle is absent or
+stale.
 
-If no fallback yields a handle — the environment is empty and either this fallback does not apply
-or the provenance field is absent — the chain has no answer. Say so, hand the result to the human
-as text, and stop. Sending into the wrong session is worse than not sending.
+When the environment is empty and this fallback does not apply, the chain has no answer. Say so,
+hand the result to the human as text, and stop. Sending into the wrong session is worse than not
+sending.
 
 ## 4. Canonicalize it
 
@@ -120,11 +121,31 @@ Handles are aliases; the string you resolved may not be the one the runtime rout
 ORCA terminal show --terminal <resolved-handle> --json
 ```
 
-Use `result.terminal.handle`. If the call fails or returns `terminal_handle_stale`, the
-orchestrator's terminal is gone: tell the human, print the line you would have sent, and stop.
-Fan-out re-acquires on a stale handle because it is re-finding its *own* terminal, which it can
-identify; fan-in would be guessing at someone else's, and a wrong guess sends into a stranger's
-session.
+Use `result.terminal.handle`.
+
+**A stale handle re-acquires through the parent worktree.** A call that fails or returns
+`terminal_handle_stale` means the handle outlived its terminal, since an Orca restart or a
+reopened tab issues new handles. Worktree ids survive both, and a worktree worker's record names
+its parent worktree, where the orchestrator runs. Re-acquire when step 3 took the worktree
+provenance fallback and its handle is stale or absent:
+
+1. From the same `worktree show` result, take `result.worktree.lineage.parentWorktreeId`, and
+   only when `result.worktree.lineage.capture.confidence` is `explicit`. Fan-out recorded that
+   parent at creation, so it names the orchestrator's worktree rather than a guess at it.
+2. List the parent's terminals:
+
+   ```text
+   ORCA terminal list --worktree id:<parentWorktreeId> --json
+   ```
+
+3. Keep the terminals whose `agentIdentity` is set. A plain shell has none. Exactly one agent
+   terminal is the orchestrator: canonicalize its `handle` with `terminal show` as above and use
+   that.
+
+Zero or several agent terminals, a confidence other than `explicit`, or a tab worker whose
+environment handle went stale: the orchestrator cannot be told apart from a stranger. Tell the
+human, print the line you would have sent with each candidate's handle and title, and stop. A
+wrong guess sends into a stranger's session.
 
 ## 5. Compose the line
 
