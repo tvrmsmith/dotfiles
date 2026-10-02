@@ -90,6 +90,15 @@ tier() { routes "$@" | awk '{print $1}'; }
   done
 }
 
+# git asks the credential helper for a token without saying whether it is
+# fetching or pushing, so the helper always gets the read token. Pushes go over
+# SSH, and `store`/`erase` are no-ops in gh, so read covers every call git makes.
+@test "the git credential helper gets the read token for every operation" {
+  for op in get store erase; do
+    equals "$(tier auth git-credential $op)" read
+  done
+}
+
 # The PR lifecycle verbs used to sit here. They moved to the pr-write tier and
 # have their own test; everything below stays on the approval path.
 @test "mutating verbs escalate" {
