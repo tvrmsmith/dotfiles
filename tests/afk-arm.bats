@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
-# Time resolution only. --time-only touches neither the flag nor Orca, so these
-# stay hermetic; the fan-out is exercised with `afk-arm.sh --dry-run`.
+# Time resolution only. --time-only leaves the flag alone, so these stay
+# hermetic; afk-guard.bats covers writing it.
 
 ARM="${BATS_TEST_DIRNAME}/../dot-claude/bin/afk-arm.sh"
 

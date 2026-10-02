@@ -1,11 +1,7 @@
 # Typing a line at another Claude session
 
 What the `orca-cli` guide leaves out about `terminal send`. Load that skill for the command surface
-and the CLI resolution; this is only the local knowledge on top, for `/afk` arming and
-`/resume-work`.
-
-`~/.claude/bin/afk-arm.sh` already implements every rule below for the `/afk` fan-out. Read this
-when you are typing a line by hand, or when changing that script.
+and the CLI resolution; this is only the local knowledge on top, for `/resume-work`.
 
 ## Read before you type
 

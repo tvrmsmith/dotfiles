@@ -486,6 +486,18 @@
           }
         ]
       }
+    ],
+    "UserPromptExpansion": [
+      {
+        "matcher": "^afk$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/afk-guard.sh",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   },
   "worktree": {

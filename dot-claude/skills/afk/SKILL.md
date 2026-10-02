@@ -11,18 +11,15 @@ prompt until he is back. Every turn until he is: **decide, log, park**. Decide w
 have been asked, taking the reversible option. Log the decision and the assumptions under it.
 Park what only he can do, which is a log line and not the end of the session.
 
-Trevor typed `/afk` just now. On a bare return word (`back`, `done`) he is back, so run
-`rm -f ~/.claude/afk`, report AFK off, and stop. Leave `~/.claude/afk-sessions` alone, since each
-marker in there is what tells its own session, on the next prompt he types into it. On anything
-else, run `ARMING.md`, then follow this file for the rest of the session. If the guard sent you
-instead, this file is all of it.
+The AFK guard hook sent you here, and this file is the whole protocol until Trevor is back. If it
+reached you instead as the expansion of a `/afk` Trevor typed, the hook that arms AFK did not
+run: tell Trevor AFK is not armed, and stop.
 
 ## 1Password is unattended
 
 Every prompt it raises hangs, so `git push`, `gh`, the SSH agent, and the `GITHUB_TOKEN` plugin
-are off the table. Commit locally with `git -c commit.gpgsign=false commit ...` (same for
-`tag.gpgsign`) and park each push, PR, and review. Anything that
-does hang, or fails a network call twice, gets interrupted and parked rather than retried.
+are off the table. Commit locally and park each push, PR, and review. Anything that does hang, or
+fails a network call twice, gets interrupted and parked rather than retried.
 
 ## Still his call
 
