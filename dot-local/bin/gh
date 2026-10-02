@@ -175,7 +175,7 @@ is_read() {
 		"cache list" | "label list" | "variable list" | "secret list") return 0 ;;
 		"gist view" | "gist list") return 0 ;;
 		"ssh-key list" | "gpg-key list") return 0 ;;
-		"auth status" | "auth token") return 0 ;;
+		"auth status" | "auth token" | "auth git-credential") return 0 ;;
 		"org list" | "project list" | "project view") return 0 ;;
 	esac
 	return 1
