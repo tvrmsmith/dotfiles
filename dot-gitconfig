@@ -87,10 +87,25 @@
 # of relying on the includeIf rules above. No-op if file doesn't exist.
 [include]
 	path = ~/.gitconfig.local
-# No gh credential helper on purpose. `gh auth login` used to leave a
-# write-scoped token in gh's keyring, which the helper handed to git, and which
-# also let anything calling the real gh binary write to GitHub with no
-# 1Password approval. The account is logged out now so ~/.local/bin/gh is the
-# only path to a credential, which leaves `gh auth git-credential` with nothing
-# to return. Every remote here is ssh, so nothing asked for it anyway. See
-# dotfiles-7wt.
+
+# Fetch GitHub over HTTPS with the shim's read-only token, push over SSH. A
+# credential git can reach while fetching then cannot write, and a fetch never
+# asks the 1Password SSH agent for approval. pushInsteadOf is matched against
+# the URL as written, before insteadOf, so mapping a prefix to itself keeps
+# pushes on SSH. A per-repo `pushurl` would be rewritten by insteadOf, so don't
+# set one to an SSH URL.
+[url "https://github.com/"]
+	insteadOf = git@github.com:
+	insteadOf = git@github-personal:
+[url "git@github.com:"]
+	pushInsteadOf = git@github.com:
+	pushInsteadOf = https://github.com/
+[url "git@github-personal:"]
+	pushInsteadOf = git@github-personal:
+# The empty helper clears the system osxkeychain helper, which holds a GitHub
+# credential and would otherwise answer first. The shim, not the real gh, so
+# git gets the read tier; by absolute path because GUI apps and daemons run
+# git without ~/.local/bin on PATH. The raw gh stays logged out (dotfiles-7wt).
+[credential "https://github.com"]
+	helper =
+	helper = !\"$HOME/.local/bin/gh\" auth git-credential
