@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Stop hook: while Trevor is AFK, keep a session working instead of letting it
-# stop to ask a question nobody is there to answer.
+# stop to ask a question nobody is there to answer. Also arms and clears AFK
+# itself, on the `/afk` command's expansion.
 #
 # Flag file: $HOME/.claude/afk, whose first line is an expiry epoch (seconds).
 #   Present and unexpired -> AFK is on.
@@ -105,6 +106,24 @@ since the sessions he has not reached yet still read it. "/afk back" is what
 clears it for all of them.
 EOF
   fi
+  exit 0
+fi
+
+# Trevor typed `/afk ...`. Settle the flag here and block the expansion, so
+# arming or clearing runs no model turn and Trevor reads the result off the
+# block message. The skill file exists only to register the name: the TUI rejects an
+# unregistered slash command before any hook fires.
+if [ "$event" = "UserPromptExpansion" ]; then
+  args=$(json_value command_args | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+  case "$(printf '%s' "$args" | tr '[:upper:]' '[:lower:]')" in
+    back|done) rm -f "$FLAG"; msg="AFK off." ;;
+    *) msg=$("$(dirname "$0")/../bin/afk-arm.sh" "$args" 2>&1) ;;
+  esac
+  jq -n --arg r "$msg" '{
+    decision: "block",
+    reason: $r,
+    hookSpecificOutput: {hookEventName: "UserPromptExpansion", suppressOriginalPrompt: true}
+  }'
   exit 0
 fi
 

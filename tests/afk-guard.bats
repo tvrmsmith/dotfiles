@@ -81,3 +81,41 @@ submit() {
   out="$(submit "p1")"
   is_empty "$out"
 }
+
+flag_present() { [ -f "$HOME/.claude/afk" ] || { printf 'expected the afk flag to be written\n' >&2; exit 1; }; }
+flag_absent() { [ -f "$HOME/.claude/afk" ] && { printf 'expected the afk flag to be absent\n' >&2; exit 1; }; return 0; }
+
+# Pipes a UserPromptExpansion payload for `/afk <args>` at the hook.
+afk_command() {
+  jq -n --arg sid "$SESSION" --arg args "$1" \
+    '{hook_event_name: "UserPromptExpansion", session_id: $sid, command_name: "afk", command_args: $args}' \
+    | bash "$HOOK"
+}
+
+@test "/afk with a time arms the flag and blocks with the expiry" {
+  out="$(afk_command "2h")"
+  equals "$(printf '%s' "$out" | jq -r .decision)" "block"
+  contains "$(printf '%s' "$out" | jq -r .reason)" "AFK on until"
+  flag_present
+}
+
+@test "/afk back clears the flag and leaves session markers" {
+  echo "$(( $(date +%s) + 3600 ))" > "$HOME/.claude/afk"
+  out="$(afk_command "back")"
+  equals "$(printf '%s' "$out" | jq -r .reason)" "AFK off."
+  flag_absent
+  marker_present
+}
+
+@test "/afk back with a time arms rather than clears" {
+  out="$(afk_command "back at 4pm")"
+  contains "$(printf '%s' "$out" | jq -r .reason)" "16:00"
+  flag_present
+}
+
+@test "/afk with no readable time blocks with a retry hint and arms nothing" {
+  out="$(afk_command "banana")"
+  equals "$(printf '%s' "$out" | jq -r .decision)" "block"
+  contains "$(printf '%s' "$out" | jq -r .reason)" "Try /afk 2h"
+  flag_absent
+}
