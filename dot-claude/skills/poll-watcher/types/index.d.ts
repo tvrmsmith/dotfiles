@@ -5,8 +5,8 @@ export type PollWatch = {
   phase: 'watching' | 'changed' | 'stopped'  // watching: model waits; changed: model told,
                                              // still ticking quietly; stopped: timer gone
   output: string                       // stdout + stderr, trimmed, last 4,000 chars
-  masked: string                       // output before the cut, volatile tokens masked,
-                                       // then cut the same; what a tick compares
+  fingerprint: string                  // hash of the whole output, volatile tokens
+                                       // masked, before the cut; what a tick compares
   exitCode: number
   armedAt: number                      // the model's last poll; also the stale-tick guard
   checkedAt: number

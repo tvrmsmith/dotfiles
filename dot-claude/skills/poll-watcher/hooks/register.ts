@@ -56,12 +56,19 @@ function parsePoll(text: string): Poll | undefined {
   return { command, intervalMs: Math.min(MAX_INTERVAL_MS, Math.max(MIN_INTERVAL_MS, ms)) }
 }
 
-type Outcome = { output: string; masked: string; exitCode: number }
+type Outcome = { output: string; fingerprint: string; exitCode: number }
 
-// Masked before the cut: a volatile token that changes length would otherwise
-// move where the cut falls and read as a change.
+// FNV-1a: a short stand-in for a text too long to keep whole in state.
+function fnv1a(text: string): string {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193)
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
+// A tick compares the fingerprint of the whole masked output, so a change
+// anywhere counts; `output` keeps only the tail, for display.
 function outcome(output: string, exitCode: number): Outcome {
-  return { output: output.slice(-OUTPUT_LIMIT), masked: masked(output).slice(-OUTPUT_LIMIT), exitCode }
+  return { output: output.slice(-OUTPUT_LIMIT), fingerprint: fnv1a(masked(output)), exitCode }
 }
 
 function note(command: string, intervalMs: number): string {
@@ -171,7 +178,7 @@ type Checked = { watch: PollWatch; prompt?: string }
 // One tick's outcome for the watch it ran: what to store, and what to tell a
 // model still waiting on it. A stopped watch is not re-armed.
 function check(w: PollWatch, result: Outcome, now: number): Checked {
-  const isChanged = result.masked !== w.masked || result.exitCode !== w.exitCode
+  const isChanged = result.fingerprint !== w.fingerprint || result.exitCode !== w.exitCode
   const isWaiting = w.phase === 'watching'
   if (isChanged) {
     const watch: PollWatch = { ...w, ...result, phase: 'changed', checkedAt: now, changedAt: now }
@@ -187,14 +194,15 @@ async function tick($: EngineInterface, armed: PollWatch): Promise<void> {
   const result = await runForTick($, armed.command, armed.cwd)
   const now = await $.clock.now()
   let checked: Checked | undefined
-  await update($, WATCHES, list =>
-    (list ?? []).map(w => {
+  await update($, WATCHES, list => {
+    checked = undefined
+    return (list ?? []).map(w => {
       // A stale tick: the model re-polled since this one was armed.
       if (!isArmed(w, armed)) return w
       checked = check(w, result, now)
       return checked.watch
-    }),
-  )
+    })
+  })
   if (!checked) return
   const { watch, prompt } = checked
   $.ui.status(statusLine(watch))
@@ -219,7 +227,7 @@ export const register: Register = on => {
     if (!poll) return next(e)
 
     const ran = await next({ ...e, command: poll.command })
-    if (ran.deny !== undefined || didNotFinish(ran.result)) return ran
+    if (ran.deny !== undefined || next.signal.aborted || didNotFinish(ran.result)) return ran
     const cwd = await $.session.cwd()
     // The baseline is a second run, not ran's stdout, so every compared value
     // comes from the same runner. One that cannot run arms nothing, and the
