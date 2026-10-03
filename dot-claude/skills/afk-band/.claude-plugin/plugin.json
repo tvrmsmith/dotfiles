@@ -1,0 +1,6 @@
+{
+  "name": "afk-band",
+  "version": "0.1.0",
+  "description": "Band above the prompt while AFK is armed, and a toast when its deadline clears the flag",
+  "types": "./types/index.d.ts"
+}
