@@ -551,3 +551,15 @@ run_shim() {
   lacks "$out" "GH RAN"
   rm -rf "$TMP"
 }
+
+@test "a 1Password refusal under the cap prints the write-token failure and never runs gh" {
+  write_fixture
+  printf '#!/bin/bash\necho "[ERROR] authorization prompt dismissed" >&2\nexit 1\n' > "$BIN/op"
+  status=0
+  out="$(run_shim pr merge 12 -R mine/repo 2>&1)" || status=$?
+  equals "$status" 1
+  equals "$(tail -1 "$TMP/stderr")" "gh: could not read the write token for my.example.com from 1Password."
+  lacks "$(cat "$TMP/stderr")" "approval timed out"
+  lacks "$out" "GH RAN"
+  rm -rf "$TMP"
+}
