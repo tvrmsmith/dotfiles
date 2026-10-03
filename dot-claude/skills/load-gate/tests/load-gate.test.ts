@@ -250,6 +250,27 @@ test('a test run arriving on a free machine still queues behind held runs', asyn
   expect(w.ran).toEqual(['go test ./a', 'go test ./c'])
 })
 
+test('a hold after the queue drains is released by a fresh tick', async ($, on) => {
+  const w = world(on, { ...BUSY })
+
+  const a = $.tool.call({ tool: 'Bash', command: 'go test ./a' })
+  await w.clock.settle()
+  w.readings = { ...HEALTHY }
+  await w.clock.advance(TICK)
+  await a
+
+  w.readings = { ...BUSY }
+  const b = $.tool.call({ tool: 'Bash', command: 'go test ./b' })
+  await w.clock.settle()
+  expect(w.ran).toEqual(['go test ./a'])
+
+  w.readings = { ...HEALTHY }
+  await w.clock.advance(TICK)
+  await b
+
+  expect(w.ran).toEqual(['go test ./a', 'go test ./b'])
+})
+
 test('a released run keeps the context the tool returned', async ($, on) => {
   const w = world(on, { memory: 8, cpu: 50 })
   w.answer = () => ({ result: { stdout: 'ok', stderr: '', interrupted: false }, text: 'ok', context: ['prior'] })
@@ -272,4 +293,17 @@ test('a deny from beneath on a healthy run comes back untouched', async ($, on) 
   const result = await $.tool.call({ tool: 'Bash', command: 'go test ./...' })
 
   expect(result).toEqual({ deny: 'nope' })
+})
+
+test('a deny from beneath on a held run comes back untouched, with no toast', async ($, on) => {
+  const w = world(on, { memory: 8, cpu: 50 })
+  w.answer = () => ({ deny: 'nope' })
+
+  const call = $.tool.call({ tool: 'Bash', command: 'go test ./...' })
+  await w.clock.settle()
+  w.readings.memory = 35
+  await w.clock.advance(TICK)
+
+  expect(await call).toEqual({ deny: 'nope' })
+  expect(w.toasts).toEqual([])
 })

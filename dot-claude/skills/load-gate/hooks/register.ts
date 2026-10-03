@@ -171,6 +171,7 @@ export const register: Register = on => {
 
     const onAbort = () => void release(entry, 'aborted')
     next.signal.addEventListener('abort', onAbort, { once: true })
+    if (next.signal.aborted) onAbort()
     try {
       await $.process.run(['sh', '-c', HOLD_SCRIPT, 'sh', entry.flag], { timeoutMs: CHILD_TIMEOUT_MS })
     } catch (error) {
