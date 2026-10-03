@@ -43,6 +43,8 @@ export type World = {
   spawns: ProcessSpawnRequest[]
   /** The id $.session.id() answers with. Set it to model a switch to another session. */
   sessionId: string
+  /** How long the mock clock must move before a $.session.id() call resolves. */
+  sessionIdDelayMs: number
   /** The key-value store as the plugin left it. mock.store hides its contents, so the harness keeps its own. */
   store: Record<string, unknown>
   /** What the last message of the session says. */
@@ -67,6 +69,7 @@ export function createWorld(on: On, options: WorldOptions = {}): World {
     probes: [],
     spawns: [],
     sessionId: 's1',
+    sessionIdDelayMs: 0,
     store: { ...options.store },
     lastMessage: { role: 'assistant', text: NETWORK_ERROR, toolUses: [] },
     probeAnswer: () => ANSWERED,
@@ -87,7 +90,13 @@ export function createWorld(on: On, options: WorldOptions = {}): World {
   on('turn.complete', (_$, e) => ({ text: e.answer }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
-  on('session.id', () => ({ value: world.sessionId }))
+  on('session.id', async () => {
+    const answer = world.sessionId
+    if (world.sessionIdDelayMs > 0) {
+      await clock.sleep(world.sessionIdDelayMs)
+    }
+    return { value: answer }
+  })
   on('session.model', () => ({ value: 'test-model' }))
   on('session.messages', () => ({ value: [world.lastMessage] }))
   on('ui.toast', (_$, e) => {

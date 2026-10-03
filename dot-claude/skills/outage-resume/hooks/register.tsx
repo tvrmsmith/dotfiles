@@ -57,10 +57,12 @@ async function readPending($: EngineInterface, sessionId: string): Promise<Pendi
   return parsePending(await $.store.get(pendingKey(sessionId)))
 }
 
-/** The session's record while that session is still the current one, so an attempt that outlived it acts on nothing. */
+/**
+ * The session's record while that session is still the current one, so an attempt that outlived it acts on nothing.
+ * The store is read last so no await separates the read from the caller's next write or submit.
+ */
 async function liveRecord($: EngineInterface, sessionId: string): Promise<Pending | undefined> {
-  const pending = await readPending($, sessionId)
-  return pending !== undefined && (await $.session.id()) === sessionId ? pending : undefined
+  return (await $.session.id()) === sessionId ? readPending($, sessionId) : undefined
 }
 
 async function sweepStale($: EngineInterface, sessionId: string): Promise<void> {
@@ -81,6 +83,10 @@ async function arm($: EngineInterface, sessionId: string, pending: Pending): Pro
   cancelTimer?.()
   await $.store.set(pendingKey(sessionId), pending)
   const delay = Math.max(pending.dueAt - (await $.clock.now()), 0)
+  // A clear that landed during the awaits above leaves nothing to schedule or watch.
+  if ((await liveRecord($, sessionId)) === undefined) {
+    return
+  }
   cancelTimer = $.clock.after(delay, () => void runAttempt($, sessionId)).cancel
   await startWatcher($, sessionId)
 }
