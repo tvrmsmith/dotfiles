@@ -34,7 +34,7 @@ type Poll = { command: string; intervalMs: number }
 
 function writes(segment: string): boolean {
   const [name, ...args] = segment.trim().split(/\s+/)
-  if (name === 'gh') return args.some(a => a === '-w' || a.startsWith('--web'))
+  if (name === 'gh') return args.some(a => /^-[A-Za-z]*w[A-Za-z]*$/.test(a) || a.startsWith('--web'))
   if (name === 'sort') return args.some(a => /^-[a-zA-Z]*o/.test(a) || a.startsWith('--output'))
   if (name === 'uniq') return args.filter(a => a === '-' || !a.startsWith('-')).length > 1
   return false
