@@ -25,6 +25,8 @@ type SpawnStream = AsyncGenerator<ProcessSpawnChunk, ProcessSpawnResult>
 const attempting = new Set<string>()
 let cancelTimer: (() => void) | undefined
 let watcher: SpawnStream | undefined
+/** Counts stop calls, so a store read that a clear overtook reads as stale. */
+let stops = 0
 
 const backoff = (attempt: number): number => Math.min(30_000 * 2 ** (attempt - 1), 300_000)
 
@@ -59,10 +61,16 @@ async function readPending($: EngineInterface, sessionId: string): Promise<Pendi
 
 /**
  * The session's record while that session is still the current one, so an attempt that outlived it acts on nothing.
- * The store is read last so no await separates the read from the caller's next write or submit.
+ * The store is read last so no await separates the read from the caller's next write or submit, and a stop that lands
+ * while the read is in flight voids it.
  */
 async function liveRecord($: EngineInterface, sessionId: string): Promise<Pending | undefined> {
-  return (await $.session.id()) === sessionId ? readPending($, sessionId) : undefined
+  if ((await $.session.id()) !== sessionId) {
+    return undefined
+  }
+  const stopsBefore = stops
+  const pending = await readPending($, sessionId)
+  return stops === stopsBefore ? pending : undefined
 }
 
 async function sweepStale($: EngineInterface, sessionId: string): Promise<void> {
@@ -83,12 +91,13 @@ async function arm($: EngineInterface, sessionId: string, pending: Pending): Pro
   cancelTimer?.()
   await $.store.set(pendingKey(sessionId), pending)
   const delay = Math.max(pending.dueAt - (await $.clock.now()), 0)
-  // A clear that landed during the awaits above leaves nothing to schedule or watch.
+  const host = await apiHost($)
+  // A clear or session switch that landed during the awaits above leaves nothing to schedule or watch.
   if ((await liveRecord($, sessionId)) === undefined) {
     return
   }
   cancelTimer = $.clock.after(delay, () => void runAttempt($, sessionId)).cancel
-  await startWatcher($, sessionId)
+  startWatcher($, sessionId, host)
 }
 
 const PERSON_ORIGINS: readonly string[] = ['composer', 'bridge', 'sdk']
@@ -119,6 +128,7 @@ function stopWatcher(): void {
 }
 
 function stop(): void {
+  stops += 1
   cancelTimer?.()
   cancelTimer = undefined
   stopWatcher()
@@ -164,11 +174,11 @@ async function watch($: EngineInterface, sessionId: string, stream: SpawnStream)
   }
 }
 
-async function startWatcher($: EngineInterface, sessionId: string): Promise<void> {
+function startWatcher($: EngineInterface, sessionId: string, host: string): void {
   if (watcher !== undefined) {
     return
   }
-  const stream = $.process.spawn({ argv: ['scutil', '-r', '-W', await apiHost($)] })
+  const stream = $.process.spawn({ argv: ['scutil', '-r', '-W', host] })
   watcher = stream
   void watch($, sessionId, stream)
 }

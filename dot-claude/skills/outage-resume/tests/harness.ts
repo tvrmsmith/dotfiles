@@ -45,6 +45,8 @@ export type World = {
   sessionId: string
   /** How long the mock clock must move before a $.session.id() call resolves. */
   sessionIdDelayMs: number
+  /** How long the mock clock must move before a $.store.get() call resolves. */
+  storeGetDelayMs: number
   /** The key-value store as the plugin left it. mock.store hides its contents, so the harness keeps its own. */
   store: Record<string, unknown>
   /** What the last message of the session says. */
@@ -70,6 +72,7 @@ export function createWorld(on: On, options: WorldOptions = {}): World {
     spawns: [],
     sessionId: 's1',
     sessionIdDelayMs: 0,
+    storeGetDelayMs: 0,
     store: { ...options.store },
     lastMessage: { role: 'assistant', text: NETWORK_ERROR, toolUses: [] },
     probeAnswer: () => ANSWERED,
@@ -77,7 +80,14 @@ export function createWorld(on: On, options: WorldOptions = {}): World {
     pendingAtSubmit: [],
   }
 
-  on('store.get', (_$, e) => ({ value: world.store[e.key] }))
+  on('store.get', async (_$, e) => {
+    // A slow read answers with the value the store held when it was asked.
+    const value = world.store[e.key]
+    if (world.storeGetDelayMs > 0) {
+      await clock.sleep(world.storeGetDelayMs)
+    }
+    return { value }
+  })
   on('store.set', (_$, e) => {
     world.store[e.key] = JSON.parse(JSON.stringify(e.value))
     return { value: undefined }
@@ -91,6 +101,7 @@ export function createWorld(on: On, options: WorldOptions = {}): World {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
   on('session.id', async () => {
+    // A slow call answers with the id that was current when it was asked.
     const answer = world.sessionId
     if (world.sessionIdDelayMs > 0) {
       await clock.sleep(world.sessionIdDelayMs)

@@ -442,6 +442,45 @@ test('a person prompt that lands while the plugin reads the session id leaves no
   expect(world.store['pending:s1']).toBeUndefined()
 })
 
+test('a person prompt that lands while an error turn arms schedules no attempt and starts no watcher', async ($, on) => {
+  const world = createWorld(on)
+  world.sessionIdDelayMs = 5_000
+
+  const turn = $.turn.complete(errorTurn)
+  await world.clock.advance(5_000)
+  expect(world.store['pending:s1']).toEqual({ attempt: 1, resumes: 0, dueAt: 35_000 })
+
+  world.sessionIdDelayMs = 0
+  await $.prompt.submit({ text: 'never mind', wait: false, origin: { kind: 'composer' } })
+  await world.clock.advance(10 * 60_000)
+  await turn
+
+  expect(world.spawns).toHaveLength(0)
+  expect(world.probes).toHaveLength(0)
+  expect(world.submits.map(s => s.text)).toEqual(['never mind'])
+  expect(world.store['pending:s1']).toBeUndefined()
+})
+
+test('a person prompt that lands while the plugin reads the record leaves no stray continue', async ($, on) => {
+  const world = createWorld(on)
+  // The store read after the probe is the slow one, so it answers with the record from before the prompt.
+  world.probeAnswer = () => {
+    world.storeGetDelayMs = 5_000
+    return ANSWERED
+  }
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(30_000)
+  expect(world.probes).toHaveLength(1)
+
+  world.storeGetDelayMs = 0
+  await $.prompt.submit({ text: 'never mind', wait: false, origin: { kind: 'composer' } })
+  await world.clock.advance(10 * 60_000)
+
+  expect(world.submits.map(s => s.text)).toEqual(['never mind'])
+  expect(world.store['pending:s1']).toBeUndefined()
+})
+
 test('a second error turn after an answered probe backs off from attempt 2', async ($, on) => {
   const world = createWorld(on)
 
@@ -456,7 +495,12 @@ test('a second error turn after an answered probe backs off from attempt 2', asy
 
   await world.clock.advance(1)
   expect(world.probes).toHaveLength(2)
-  expect(world.toasts.at(-2)).toBe('API unreachable. Retry 2 of 20.')
+  expect(world.toasts).toEqual([
+    'API unreachable. Retry 1 of 20.',
+    'API is back. Resuming.',
+    'API unreachable. Retry 2 of 20.',
+    'API is back. Resuming.',
+  ])
 })
 
 const unreadable: [string, unknown][] = [
@@ -466,7 +510,7 @@ const unreadable: [string, unknown][] = [
   ['attempt 21', { attempt: 21, resumes: 0, dueAt: 0 }],
   ['attempt 1.5', { attempt: 1.5, resumes: 0, dueAt: 0 }],
   ['resumes -1', { attempt: 1, resumes: -1, dueAt: 0 }],
-  ['dueAt "x"', { attempt: 1, resumes: 0, dueAt: 'x' }],
+  ['dueAt -Infinity', { attempt: 1, resumes: 0, dueAt: -Infinity }],
 ]
 
 for (const [label, seeded] of unreadable) {
