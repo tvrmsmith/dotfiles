@@ -32,8 +32,8 @@ $ GH_SHIM_EXPLAIN=1 gh pr review 1 --approve -> write
 Read and pr-write pull a PAT from the OS keychain and run silently. `write`
 escalates to a human approval (1Password here, swap in whatever you use).
 `GH_SHIM_EXPLAIN` runs nothing, which is what makes the classifier testable with
-no network and no prompt; there are 43 tests behind the shim and its
-provisioning wizard.
+no network and no prompt; bats suites cover both the shim and its provisioning
+wizard.
 
 ## Four decisions that make it hold up
 
