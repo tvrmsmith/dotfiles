@@ -350,6 +350,7 @@ test('pass-through', WITH_PROBE, async ($, on) => {
     'sleep 5; gh pr checks | sed -n 1p',
     'sleep 5; gh pr view 12 --web',
     'sleep 5; gh pr view -w',
+    'sleep 60; gh pr view 12 -cw',
     'sleep 5; gh pr checks | sort -o out.txt',
     'sleep 5; gh pr checks | uniq - out.txt',
     'sleep 5; gh pr checks\nrm -rf x',
