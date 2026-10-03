@@ -6,16 +6,21 @@ import type { Pending } from '../types'
 const BANNER = 'gh: needs write access, asking 1Password to approve:'
 const pending = atom({ plugin: '1p-retry-band', key: 'pending' } as const, null)
 
-// The shim's own failure line, op's error line, or a call cut off while waiting.
-const ONE_PASSWORD_FAILED = /could not read the write token|\[ERROR\]|timed out|timeout/i
+// The shim's own failure line, op's error line, or the Bash tool's timeout notice.
+const ONE_PASSWORD_FAILED = [/^gh: could not read the write token/, /^\[ERROR\]/, /timed out/i]
 
-// The gh line after the last banner, and whether the text below it shows 1Password failing.
-const afterLastBanner = (text: string) => {
-  const [ghLine, ...rest] = text
-    .slice(text.lastIndexOf(BANNER) + BANNER.length)
-    .split('\n')
-    .filter(line => line.trim() !== '')
-  return { ghLine: ghLine?.trim(), isFailed: ONE_PASSWORD_FAILED.test(rest.join('\n')) }
+// The gh line after the last line that is the banner, and whether the first line
+// after it shows 1Password failing: none (cut off while op waited) or a failure line.
+// Any other line there is gh's own output, so the write went through.
+const lastBanner = (text: string) => {
+  const lines = text.split('\n')
+  const at = lines.lastIndexOf(BANNER)
+  if (at === -1) return undefined
+  const next = lines.slice(at + 2).find(line => line.trim() !== '')?.trim()
+  return {
+    ghLine: lines[at + 1]?.trim(),
+    isFailed: next === undefined || ONE_PASSWORD_FAILED.some(failed => failed.test(next)),
+  }
 }
 
 const PROBE_EVERY_MS = 15_000
@@ -102,23 +107,23 @@ const startProbe = ($: Engine) => {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    if ((await read($, pending)) !== null && timer === undefined) startProbe($)
+    if ((await read($, pending)) !== null) startProbe($)
     return next(e)
   })
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const ran = await next(e)
 
-    if (ran.deny !== undefined || !ran.text?.includes(BANNER)) return ran
+    const banner = ran.deny === undefined && ran.text !== undefined ? lastBanner(ran.text) : undefined
+    if (banner === undefined) return ran
 
     if (ran.isError !== true) {
       await update($, pending, (p: Pending | null) => (p?.command === e.command ? null : p)).catch(() => undefined)
       return ran
     }
 
-    const { ghLine, isFailed } = afterLastBanner(ran.text)
-    if (isFailed) {
-      const stuck: Pending = { command: e.command, ghLine: ghLine ?? e.command, agent: 'checking', isRetrying: false }
+    if (banner.isFailed) {
+      const stuck: Pending = { command: e.command, ghLine: banner.ghLine || e.command, agent: 'checking', isRetrying: false }
       await update($, pending, () => stuck).catch(() => undefined)
       startProbe($)
     }

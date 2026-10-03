@@ -100,9 +100,9 @@ test('the plugin hands the model the tool result unchanged', async ($, on) => {
 })
 
 test('an errored result without the banner shows no band', async ($, on) => {
-  engine(on, [{ text: 'fatal: not a git repository', isError: true }])
+  engine(on, [{ text: 'curl: (28) Operation timed out after 5000 ms', isError: true }])
 
-  await $.tool.call({ tool: 'Bash', command: 'git status' })
+  await $.tool.call({ tool: 'Bash', command: 'curl -m 5 https://example.com' })
 
   for (const surface of SURFACES) {
     const ui = await mountBand($, surface)
@@ -116,7 +116,8 @@ test('an errored result whose banner is followed by gh output and a failing late
     BANNER,
     '    gh issue create -t x -b y',
     'https://github.com/tvrmsmith/dotfiles/issues/99',
-    'npm ERR! Test failed.  See above for more details.',
+    '  ● sync › pulls the latest  Exceeded timeout of 5000 ms for a test.',
+    '[ERROR] Tests run: 3, Failures: 1',
   ].join('\n')
   engine(on, [{ text: approvedThenFailed, isError: true }])
 
@@ -129,8 +130,45 @@ test('an errored result whose banner is followed by gh output and a failing late
   }
 })
 
+test('an errored result quoting the banner mid-line shows no band', async ($, on) => {
+  const shimSource = [
+    'echo "gh: needs write access, asking 1Password to approve:" >&2',
+    'echo "    gh $*" >&2',
+  ].join('\n')
+  engine(on, [{ text: shimSource, isError: true }])
+
+  await $.tool.call({ tool: 'Bash', command: 'sed -n 489,490p dot-local/bin/gh && false' })
+
+  for (const surface of SURFACES) {
+    const ui = await mountBand($, surface)
+    expect(await ui.find({ key: 'retry' })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+const SIGNALS = {
+  'a call cut off while op waited': [],
+  "op's own error": ['[ERROR] 2026/10/02 09:14:03 authorization timeout'],
+  "the shim's write-token failure": ['gh: could not read the write token for my.1password.com from 1Password.'],
+  "the Bash tool's timeout notice": ['Command timed out after 2m 0s'],
+}
+
+for (const [signal, after] of Object.entries(SIGNALS)) {
+  test(`${signal} after the gh line shows the band`, async ($, on) => {
+    engine(on, [{ text: [BANNER, '    gh pr merge --auto 7', ...after].join('\n'), isError: true }])
+
+    await $.tool.call({ tool: 'Bash', command: 'gh pr merge --auto 7' })
+
+    for (const surface of SURFACES) {
+      const ui = await mountBand($, surface)
+      expect((await ui.find({ key: 'waiting' }))?.text).toBe('gh is waiting on 1Password: gh pr merge --auto 7')
+      await ui.unmount()
+    }
+  })
+}
+
 test('a successful result carrying the banner shows no band', async ($, on) => {
-  engine(on, [{ text: SUCCEEDED }])
+  engine(on, [{ text: ERRORED }])
 
   await $.tool.call({ tool: 'Bash', command: COMPOUND })
 
@@ -326,4 +364,22 @@ onEachSurface('two presses of retry started together re-run the command once', a
   await Promise.all([ui.press({ key: 'retry' }), ui.press({ key: 'retry' })])
 
   expect(world.commands).toEqual([COMPOUND, COMPOUND])
+})
+
+onEachSurface('session start re-runs the probe for a band already showing', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }])
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  world.probe = () => ({ exitCode: 2 })
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  await world.clock.settle()
+  const ui = await mountBand($, surface)
+  expect(await agentText(ui)).toBe('1Password agent: not answering')
+  const before = world.probeArgvs.length
+
+  world.probe = () => ({ exitCode: 0 })
+  await $.session.start({ cwd: '/', surface, isInteractive: true })
+  await world.clock.settle()
+
+  expect(world.probeArgvs.length).toBeGreaterThan(before)
+  expect(await agentText(ui)).toBe('1Password agent: answers')
 })

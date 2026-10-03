@@ -484,10 +484,10 @@ mkdir -p "$(dirname "$log")" 2>/dev/null || true
 		"$(date '+%Y-%m-%d %H:%M:%S')" "$PPID" "${caller##*/}" "$PWD" "$*" >> "$log"
 } 2>/dev/null || true
 
-# dot-claude/skills/1p-retry-band matches this banner verbatim, reads the next
-# line as the gh line it displays, and arms only when a 1Password failure such
-# as the "could not read the write token" line below follows. Reword any of
-# them and its retry band goes dark.
+# dot-claude/skills/1p-retry-band matches this banner as a whole line, reads the
+# next line as the gh line it displays, and arms only when the line after that
+# is missing, op's [ERROR] line, or the "could not read the write token" line
+# below. Reword any of them and its retry band goes dark.
 echo "gh: needs write access, asking 1Password to approve:" >&2
 echo "    gh $*" >&2
 
