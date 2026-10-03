@@ -541,7 +541,7 @@ run_shim() {
 
 @test "a 1Password wait past the cap fails in the foreground and never runs gh" {
   write_fixture
-  printf '#!/bin/bash\nexec sleep 10\n' > "$BIN/op"
+  printf '#!/bin/bash\ntrap "" ALRM\nexec sleep 10\n' > "$BIN/op"
   start=$SECONDS
   status=0
   out="$(GH_SHIM_APPROVAL_TIMEOUT=1 run_shim pr merge 12 -R mine/repo 2>&1)" || status=$?

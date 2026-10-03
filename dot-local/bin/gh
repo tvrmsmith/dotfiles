@@ -500,8 +500,9 @@ mkdir -p "$(dirname "$log")" 2>/dev/null || true
 # The approval wait is capped at GH_SHIM_APPROVAL_TIMEOUT seconds (default 100),
 # under the Bash tool's 2-minute limit. Past that limit the tool moves the call
 # to the background and nothing prints; the cap fails in the foreground instead,
-# so the band can arm. macOS has no timeout(1), hence perl's alarm. The
-# `op plugin run` fallback is not capped.
+# so the band can arm. macOS has no timeout(1), hence the perl watchdog. It
+# holds the alarm itself and kills op, because op is a Go binary and Go ignores
+# a SIGALRM it never asked for. The `op plugin run` fallback is not capped.
 echo "gh: needs write access, asking 1Password to approve:" >&2
 printf '    gh' >&2
 printf ' %q' "$@" >&2
@@ -512,9 +513,25 @@ write_account="" write_ref=""
 if write_credential "$(gh_owner "$@")"; then
 	cap="${GH_SHIM_APPROVAL_TIMEOUT:-100}"
 	status=0
-	token="$(perl -e 'alarm shift; exec @ARGV' "$cap" \
-		op read --account "$write_account" --no-newline "$write_ref")" || status=$?
-	# SIGALRM ends op with 142.
+	token="$(perl -MPOSIX=:sys_wait_h -e '
+		my $cap = shift;
+		defined(my $pid = fork) or die "gh: fork failed: $!\n";
+		if (!$pid) { exec { $ARGV[0] } @ARGV; exit 127 }
+		$SIG{ALRM} = sub {
+			kill TERM => $pid;
+			for (1 .. 10) {
+				exit 142 if waitpid($pid, WNOHANG);
+				select undef, undef, undef, 0.1;
+			}
+			kill KILL => $pid;
+			waitpid $pid, 0;
+			exit 142;
+		};
+		alarm $cap;
+		waitpid $pid, 0;
+		exit($? & 127 ? 128 + ($? & 127) : $? >> 8);
+	' "$cap" op read --account "$write_account" --no-newline "$write_ref")" || status=$?
+	# The watchdog exits 142 when the cap passes.
 	if [ "$status" -eq 142 ]; then
 		echo "gh: 1Password approval timed out after ${cap}s." >&2
 		exit 1
