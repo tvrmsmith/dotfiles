@@ -60,11 +60,13 @@ function world(on: On) {
     prompts: [] as string[],
     submitted: Promise.resolve(),
     stateDenials: 0,
+    checkDecision: 'allow' as 'allow' | 'ask' | 'deny',
     isRepollRacing: false,
     status: undefined as string | undefined,
   }
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: CWD }))
+  on('tool.check', () => ({ decision: w.checkDecision }))
   on('tool.call', { tool: 'Bash' }, (_$, e) => {
     w.bashCommands.push(e.command)
     return w.bashAnswer ?? { result: { stdout: w.output, stderr: '', interrupted: false } }
@@ -352,6 +354,7 @@ test('pass-through', WITH_PROBE, async ($, on) => {
     'sleep 5; gh pr view -w',
     'sleep 60; gh pr view 12 -cw',
     'sleep 5; gh pr checks | sort -o out.txt',
+    'sleep 5; gh pr checks | sort --out=out.txt',
     'sleep 5; gh pr checks | uniq - out.txt',
     'sleep 5; gh pr checks\nrm -rf x',
     'sleep 5; gh pr checks `rm x`',
@@ -389,6 +392,21 @@ test('non-interactive sessions pass through', WITH_PROBE, async ($, on) => {
   expect(w.bashCommands).toEqual([POLL])
   expect((await watches($)) ?? []).toEqual([])
 })
+
+for (const decision of ['deny', 'ask'] as const) {
+  test(`a status command the rules ${decision} keeps its sleep`, WITH_PROBE, async ($, on) => {
+    const w = world(on)
+    w.checkDecision = decision
+    await $.session.start(START)
+
+    const ran = await $.tool.call({ tool: 'Bash', command: POLL })
+
+    expect(w.bashCommands).toEqual([POLL])
+    expect(ran.context).toBeUndefined()
+    expect(w.runs).toEqual([])
+    expect((await watches($)) ?? []).toEqual([])
+  })
+}
 
 test('a deny arms nothing', WITH_PROBE, async ($, on) => {
   const w = world(on)
