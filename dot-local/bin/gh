@@ -484,6 +484,8 @@ mkdir -p "$(dirname "$log")" 2>/dev/null || true
 		"$(date '+%Y-%m-%d %H:%M:%S')" "$PPID" "${caller##*/}" "$PWD" "$*" >> "$log"
 } 2>/dev/null || true
 
+# dot-claude/skills/1p-retry-band matches this banner verbatim and reads the
+# next line as the pending command. Reword either and its retry band goes dark.
 echo "gh: needs write access, asking 1Password to approve:" >&2
 echo "    gh $*" >&2
 
