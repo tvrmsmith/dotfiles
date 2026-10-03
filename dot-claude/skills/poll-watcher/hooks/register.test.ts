@@ -15,7 +15,9 @@ const PROBE: Plugin = {
     })
   },
 }
-const WITH_PROBE = { plugins: [PROBE] }
+// The clock is mocked, but the kit's limit is wall clock: the 5000 ms default
+// trips on a saturated host while the same test takes ~100 ms on an idle one.
+const WITH_PROBE = { plugins: [PROBE], timeoutMs: 20_000 }
 
 async function watches($: Engine): Promise<PollWatch[] | null> {
   const { text } = await $.command.run({
