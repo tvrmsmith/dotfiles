@@ -35,7 +35,7 @@ type Poll = { command: string; intervalMs: number }
 function writes(segment: string): boolean {
   const [name, ...args] = segment.trim().split(/\s+/)
   if (name === 'gh') return args.some(a => /^-[A-Za-z]*w[A-Za-z]*$/.test(a) || a.startsWith('--web'))
-  if (name === 'sort') return args.some(a => /^-[a-zA-Z]*o/.test(a) || a.startsWith('--output'))
+  if (name === 'sort') return args.some(a => /^-[a-zA-Z]*o/.test(a) || a.startsWith('--o'))
   if (name === 'uniq') return args.filter(a => a === '-' || !a.startsWith('-')).length > 1
   return false
 }
@@ -225,6 +225,8 @@ export const register: Register = on => {
     const isWatchable = isInteractive && e.agentId === undefined && e.run_in_background !== true
     const poll = isWatchable ? parsePoll(e.command) : undefined
     if (!poll) return next(e)
+    const { decision } = await $.tool.check({ tool: 'Bash', input: { command: poll.command } })
+    if (decision !== 'allow') return next(e)
 
     const ran = await next({ ...e, command: poll.command })
     if (ran.deny !== undefined || next.signal.aborted || didNotFinish(ran.result)) return ran
