@@ -193,9 +193,9 @@ test('a machine that stays busy releases the run at the cap', async ($, on) => {
 
 test('a signal that cannot be read never holds a test run', async ($, on) => {
   const unreadable: Readings[] = [
-    { memory: 'rejects', cpu: 37 },
     { memory: 'exits-1', cpu: 37 },
-    { memory: 'rejects', cpu: 'rejects' },
+    { memory: 46, cpu: 'exits-1' },
+    { memory: 'exits-1', cpu: 'exits-1' },
   ]
 
   const w = world(on, { ...HEALTHY })
@@ -216,11 +216,15 @@ test('a sample that fails to run reads as unknown beside a busy one', async ($, 
   w.readings = { memory: 5, cpu: 'rejects' }
   const b = $.tool.call({ tool: 'Bash', command: 'go test ./b' })
   await w.clock.settle()
+  w.readings = { memory: 'rejects', cpu: 'rejects' }
+  const c = $.tool.call({ tool: 'Bash', command: 'go test ./c' })
+  await w.clock.settle()
 
   expect(w.ran).toEqual([])
   expect(w.statuses).toEqual([
     'load-gate: 1 held (memory ?% free, CPU 2% idle)',
     'load-gate: 2 held (memory 5% free, CPU ?% idle)',
+    'load-gate: 3 held (memory ?% free, CPU ?% idle)',
   ])
 
   w.readings = { ...HEALTHY }
@@ -228,7 +232,9 @@ test('a sample that fails to run reads as unknown beside a busy one', async ($, 
   await a
   await w.clock.advance(TICK)
   await b
-  expect(w.ran).toEqual(['go test ./a', 'go test ./b'])
+  await w.clock.advance(TICK)
+  await c
+  expect(w.ran).toEqual(['go test ./a', 'go test ./b', 'go test ./c'])
 })
 
 test('held runs leave in arrival order, one per tick', async ($, on) => {
