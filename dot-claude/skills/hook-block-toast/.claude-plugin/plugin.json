@@ -1,0 +1,5 @@
+{
+  "name": "hook-block-toast",
+  "version": "0.1.0",
+  "description": "Toasts the settings hook that blocked a tool call and counts blocks per hook."
+}
