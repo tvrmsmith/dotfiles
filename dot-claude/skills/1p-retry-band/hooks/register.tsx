@@ -24,6 +24,8 @@ const lastBanner = (text: string) => {
 }
 
 const PROBE_EVERY_MS = 15_000
+// The Bash tool's foreground ceiling, so the person has time to approve in 1Password.
+const RETRY_TIMEOUT_MS = 600_000
 
 const probeAgent = async ($: Engine): Promise<Pending['agent']> => {
   try {
@@ -48,14 +50,19 @@ const retry = async ($: Engine) => {
   if (!isClaimed) return
 
   let isOk = false
+  let outcome = 'It failed.'
   let output = ''
   try {
     const res = await $.tool.call({
       tool: 'Bash',
       command,
+      timeout: RETRY_TIMEOUT_MS,
       consent: 'The user pressed "Retry" on the 1Password retry band',
     })
-    isOk = res.deny === undefined && res.isError !== true
+    const isBackgrounded = /moved to the background/.test(res.text ?? '')
+    isOk = res.deny === undefined && res.isError !== true && !isBackgrounded
+    if (isBackgrounded) outcome = 'It is still running in the background; the notice below names its output file.'
+    else if (isOk) outcome = 'It succeeded.'
     output = (res.deny ?? res.text ?? '').slice(0, 2000)
   } finally {
     await update($, pending, (p: Pending | null) => {
@@ -64,7 +71,6 @@ const retry = async ($: Engine) => {
     })
   }
 
-  const outcome = isOk ? 'It succeeded.' : 'It failed.'
   const text = `The person re-ran \`${command}\` from the 1Password retry band. ${outcome}\n\n${output}`
   await $.session.append({ message: { type: 'user', content: [{ type: 'text', text }] } }).catch(() => undefined)
 }

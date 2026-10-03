@@ -24,6 +24,7 @@ type Answer = { text: string; isError?: true } | { deny: string } | { throws: st
 const engine = (on: On, bashAnswers: Answer[]) => {
   const world = {
     commands: [] as string[],
+    timeouts: [] as (number | undefined)[],
     toasts: [] as string[],
     probeArgvs: [] as (readonly string[])[],
     probe: (): { exitCode: number } => ({ exitCode: 2 }),
@@ -31,6 +32,7 @@ const engine = (on: On, bashAnswers: Answer[]) => {
   on('tool.call', { tool: 'Bash' }, (_$, e) => {
     const answer = bashAnswers[Math.min(world.commands.length, bashAnswers.length - 1)]!
     world.commands.push(e.command)
+    world.timeouts.push(e.timeout)
     if ('throws' in answer) throw new Error(answer.throws)
     return 'deny' in answer ? answer : { result: bash, ...answer }
   })
@@ -249,6 +251,31 @@ onEachSurface('a denied retry keeps the band and retries again', async ($, on, s
   await ui.press({ key: 'retry' })
 
   expect(world.commands).toEqual([COMPOUND, COMPOUND, COMPOUND])
+})
+
+const BACKGROUNDED =
+  'Command did not complete within its 600s timeout and was moved to the background (ID: b1). Output is being written to: /tmp/tasks/b1.output'
+
+onEachSurface('a retry moved to the background keeps the band and retries again', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }, { text: BACKGROUNDED }])
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  const ui = await mountBand($, surface)
+
+  await ui.press({ key: 'retry' })
+  expect(await ui.find({ key: 'retry' })).toBeDefined()
+  await ui.press({ key: 'retry' })
+
+  expect(world.commands).toEqual([COMPOUND, COMPOUND, COMPOUND])
+})
+
+onEachSurface('a retry gives the person ten minutes to approve', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }, { text: SUCCEEDED }])
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  const ui = await mountBand($, surface)
+
+  await ui.press({ key: 'retry' })
+
+  expect(world.timeouts[1]).toBe(600_000)
 })
 
 onEachSurface('a retry whose call throws leaves the band able to retry again', async ($, on, surface) => {
