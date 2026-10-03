@@ -510,7 +510,7 @@ write_fixture() {
   chmod +x "$BIN"/*
   printf 'mine my.example.com op://vault-a/item-a/token\n' \
     > "$TMP/config/gh-shim/write-tokens"
-  cd "$TMP"
+  cd "$TMP" || return
 }
 
 run_shim() {
