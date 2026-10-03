@@ -1,5 +1,6 @@
 {
   "name": "outage-resume",
   "version": "0.1.0",
-  "description": "Resumes a turn that an API outage ended once the API answers again, and offers /login when the session expired."
+  "description": "Resumes a turn that an API outage ended once the API answers again, and offers /login when the session expired.",
+  "author": { "name": "Trevor Smith" }
 }
