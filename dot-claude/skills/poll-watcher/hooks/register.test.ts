@@ -30,7 +30,10 @@ async function watches($: Engine): Promise<PollWatch[] | null> {
 }
 
 // The subagent pass-through (`e.agentId` set) has no test: `$.tool.call`
-// drops `agentId`, so a test cannot raise a subagent's Bash call.
+// drops `agentId`, so a test cannot raise a subagent's Bash call. Nor has the
+// interrupt pass-through (`next.signal` aborted): the kit seats every inline
+// plugin beneath the one under test and `$.tool.call` takes no signal, so
+// nothing can abort the dispatch above it.
 
 const T0 = 1_000_000
 const ST = 'no-mistakes axi status'
@@ -38,7 +41,10 @@ const POLL = `sleep 240; ${ST}`
 const CWD = '/work/repo'
 const START = { cwd: CWD, surface: 'terminal', isInteractive: true } as const
 
-type BashAnswer = { deny: string } | { result: { stdout: string; stderr: string; interrupted: boolean } }
+type BashAnswer =
+  | { deny: string }
+  | { result: { stdout: string; stderr: string; interrupted: boolean } }
+  | { isError: true; result: string }
 
 // The engine beneath the plugin: Bash, process.run, prompt.submit and
 // ui.status answered from variables each test changes.
@@ -54,6 +60,7 @@ function world(on: On) {
     prompts: [] as string[],
     submitted: Promise.resolve(),
     stateDenials: 0,
+    isRepollRacing: false,
     status: undefined as string | undefined,
   }
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
@@ -76,7 +83,16 @@ function world(on: On) {
     await w.submitted
     return { text: e.text }
   })
-  on('state.set', (_$, e, next) => {
+  on('state.set', async (_$, e, next) => {
+    // A re-poll lands between this write's read and its write: the write
+    // misses, and update() tries again over the re-polled list.
+    if (w.isRepollRacing) {
+      w.isRepollRacing = false
+      const repolled = (e.previous as PollWatch[]).map(x => ({ ...x, armedAt: x.armedAt + 1 }))
+      const landed = await next({ ...e, value: repolled })
+      if (!landed.value) return landed
+      return { value: { isSet: false, version: landed.value.version } }
+    }
     if (w.stateDenials === 0) return next(e)
     w.stateDenials -= 1
     return { deny: 'state is busy' }
@@ -127,7 +143,7 @@ test('drops the sleep, never blocks', WITH_PROBE, async ($, on) => {
       intervalMs: 240000,
       phase: 'watching',
       output: 'run: running',
-      masked: 'run: running',
+      fingerprint: expect.any(String),
       exitCode: 0,
       armedAt: T0,
       checkedAt: T0,
@@ -199,6 +215,17 @@ test('a long output whose volatile tokens change length does not count as change
 
   expect(w.prompts).toEqual([])
   expect((await watchOne($)).output).toBe(rows('1m0s').slice(-4000))
+})
+
+test('a tick whose write loses to a re-poll tells nothing', WITH_PROBE, async ($, on) => {
+  const w = await armed($, on)
+
+  w.output = 'run: passed'
+  w.isRepollRacing = true
+  await w.clock.advance(240_000)
+
+  expect(w.prompts).toEqual([])
+  expect(await watchOne($)).toMatchObject({ phase: 'watching', armedAt: T0 + 1 })
 })
 
 test('a tick that fails shows the watch stopped', WITH_PROBE, async ($, on) => {
@@ -282,6 +309,18 @@ test('re-poll re-arms the wake', WITH_PROBE, async ($, on) => {
   ])
 })
 
+test('two watches tick side by side', WITH_PROBE, async ($, on) => {
+  const w = world(on)
+  await $.session.start(START)
+  await $.tool.call({ tool: 'Bash', command: 'sleep 60; gh pr checks' })
+  await $.tool.call({ tool: 'Bash', command: 'sleep 60; gh pr view 12' })
+  const baselines = w.runs.length
+
+  await w.clock.advance(60_000)
+
+  expect(w.runs.slice(baselines).map(r => r.argv[2]).sort()).toEqual(['gh pr checks', 'gh pr view 12'])
+})
+
 test('interval clamps', WITH_PROBE, async ($, on) => {
   world(on)
   await $.session.start(START)
@@ -313,6 +352,9 @@ test('pass-through', WITH_PROBE, async ($, on) => {
     'sleep 5; gh pr view -w',
     'sleep 5; gh pr checks | sort -o out.txt',
     'sleep 5; gh pr checks | uniq - out.txt',
+    'sleep 5; gh pr checks\nrm -rf x',
+    'sleep 5; gh pr checks `rm x`',
+    'sleep 5; gh pr checks < in.txt',
   ]
 
   for (const command of commands) await $.tool.call({ tool: 'Bash', command })
@@ -374,6 +416,29 @@ test('background and interrupted runs arm nothing', WITH_PROBE, async ($, on) =>
 
   expect(w.bashCommands).toEqual([POLL, ST])
   expect((await watches($)) ?? []).toEqual([])
+})
+
+test('an errored status run is still watched', WITH_PROBE, async ($, on) => {
+  const w = world(on)
+  w.bashAnswer = { isError: true, result: 'Exit code 8\nbuild  pending' }
+  await $.session.start(START)
+
+  await $.tool.call({ tool: 'Bash', command: 'sleep 60; gh pr checks' })
+
+  expect(await watchOne($)).toMatchObject({ command: 'gh pr checks', phase: 'watching' })
+})
+
+test('a change before the stored tail counts', WITH_PROBE, async ($, on) => {
+  const w = world(on)
+  const body = 'x'.repeat(5000)
+  w.output = `summary: pending\n${body}`
+  await $.session.start(START)
+  await $.tool.call({ tool: 'Bash', command: POLL })
+
+  w.output = `summary: failure\n${body}`
+  await w.clock.advance(240_000)
+
+  expect(w.prompts).toHaveLength(1)
 })
 
 test('a failing run is a change', WITH_PROBE, async ($, on) => {
