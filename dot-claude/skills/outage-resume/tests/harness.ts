@@ -43,6 +43,12 @@ export type World = {
   spawns: ProcessSpawnRequest[]
   /** The id $.session.id() answers with. Set it to model a switch to another session. */
   sessionId: string
+  /** How long the mock clock must move before a $.session.id() call resolves. */
+  sessionIdDelayMs: number
+  /** How long the mock clock must move before a $.store.get() call resolves. */
+  storeGetDelayMs: number
+  /** How long the mock clock must move before a $.store.set() call resolves. The write lands at once. */
+  storeSetDelayMs: number
   /** The key-value store as the plugin left it. mock.store hides its contents, so the harness keeps its own. */
   store: Record<string, unknown>
   /** What the last message of the session says. */
@@ -67,6 +73,9 @@ export function createWorld(on: On, options: WorldOptions = {}): World {
     probes: [],
     spawns: [],
     sessionId: 's1',
+    sessionIdDelayMs: 0,
+    storeGetDelayMs: 0,
+    storeSetDelayMs: 0,
     store: { ...options.store },
     lastMessage: { role: 'assistant', text: NETWORK_ERROR, toolUses: [] },
     probeAnswer: () => ANSWERED,
@@ -74,9 +83,19 @@ export function createWorld(on: On, options: WorldOptions = {}): World {
     pendingAtSubmit: [],
   }
 
-  on('store.get', (_$, e) => ({ value: world.store[e.key] }))
-  on('store.set', (_$, e) => {
+  on('store.get', async (_$, e) => {
+    // A slow read answers with the value the store held when it was asked.
+    const value = world.store[e.key]
+    if (world.storeGetDelayMs > 0) {
+      await clock.sleep(world.storeGetDelayMs)
+    }
+    return { value }
+  })
+  on('store.set', async (_$, e) => {
     world.store[e.key] = JSON.parse(JSON.stringify(e.value))
+    if (world.storeSetDelayMs > 0) {
+      await clock.sleep(world.storeSetDelayMs)
+    }
     return { value: undefined }
   })
   on('store.delete', (_$, e) => {
@@ -87,7 +106,14 @@ export function createWorld(on: On, options: WorldOptions = {}): World {
   on('turn.complete', (_$, e) => ({ text: e.answer }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
-  on('session.id', () => ({ value: world.sessionId }))
+  on('session.id', async () => {
+    // A slow call answers with the id that was current when it was asked.
+    const answer = world.sessionId
+    if (world.sessionIdDelayMs > 0) {
+      await clock.sleep(world.sessionIdDelayMs)
+    }
+    return { value: answer }
+  })
   on('session.model', () => ({ value: 'test-model' }))
   on('session.messages', () => ({ value: [world.lastMessage] }))
   on('ui.toast', (_$, e) => {
