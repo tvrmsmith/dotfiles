@@ -208,6 +208,29 @@ test('a signal that cannot be read never holds a test run', async ($, on) => {
   expect(children(w)).toEqual([])
 })
 
+test('a sample that fails to run reads as unknown beside a busy one', async ($, on) => {
+  const w = world(on, { memory: 'rejects', cpu: 2 })
+
+  const a = $.tool.call({ tool: 'Bash', command: 'go test ./a' })
+  await w.clock.settle()
+  w.readings = { memory: 5, cpu: 'rejects' }
+  const b = $.tool.call({ tool: 'Bash', command: 'go test ./b' })
+  await w.clock.settle()
+
+  expect(w.ran).toEqual([])
+  expect(w.statuses).toEqual([
+    'load-gate: 1 held (memory ?% free, CPU 2% idle)',
+    'load-gate: 2 held (memory 5% free, CPU ?% idle)',
+  ])
+
+  w.readings = { ...HEALTHY }
+  await w.clock.advance(TICK)
+  await a
+  await w.clock.advance(TICK)
+  await b
+  expect(w.ran).toEqual(['go test ./a', 'go test ./b'])
+})
+
 test('held runs leave in arrival order, one per tick', async ($, on) => {
   const w = world(on, { ...BUSY })
 
