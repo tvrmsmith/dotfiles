@@ -88,7 +88,13 @@ test('a spawn that rejects is ignored and the timer still resumes', async ($, on
 })
 
 test('one watcher serves every attempt of an outage', async ($, on) => {
-  const world = createWorld(on)
+  let world!: ReturnType<typeof createWorld>
+  world = createWorld(on, {
+    spawn: async function* () {
+      yield { stream: 'stdout', text: 'Not Reachable\n' }
+      await world.clock.sleep(60 * 60_000)
+    },
+  })
   world.probeAnswer = call => (call < 3 ? apiError('server_error', 503) : ANSWERED)
 
   await $.turn.complete(errorTurn)
@@ -141,4 +147,17 @@ test('a wake while a probe is in flight does not start a second attempt', async 
 
   expect(world.probes).toHaveLength(1)
   expect(world.submits).toHaveLength(1)
+})
+
+test('a second down-and-up pair in the same chunk does not submit a second resume', async ($, on) => {
+  let world!: ReturnType<typeof createWorld>
+  world = createWorld(on, {
+    spawn: scutilSays(() => world.clock, [[0, 'Not Reachable\nReachable\nNot Reachable\nReachable\n']]),
+  })
+
+  await $.turn.complete(errorTurn)
+  await world.clock.settle()
+
+  expect(world.probes).toHaveLength(1)
+  expect(world.submits.map(s => s.text)).toEqual(['continue'])
 })

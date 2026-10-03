@@ -22,6 +22,8 @@ type Pending = {
 type SpawnStream = AsyncGenerator<ProcessSpawnChunk, ProcessSpawnResult>
 
 let isAttempting = false
+/** Bumped by stop(), so an attempt that outlives it acts on nothing. */
+let generation = 0
 let cancelTimer: (() => void) | undefined
 let watcher: SpawnStream | undefined
 
@@ -63,7 +65,7 @@ async function sweepStale($: EngineInterface, sessionId: string): Promise<void> 
   }
 }
 
-/** The one place a timer is cancelled, a record stored and the next attempt scheduled. */
+/** Stores the record, replaces any scheduled attempt with one at its dueAt, and starts the watcher. */
 async function arm($: EngineInterface, sessionId: string, pending: Pending): Promise<void> {
   cancelTimer?.()
   await $.store.set(pendingKey(sessionId), pending)
@@ -100,6 +102,7 @@ function stopWatcher(): void {
 }
 
 function stop(): void {
+  generation++
   cancelTimer?.()
   cancelTimer = undefined
   stopWatcher()
@@ -131,6 +134,9 @@ async function watch($: EngineInterface, sessionId: string, stream: SpawnStream)
   let wasUnreachable = false
   for await (const chunk of output(stream)) {
     for (const line of chunk.text.split('\n')) {
+      if (watcher !== stream) {
+        return
+      }
       if (line.startsWith('Not Reachable')) {
         wasUnreachable = true
       } else if (line.startsWith('Reachable') && wasUnreachable) {
@@ -138,9 +144,6 @@ async function watch($: EngineInterface, sessionId: string, stream: SpawnStream)
         cancelTimer?.()
         await runAttempt($, sessionId)
       }
-    }
-    if (watcher !== stream) {
-      return
     }
   }
 }
@@ -170,14 +173,31 @@ async function runAttempt($: EngineInterface, sessionId: string): Promise<void> 
     return
   }
   isAttempting = true
+  const run = generation
   try {
-    await probeAndDecide($, sessionId)
+    await probeAndDecide($, sessionId, run)
+  } catch {
+    const pending = await readPending($, sessionId)
+    if (pending !== undefined && run === generation) {
+      await scheduleRetry($, sessionId, pending)
+    }
   } finally {
     isAttempting = false
   }
 }
 
-async function probeAndDecide($: EngineInterface, sessionId: string): Promise<void> {
+/** Arms the attempt after `pending.attempt`, or gives up once the last one has run. */
+async function scheduleRetry($: EngineInterface, sessionId: string, pending: Pending): Promise<void> {
+  if (pending.attempt >= MAX_ATTEMPTS) {
+    $.ui.toast(`API still unreachable after ${MAX_ATTEMPTS} retries. Type continue to resume.`)
+    await clear($, sessionId)
+    return
+  }
+  const attempt = pending.attempt + 1
+  await arm($, sessionId, { ...pending, attempt, dueAt: (await $.clock.now()) + backoff(attempt) })
+}
+
+async function probeAndDecide($: EngineInterface, sessionId: string, run: number): Promise<void> {
   const started = await readPending($, sessionId)
   if (started === undefined) {
     return
@@ -190,9 +210,9 @@ async function probeAndDecide($: EngineInterface, sessionId: string): Promise<vo
     maxTokens: 1,
     timeoutMs: PROBE_TIMEOUT_MS,
   })
-  // The person may have typed a prompt while the probe ran, which clears the record.
+  // The person may have typed a prompt while the probe ran, which clears the record, or the session may have ended.
   const pending = await readPending($, sessionId)
-  if (pending === undefined) {
+  if (pending === undefined || run !== generation) {
     return
   }
   const verdict = judge(probe)
@@ -205,12 +225,12 @@ async function probeAndDecide($: EngineInterface, sessionId: string): Promise<vo
     await clear($, sessionId)
     return
   }
-  const next: Pending = {
-    attempt: n + 1,
-    resumes: pending.resumes + (verdict.kind === 'back' ? 1 : 0),
-    dueAt: (await $.clock.now()) + backoff(n + 1),
-  }
   if (verdict.kind === 'back') {
+    const next: Pending = {
+      attempt: Math.min(n + 1, MAX_ATTEMPTS),
+      resumes: pending.resumes + 1,
+      dueAt: (await $.clock.now()) + backoff(n + 1),
+    }
     // Stored before the submit so a fast resumed turn that clears the key is not undone by a late write.
     await $.store.set(pendingKey(sessionId), next)
     stopWatcher()
@@ -218,12 +238,7 @@ async function probeAndDecide($: EngineInterface, sessionId: string): Promise<vo
     await $.prompt.submit({ text: RESUME_TEXT })
     return
   }
-  if (n >= MAX_ATTEMPTS) {
-    $.ui.toast(`API still unreachable after ${MAX_ATTEMPTS} retries. Type continue to resume.`)
-    await clear($, sessionId)
-    return
-  }
-  await arm($, sessionId, next)
+  await scheduleRetry($, sessionId, { ...pending, attempt: n })
 }
 
 /** The text of the session's last message when it is an API error, else undefined. */
@@ -235,6 +250,7 @@ async function lastApiError($: EngineInterface): Promise<string | undefined> {
 async function onMainLoopError($: EngineInterface, sessionId: string): Promise<void> {
   const errorText = await lastApiError($)
   if (errorText === undefined) {
+    await clear($, sessionId)
     return
   }
   if (LOGIN_PATTERN.test(errorText)) {

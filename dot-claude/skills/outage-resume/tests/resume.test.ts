@@ -150,7 +150,7 @@ for (const reason of ['answer', 'aborted', 'refusal'] as const) {
   test(`a main-loop turn that ends in ${reason} clears the pending resume`, async ($, on) => {
     const world = createWorld(on)
     await $.turn.complete(errorTurn)
-    expect(world.store['pending:s1']).toBeDefined()
+    expect(world.store['pending:s1']).toEqual({ attempt: 1, resumes: 0, dueAt: 30_000 })
 
     await $.turn.complete({
       ...errorTurn,
@@ -180,7 +180,7 @@ test('a subagent answered turn leaves a main-loop pending resume alone', async (
 
   await $.turn.complete({ ...errorTurn, reason: 'answer', agentId: 'agent-1' })
 
-  expect(world.store['pending:s1']).toBeDefined()
+  expect(world.store['pending:s1']).toEqual({ attempt: 1, resumes: 0, dueAt: 30_000 })
 })
 
 test('/clear drops the pending resume', async ($, on) => {
@@ -217,7 +217,7 @@ test('a prompt submitted by the plugin itself keeps the pending resume', async (
     origin: { kind: 'plugin', name: 'outage-resume' },
   })
 
-  expect(world.store['pending:s1']).toBeDefined()
+  expect(world.store['pending:s1']).toEqual({ attempt: 1, resumes: 0, dueAt: 30_000 })
   await world.clock.advance(30_000)
   expect(world.probes).toHaveLength(1)
 })
@@ -246,7 +246,7 @@ test('a restart waits out the rest of a pending delay', async ($, on) => {
   expect(world.probes).toHaveLength(0)
 
   await world.clock.advance(1)
-  expect(world.toasts[0]).toBe('API unreachable. Retry 2 of 20.')
+  expect(world.toasts).toEqual(['API unreachable. Retry 2 of 20.', 'API is back. Resuming.'])
   expect(world.store['pending:s1']).toEqual({ attempt: 3, resumes: 2, dueAt: 40_000 + 120_000 })
 })
 
@@ -301,4 +301,86 @@ test('a person prompt typed while the probe is in flight stops the resume', asyn
   expect(world.submits.map(s => s.text)).toEqual(['never mind'])
   expect(world.toasts).toEqual(['API unreachable. Retry 1 of 20.'])
   expect(world.store['pending:s1']).toBeUndefined()
+})
+
+test('an answer on the last retry keeps the resume count for the next failure', async ($, on) => {
+  const world = createWorld(on, {
+    now: 10_000,
+    store: { 'pending:s1': { attempt: 20, resumes: 2, dueAt: 5_000 } },
+  })
+
+  await $.session.start(sessionStart)
+  await world.clock.settle()
+  expect(world.submits.map(s => s.text)).toEqual(['continue'])
+  expect(world.store['pending:s1']).toEqual({ attempt: 20, resumes: 3, dueAt: 10_000 + 300_000 })
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(60 * 60_000)
+
+  expect(world.toasts.at(-1)).toBe('Resumed 3 times and the turn still failed. Not resuming.')
+  expect(world.probes).toHaveLength(1)
+  expect(world.store['pending:s1']).toBeUndefined()
+})
+
+const notAnOutage = [
+  { role: 'assistant', text: 'Tool failed: permission denied', toolUses: [] },
+  { role: 'user', text: 'API Error: pasted by the person', toolUses: [] },
+] as const
+
+for (const lastMessage of notAnOutage) {
+  test(`an error turn whose last message (${lastMessage.role}) is not an API error drops the pending resume`, async ($, on) => {
+    const world = createWorld(on, {
+      store: { 'pending:s1': { attempt: 2, resumes: 1, dueAt: 90_000 } },
+    })
+    world.lastMessage = { ...lastMessage, toolUses: [] }
+
+    await $.turn.complete(errorTurn)
+    await world.clock.advance(10 * 60_000)
+
+    expect(world.probes).toHaveLength(0)
+    expect(world.spawns).toHaveLength(0)
+    expect(world.store['pending:s1']).toBeUndefined()
+  })
+}
+
+test('a probe that throws backs off to the next attempt and keeps going', async ($, on) => {
+  const world = createWorld(on)
+  world.probeAnswer = call => {
+    if (call === 1) {
+      throw new Error('probe transport broke')
+    }
+    return ANSWERED
+  }
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(30_000)
+
+  expect(world.submits).toHaveLength(0)
+  expect(world.store['pending:s1']).toEqual({ attempt: 2, resumes: 0, dueAt: 90_000 })
+
+  await world.clock.advance(60_000)
+  expect(world.probes).toHaveLength(2)
+  expect(world.submits.map(s => s.text)).toEqual(['continue'])
+  expect(world.toasts).toEqual([
+    'API unreachable. Retry 1 of 20.',
+    'API unreachable. Retry 2 of 20.',
+    'API is back. Resuming.',
+  ])
+})
+
+test('a probe in flight when the session ends neither resumes nor re-arms', async ($, on) => {
+  const world = createWorld(on)
+  world.probeDelayMs = 5_000
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(30_000)
+  expect(world.probes).toHaveLength(1)
+
+  await $.session.end({ reason: 'other', sessionId: 's1' } as Parameters<typeof $.session.end>[0])
+  await world.clock.advance(10 * 60_000)
+
+  expect(world.submits).toHaveLength(0)
+  expect(world.probes).toHaveLength(1)
+  expect(world.spawns).toHaveLength(1)
+  expect(world.store['pending:s1']).toEqual({ attempt: 1, resumes: 0, dueAt: 30_000 })
 })
