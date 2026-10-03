@@ -393,20 +393,50 @@ test('non-interactive sessions pass through', WITH_PROBE, async ($, on) => {
   expect((await watches($)) ?? []).toEqual([])
 })
 
-for (const decision of ['deny', 'ask'] as const) {
-  test(`a status command the rules ${decision} keeps its sleep`, WITH_PROBE, async ($, on) => {
-    const w = world(on)
-    w.checkDecision = decision
-    await $.session.start(START)
+test('a status command the rules deny keeps its sleep', WITH_PROBE, async ($, on) => {
+  const w = world(on)
+  w.checkDecision = 'deny'
+  await $.session.start(START)
 
-    const ran = await $.tool.call({ tool: 'Bash', command: POLL })
+  const ran = await $.tool.call({ tool: 'Bash', command: POLL })
 
-    expect(w.bashCommands).toEqual([POLL])
-    expect(ran.context).toBeUndefined()
-    expect(w.runs).toEqual([])
-    expect((await watches($)) ?? []).toEqual([])
-  })
-}
+  expect(w.bashCommands).toEqual([POLL])
+  expect(ran.context).toBeUndefined()
+  expect(w.runs).toEqual([])
+  expect((await watches($)) ?? []).toEqual([])
+})
+
+test('a status command approved on ask is watched', WITH_PROBE, async ($, on) => {
+  const w = world(on)
+  w.checkDecision = 'ask'
+  await $.session.start(START)
+
+  const ran = await $.tool.call({ tool: 'Bash', command: POLL })
+
+  expect(w.bashCommands).toEqual([ST])
+  expect(ran.context).toContain(
+    `poll-watcher dropped the sleep and ran \`${ST}\` now. It re-runs the command every 240 s and sends you a message when the output changes. Do not poll it again: end your turn or carry on with other work.`,
+  )
+  expect(await watchOne($)).toMatchObject({ command: ST, phase: 'watching' })
+})
+
+// Under ask, an errored result may be the person or the classifier refusing
+// the call, so nothing re-runs it; the model is told no watcher runs.
+test('an errored run on ask arms nothing', WITH_PROBE, async ($, on) => {
+  const w = world(on)
+  w.checkDecision = 'ask'
+  w.bashAnswer = { isError: true, result: 'The user doesn\'t want to proceed with this tool use.' }
+  await $.session.start(START)
+
+  const ran = await $.tool.call({ tool: 'Bash', command: POLL })
+
+  expect(w.bashCommands).toEqual([ST])
+  expect(ran.context).toContain(
+    'poll-watcher could not arm: the command needed approval and did not succeed, so nothing re-runs it.',
+  )
+  expect(w.runs).toEqual([])
+  expect((await watches($)) ?? []).toEqual([])
+})
 
 test('a deny arms nothing', WITH_PROBE, async ($, on) => {
   const w = world(on)

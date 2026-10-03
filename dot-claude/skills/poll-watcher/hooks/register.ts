@@ -20,6 +20,7 @@ const STOP_AFTER_MS = 3_600_000
 const OUTPUT_LIMIT = 4000
 const WATCH_LIMIT = 20
 const STATUS_LIMIT = 120
+const NOT_APPROVED = 'poll-watcher could not arm: the command needed approval and did not succeed, so nothing re-runs it.'
 
 // Tokens that move on every run without the status moving: ISO timestamps,
 // clock times, "N minutes ago" and elapsed durations such as 1m23s.
@@ -225,14 +226,18 @@ export const register: Register = on => {
     const isWatchable = isInteractive && e.agentId === undefined && e.run_in_background !== true
     const poll = isWatchable ? parsePoll(e.command) : undefined
     if (!poll) return next(e)
-    // Ticks re-run the command outside Bash permissions, so only a command
-    // the rules already allow is watched. One that would ask or be denied
-    // goes through untouched, sleep and all.
+    // Ticks re-run the command outside Bash permissions, so a command the
+    // rules deny goes through untouched, sleep and all. One that asks is put
+    // to the person or classifier without its sleep, and watched only once
+    // that run succeeded: an errored result there may be the refusal.
     const { decision } = await $.tool.check({ tool: 'Bash', input: { command: poll.command } })
-    if (decision !== 'allow') return next(e)
+    if (decision === 'deny') return next(e)
 
     const ran = await next({ ...e, command: poll.command })
     if (ran.deny !== undefined || next.signal.aborted || didNotFinish(ran.result)) return ran
+    if (decision === 'ask' && ran.isError === true) {
+      return { ...ran, context: [...(ran.context ?? []), NOT_APPROVED] }
+    }
     const cwd = await $.session.cwd()
     // The baseline is a second run, not ran's stdout, so every compared value
     // comes from the same runner. One that cannot run arms nothing, and the
