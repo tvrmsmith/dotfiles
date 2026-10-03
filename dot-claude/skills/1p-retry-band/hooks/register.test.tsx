@@ -1,0 +1,477 @@
+import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
+import type { On } from 'claude-code'
+
+const PLUGIN = '1p-retry-band'
+const BANNER = 'gh: needs write access, asking 1Password to approve:'
+
+const COMPOUND = 'cd ~/dev/personal/dotfiles && gh pr merge --auto --squash 12'
+const ERRORED = [
+  BANNER,
+  '    gh pr merge --auto --squash 12',
+  '[ERROR] 2026/10/02 09:14:03 authorization timeout',
+  'gh: could not read the write token for my.1password.com from 1Password.',
+].join('\n')
+
+const bash = { stdout: '', stderr: '', interrupted: false }
+const SURFACES = ['terminal', 'desktop'] as const
+
+type Answer = { text: string; isError?: true } | { deny: string } | { throws: string }
+
+// The world beneath the plugin: the engine's Bash answers from `bashAnswers` in
+// order (the last repeats), its probe answers `probe`, and the test records what
+// the plugin sent to Bash, the toast and the session.
+const engine = (on: On, bashAnswers: Answer[]) => {
+  const world = {
+    commands: [] as string[],
+    timeouts: [] as (number | undefined)[],
+    toasts: [] as string[],
+    probeArgvs: [] as (readonly string[])[],
+    probe: (): { exitCode: number } => ({ exitCode: 2 }),
+  }
+  on('tool.call', { tool: 'Bash' }, (_$, e) => {
+    const answer = bashAnswers[Math.min(world.commands.length, bashAnswers.length - 1)]!
+    world.commands.push(e.command)
+    world.timeouts.push(e.timeout)
+    if ('throws' in answer) throw new Error(answer.throws)
+    return 'deny' in answer ? answer : { result: bash, ...answer }
+  })
+  on('process.run', (_$, e) => {
+    world.probeArgvs.push(e.argv)
+    return {
+      value: { stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false, ...world.probe() },
+    }
+  })
+  on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'Box', props: {}, children: [] }))
+  on('ui.toast', (_$, e) => {
+    world.toasts.push(e.text)
+    return { value: undefined }
+  })
+  return Object.assign(world, { clock: mock.clock(on) })
+}
+
+type Surface = (typeof SURFACES)[number]
+
+const mountBand = ($: Engine, surface: Surface) =>
+  $.ui.mount({
+    plugin: PLUGIN,
+    surface,
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 20, columns: 100 } as never,
+  })
+
+test('a timed-out gh shows the band', async ($, on) => {
+  engine(on, [{ text: ERRORED, isError: true }])
+
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+
+  for (const surface of SURFACES) {
+    const ui = await mountBand($, surface)
+    expect((await ui.find({ key: 'waiting' }))?.text).toBe(
+      'gh is waiting on 1Password: gh pr merge --auto --squash 12',
+    )
+    expect((await ui.find({ key: 'runs' }))?.text).toBe(`r re-runs: ${COMPOUND}`)
+    expect(await ui.find({ key: 'retry' })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+const SUCCEEDED = [
+  BANNER,
+  '    gh pr merge --auto --squash 12',
+  '✓ Pull request #12 will be automatically merged via squash when all requirements are met',
+].join('\n')
+
+const TWO_BANNERS = [
+  BANNER,
+  '    gh label create triage',
+  BANNER,
+  '    gh pr merge --auto 7',
+  'gh: could not read the write token for my.1password.com from 1Password.',
+].join('\n')
+
+const SINGLE_7 = [BANNER, '    gh pr merge --auto 7', 'gh: could not read the write token for my.1password.com from 1Password.'].join('\n')
+
+test('the plugin hands the model the tool result unchanged', async ($, on) => {
+  engine(on, [{ text: ERRORED, isError: true }])
+
+  const ran = await $.tool.call({ tool: 'Bash', command: COMPOUND })
+
+  expect(ran.text).toBe(ERRORED)
+  expect(ran.isError).toBe(true)
+})
+
+test('an errored result without the banner shows no band', async ($, on) => {
+  engine(on, [{ text: 'curl: (28) Operation timed out after 5000 ms', isError: true }])
+
+  await $.tool.call({ tool: 'Bash', command: 'curl -m 5 https://example.com' })
+
+  for (const surface of SURFACES) {
+    const ui = await mountBand($, surface)
+    expect(await ui.find({ key: 'retry' })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('an errored result whose banner is followed by gh output and a failing later step shows no band', async ($, on) => {
+  const approvedThenFailed = [
+    BANNER,
+    '    gh issue create -t x -b y',
+    'https://github.com/tvrmsmith/dotfiles/issues/99',
+    '  ● sync › pulls the latest  Exceeded timeout of 5000 ms for a test.',
+    '[ERROR] Tests run: 3, Failures: 1',
+  ].join('\n')
+  engine(on, [{ text: approvedThenFailed, isError: true }])
+
+  await $.tool.call({ tool: 'Bash', command: 'gh issue create -t x -b y && npm test' })
+
+  for (const surface of SURFACES) {
+    const ui = await mountBand($, surface)
+    expect(await ui.find({ key: 'retry' })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('an errored result quoting the banner mid-line shows no band', async ($, on) => {
+  const shimSource = [
+    'echo "gh: needs write access, asking 1Password to approve:" >&2',
+    'echo "    gh $*" >&2',
+  ].join('\n')
+  engine(on, [{ text: shimSource, isError: true }])
+
+  await $.tool.call({ tool: 'Bash', command: 'sed -n 489,490p dot-local/bin/gh && false' })
+
+  for (const surface of SURFACES) {
+    const ui = await mountBand($, surface)
+    expect(await ui.find({ key: 'retry' })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+const SIGNALS = {
+  'a call cut off while op waited': [],
+  "op's own error": ['[ERROR] 2026/10/02 09:14:03 authorization timeout'],
+  "the shim's write-token failure": ['gh: could not read the write token for my.1password.com from 1Password.'],
+  "the Bash tool's timeout notice": ['Command timed out after 2m 0s'],
+}
+
+for (const [signal, after] of Object.entries(SIGNALS)) {
+  test(`${signal} after the gh line shows the band`, async ($, on) => {
+    engine(on, [{ text: [BANNER, '    gh pr merge --auto 7', ...after].join('\n'), isError: true }])
+
+    await $.tool.call({ tool: 'Bash', command: 'gh pr merge --auto 7' })
+
+    for (const surface of SURFACES) {
+      const ui = await mountBand($, surface)
+      expect((await ui.find({ key: 'waiting' }))?.text).toBe('gh is waiting on 1Password: gh pr merge --auto 7')
+      await ui.unmount()
+    }
+  })
+}
+
+test('a successful result carrying the banner shows no band', async ($, on) => {
+  engine(on, [{ text: ERRORED }])
+
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+
+  for (const surface of SURFACES) {
+    const ui = await mountBand($, surface)
+    expect(await ui.find({ key: 'retry' })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('with two banners the band names the last gh line', async ($, on) => {
+  engine(on, [{ text: TWO_BANNERS, isError: true }])
+
+  await $.tool.call({ tool: 'Bash', command: 'gh label create triage && gh pr merge --auto 7' })
+
+  for (const surface of SURFACES) {
+    const ui = await mountBand($, surface)
+    expect((await ui.find({ key: 'waiting' }))?.text).toBe('gh is waiting on 1Password: gh pr merge --auto 7')
+    await ui.unmount()
+  }
+})
+
+test('no runs line when the command is the gh line', async ($, on) => {
+  engine(on, [{ text: SINGLE_7, isError: true }])
+
+  await $.tool.call({ tool: 'Bash', command: 'gh pr merge --auto 7' })
+
+  for (const surface of SURFACES) {
+    const ui = await mountBand($, surface)
+    expect(await ui.find({ key: 'waiting' })).toBeDefined()
+    expect(await ui.find({ key: 'runs' })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+// Each body runs once per surface, in a fresh test.
+const onEachSurface = (name: string, body: ($: Engine, on: On, surface: Surface) => Promise<void>) => {
+  for (const surface of SURFACES) {
+    test(`${name} (${surface})`, ($, on) => body($, on, surface))
+  }
+}
+
+// The kit cannot show the session note a retry appends: a plugin's own
+// $.session.append never reaches the test's (or an inline plugin's)
+// session.append hook, and the kit's bottom rejects it. This test holds what
+// the kit can show, that the press settles and the band follows the outcome
+// even though the append rejects.
+onEachSurface('retry re-runs the whole command and clears the band on success', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }, { text: SUCCEEDED }])
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  const ui = await mountBand($, surface)
+
+  await ui.press({ key: 'retry' })
+
+  expect(world.commands[1]).toBe(COMPOUND)
+  expect(await ui.find({ key: 'retry' })).toBeUndefined()
+})
+
+onEachSurface('a retry that errors again keeps the band and retries again', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }])
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  const ui = await mountBand($, surface)
+
+  await ui.press({ key: 'retry' })
+  expect(await ui.find({ key: 'retry' })).toBeDefined()
+  await ui.press({ key: 'retry' })
+
+  expect(world.commands).toEqual([COMPOUND, COMPOUND, COMPOUND])
+})
+
+onEachSurface('a denied retry keeps the band and retries again', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }, { deny: 'denied' }])
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  const ui = await mountBand($, surface)
+
+  await ui.press({ key: 'retry' })
+  expect(await ui.find({ key: 'retry' })).toBeDefined()
+  await ui.press({ key: 'retry' })
+
+  expect(world.commands).toEqual([COMPOUND, COMPOUND, COMPOUND])
+})
+
+const BACKGROUNDED =
+  'Command did not complete within its 600s timeout and was moved to the background (ID: b1). Output is being written to: /tmp/tasks/b1.output'
+
+onEachSurface('a retry moved to the background keeps the band and retries again', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }, { text: BACKGROUNDED }])
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  const ui = await mountBand($, surface)
+
+  await ui.press({ key: 'retry' })
+  expect(await ui.find({ key: 'retry' })).toBeDefined()
+  await ui.press({ key: 'retry' })
+
+  expect(world.commands).toEqual([COMPOUND, COMPOUND, COMPOUND])
+})
+
+onEachSurface('a retry gives the person ten minutes to approve', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }, { text: SUCCEEDED }])
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  const ui = await mountBand($, surface)
+
+  await ui.press({ key: 'retry' })
+
+  expect(world.timeouts[1]).toBe(600_000)
+})
+
+onEachSurface('a retry whose call throws leaves the band able to retry again', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }, { throws: 'tool call failed' }, { text: SUCCEEDED }])
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  const ui = await mountBand($, surface)
+
+  await ui.press({ key: 'retry' }).catch(() => undefined)
+  await ui.press({ key: 'retry' })
+
+  expect(world.commands).toEqual([COMPOUND, COMPOUND, COMPOUND])
+  expect(await ui.find({ key: 'retry' })).toBeUndefined()
+})
+
+onEachSurface('dismiss clears the band', async ($, on, surface) => {
+  engine(on, [{ text: ERRORED, isError: true }])
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  const ui = await mountBand($, surface)
+
+  await ui.press({ key: 'dismiss' })
+
+  expect(await ui.find({ key: 'retry' })).toBeUndefined()
+})
+
+onEachSurface('the model retrying the same command successfully clears the band', async ($, on, surface) => {
+  engine(on, [{ text: ERRORED, isError: true }, { text: SUCCEEDED }])
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  const ui = await mountBand($, surface)
+
+  expect(await ui.find({ key: 'retry' })).toBeUndefined()
+})
+
+const agentText = async (ui: Awaited<ReturnType<typeof mountBand>>) => (await ui.find({ key: 'agent' }))?.text
+const GH_LINE = 'gh pr merge --auto --squash 12'
+
+onEachSurface('the probe reads the agent and toasts once when it starts answering', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }])
+  world.probe = () => ({ exitCode: 2 })
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  await world.clock.settle()
+  const ui = await mountBand($, surface)
+  expect(await agentText(ui)).toBe('1Password agent: not answering')
+
+  world.probe = () => ({ exitCode: 0 })
+  await world.clock.advance(15000)
+
+  expect(await agentText(ui)).toBe('1Password agent: answers')
+  expect(world.toasts).toEqual([`1Password answers again. Press r on the band to retry: ${GH_LINE}`])
+  expect(world.probeArgvs.every(argv => argv.join(' ') === 'ssh-add -l')).toBe(true)
+})
+
+onEachSurface('exit 1 reads as answering and a rejecting probe as not answering', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }])
+  world.probe = () => ({ exitCode: 1 })
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  await world.clock.settle()
+  const ui = await mountBand($, surface)
+  expect(await agentText(ui)).toBe('1Password agent: answers')
+
+  world.probe = () => {
+    throw new Error('spawn failed')
+  }
+  await world.clock.advance(15000)
+
+  expect(await agentText(ui)).toBe('1Password agent: not answering')
+})
+
+onEachSurface('a first probe that answers at once fires no toast', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }])
+  world.probe = () => ({ exitCode: 0 })
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  await world.clock.settle()
+  await world.clock.advance(15000)
+  const ui = await mountBand($, surface)
+
+  expect(await agentText(ui)).toBe('1Password agent: answers')
+  expect(world.toasts).toEqual([])
+})
+
+onEachSurface('the probe stops once the band clears', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }])
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  await world.clock.settle()
+  const ui = await mountBand($, surface)
+  await ui.press({ key: 'dismiss' })
+  const before = world.probeArgvs.length
+  expect(before).toBeGreaterThan(0)
+
+  await world.clock.advance(30000)
+
+  expect(world.probeArgvs.length).toBe(before)
+})
+
+onEachSurface('a pending band draws nothing while a survey is showing', async ($, on, surface) => {
+  engine(on, [{ text: ERRORED, isError: true }])
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  const ui = await $.ui.mount({
+    plugin: PLUGIN,
+    surface,
+    component: 'AbovePrompt',
+    props: { hasSurvey: true, isWorking: false, maxRows: 20, columns: 100 } as never,
+  })
+
+  expect(await ui.find({ key: 'retry' })).toBeUndefined()
+})
+
+onEachSurface('two presses of retry started together re-run the command once', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }, { text: SUCCEEDED }])
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  const ui = await mountBand($, surface)
+
+  await Promise.all([ui.press({ key: 'retry' }), ui.press({ key: 'retry' })])
+
+  expect(world.commands).toEqual([COMPOUND, COMPOUND])
+})
+
+onEachSurface('session start re-runs the probe for a band already showing', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }])
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  world.probe = () => ({ exitCode: 2 })
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  await world.clock.settle()
+  const ui = await mountBand($, surface)
+  expect(await agentText(ui)).toBe('1Password agent: not answering')
+  const before = world.probeArgvs.length
+
+  world.probe = () => ({ exitCode: 0 })
+  await $.session.start({ cwd: '/', surface, isInteractive: true })
+  await world.clock.settle()
+
+  expect(world.probeArgvs.length).toBeGreaterThan(before)
+  expect(await agentText(ui)).toBe('1Password agent: answers')
+})
+
+// The shim's current output: banner, gh line, then the directory it ran in.
+const DIR = '/Users/me/dev/personal/dotfiles'
+const DIR_LINE = `    in ${DIR}`
+const MERGE_LINE = `    ${GH_LINE}`
+const RETRY = `cd ${DIR} && ${GH_LINE}`
+const COULD_NOT_READ = 'gh: could not read the write token for my.1password.com from 1Password.'
+const FROM_ANOTHER_DIR = 'cd ~/x && gh pr merge --auto --squash 12; echo after'
+const withDir = (...after: string[]) => [BANNER, MERGE_LINE, DIR_LINE, ...after].join('\n')
+
+onEachSurface('a failure after the three shim lines shows the band and retries in the shim directory', async ($, on, surface) => {
+  const world = engine(on, [{ text: withDir(COULD_NOT_READ), isError: true }, { text: withDir('done') }])
+  await $.tool.call({ tool: 'Bash', command: FROM_ANOTHER_DIR })
+  const ui = await mountBand($, surface)
+
+  expect((await ui.find({ key: 'waiting' }))?.text).toBe(`gh is waiting on 1Password: ${GH_LINE}`)
+  expect((await ui.find({ key: 'runs' }))?.text).toBe(`r re-runs: ${RETRY}`)
+
+  await ui.press({ key: 'retry' })
+
+  expect(world.commands[1]).toBe(RETRY)
+})
+
+onEachSurface("the shim's own approval timeout line arms the band", async ($, on, surface) => {
+  engine(on, [{ text: withDir('gh: 1Password approval timed out after 100s.'), isError: true }])
+  await $.tool.call({ tool: 'Bash', command: FROM_ANOTHER_DIR })
+  const ui = await mountBand($, surface)
+
+  expect((await ui.find({ key: 'waiting' }))?.text).toBe(`gh is waiting on 1Password: ${GH_LINE}`)
+})
+
+const QUOTED_LINE = "    gh issue comment 5 --body $'line one\\nmentions timeout'"
+const QUOTED_GH = QUOTED_LINE.trim()
+
+onEachSurface('a quoted multi-line body with gh output and a later failure shows no band', async ($, on, surface) => {
+  const text = [
+    BANNER,
+    QUOTED_LINE,
+    DIR_LINE,
+    'https://github.com/o/r/issues/5#issuecomment-1',
+    'npm ERR! Exceeded timeout of 5000 ms',
+  ].join('\n')
+  engine(on, [{ text, isError: true }])
+  await $.tool.call({ tool: 'Bash', command: 'gh issue comment 5 && npm test' })
+  const ui = await mountBand($, surface)
+
+  expect(await ui.find({ key: 'retry' })).toBeUndefined()
+})
+
+onEachSurface('a quoted multi-line body failing on the token shows its gh line verbatim', async ($, on, surface) => {
+  engine(on, [{ text: [BANNER, QUOTED_LINE, DIR_LINE, COULD_NOT_READ].join('\n'), isError: true }])
+  await $.tool.call({ tool: 'Bash', command: 'gh issue comment 5' })
+  const ui = await mountBand($, surface)
+
+  expect((await ui.find({ key: 'waiting' }))?.text).toBe(`gh is waiting on 1Password: ${QUOTED_GH}`)
+})
+
+onEachSurface('a success carrying the same gh line and directory clears the band', async ($, on, surface) => {
+  engine(on, [{ text: withDir(COULD_NOT_READ), isError: true }, { text: withDir('done') }])
+  await $.tool.call({ tool: 'Bash', command: FROM_ANOTHER_DIR })
+  await $.tool.call({ tool: 'Bash', command: 'gh pr merge --auto --squash 12' })
+  const ui = await mountBand($, surface)
+
+  expect(await ui.find({ key: 'retry' })).toBeUndefined()
+})

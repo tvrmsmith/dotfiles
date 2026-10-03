@@ -1,0 +1,7 @@
+{
+  "name": "1p-retry-band",
+  "version": "0.1.0",
+  "author": { "name": "Trevor Smith" },
+  "description": "A band above the prompt when a gh call failed or timed out on 1Password approval, with a one-key retry.",
+  "types": "./types/index.d.ts"
+}

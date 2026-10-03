@@ -484,13 +484,59 @@ mkdir -p "$(dirname "$log")" 2>/dev/null || true
 		"$(date '+%Y-%m-%d %H:%M:%S')" "$PPID" "${caller##*/}" "$PWD" "$*" >> "$log"
 } 2>/dev/null || true
 
+# dot-claude/skills/1p-retry-band reads this output, so keep its shape. Three
+# stderr lines, each after the one before:
+#
+#   gh: needs write access, asking 1Password to approve:
+#       gh <args, shell-quoted on ONE line, so `eval` of it reproduces them>
+#       in <$PWD, %q-quoted>
+#
+# The band takes the banner as a whole line, the gh line after it, and the
+# `    in ` line after that as the directory to retry in. It arms when the first
+# line after those is missing, "gh: could not read the write token" or "gh:
+# 1Password approval timed out" (both below), op's [ERROR] line, or the Bash
+# tool's timeout notice. Reword any of them and its retry band goes dark.
+#
+# The approval wait is capped at GH_SHIM_APPROVAL_TIMEOUT seconds (default 100),
+# under the Bash tool's 2-minute limit. Past that limit the tool moves the call
+# to the background and nothing prints; the cap fails in the foreground instead,
+# so the band can arm. macOS has no timeout(1), hence the perl watchdog. It
+# holds the alarm itself and kills op, because op is a Go binary and Go ignores
+# a SIGALRM it never asked for. The `op plugin run` fallback is not capped.
 echo "gh: needs write access, asking 1Password to approve:" >&2
-echo "    gh $*" >&2
+printf '    gh' >&2
+printf ' %q' "$@" >&2
+printf '\n' >&2
+printf '    in %q\n' "$PWD" >&2
 
 write_account="" write_ref=""
 if write_credential "$(gh_owner "$@")"; then
-	if token="$(op read --account "$write_account" --no-newline "$write_ref")" \
-		&& [ -n "$token" ]; then
+	cap="${GH_SHIM_APPROVAL_TIMEOUT:-100}"
+	status=0
+	token="$(perl -MPOSIX=:sys_wait_h -e '
+		my $cap = shift;
+		defined(my $pid = fork) or die "gh: fork failed: $!\n";
+		if (!$pid) { exec { $ARGV[0] } @ARGV; exit 127 }
+		$SIG{ALRM} = sub {
+			kill TERM => $pid;
+			for (1 .. 10) {
+				exit 142 if waitpid($pid, WNOHANG);
+				select undef, undef, undef, 0.1;
+			}
+			kill KILL => $pid;
+			waitpid $pid, 0;
+			exit 142;
+		};
+		alarm $cap;
+		waitpid $pid, 0;
+		exit($? & 127 ? 128 + ($? & 127) : $? >> 8);
+	' "$cap" op read --account "$write_account" --no-newline "$write_ref")" || status=$?
+	# The watchdog exits 142 when the cap passes.
+	if [ "$status" -eq 142 ]; then
+		echo "gh: 1Password approval timed out after ${cap}s." >&2
+		exit 1
+	fi
+	if [ "$status" -eq 0 ] && [ -n "$token" ]; then
 		# PATH stays whole here, unlike the fallback below. $stripped exists only
 		# so `op plugin run` resolves `gh` to the real binary instead of recursing
 		# into this shim; running the real binary by absolute path needs no such

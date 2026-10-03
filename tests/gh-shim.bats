@@ -497,3 +497,69 @@ MAP
 
   rm -rf "$TMP"
 }
+
+# The retry band in dot-claude/skills/1p-retry-band reads these three stderr
+# lines: the banner, the gh call on one line, and the directory it ran in.
+write_fixture() {
+  TMP="$(mktemp -d)"
+  BIN="$TMP/bin"
+  mkdir -p "$BIN" "$TMP/config/gh-shim"
+  printf '#!/bin/bash\nexit 1\n' > "$BIN/security"
+  printf '#!/bin/bash\necho "GH RAN"\n' > "$BIN/gh"
+  printf '#!/bin/bash\n[ "$1" = read ] && echo tok\n' > "$BIN/op"
+  chmod +x "$BIN"/*
+  printf 'mine my.example.com op://vault-a/item-a/token\n' \
+    > "$TMP/config/gh-shim/write-tokens"
+  cd "$TMP" || return
+}
+
+run_shim() {
+  XDG_STATE_HOME="$TMP/state" XDG_CONFIG_HOME="$TMP/config" \
+    PATH="$BIN:$PATH" bash "$SHIM" "$@" 2>"$TMP/stderr"
+}
+
+@test "a write names the gh call and its directory on the two lines after the banner" {
+  write_fixture
+  run_shim pr merge 12 -R mine/repo >/dev/null
+  equals "$(sed -n 1p "$TMP/stderr")" "gh: needs write access, asking 1Password to approve:"
+  equals "$(sed -n 2p "$TMP/stderr")" "    gh pr merge 12 -R mine/repo"
+  equals "$(sed -n 3p "$TMP/stderr")" "    in $(printf %q "$TMP")"
+  rm -rf "$TMP"
+}
+
+@test "a multi-line argument stays on one shell-quoted gh line" {
+  write_fixture
+  run_shim issue comment 5 --body $'line one\nline two' -R mine/repo >/dev/null
+  line="$(sed -n 2p "$TMP/stderr")"
+  equals "$(sed -n 3p "$TMP/stderr" | cut -c1-7)" "    in "
+  eval "set -- ${line#    gh }"
+  equals "$#" 7
+  equals "$4" "--body"
+  equals "$5" $'line one\nline two'
+  rm -rf "$TMP"
+}
+
+@test "a 1Password wait past the cap fails in the foreground and never runs gh" {
+  write_fixture
+  printf '#!/bin/bash\ntrap "" ALRM\nexec sleep 10\n' > "$BIN/op"
+  start=$SECONDS
+  status=0
+  out="$(GH_SHIM_APPROVAL_TIMEOUT=1 run_shim pr merge 12 -R mine/repo 2>&1)" || status=$?
+  [ $((SECONDS - start)) -lt 5 ] || { echo "took $((SECONDS - start))s" >&2; exit 1; }
+  equals "$status" 1
+  contains "$(cat "$TMP/stderr")" "gh: 1Password approval timed out after 1s."
+  lacks "$out" "GH RAN"
+  rm -rf "$TMP"
+}
+
+@test "a 1Password refusal under the cap prints the write-token failure and never runs gh" {
+  write_fixture
+  printf '#!/bin/bash\necho "[ERROR] authorization prompt dismissed" >&2\nexit 1\n' > "$BIN/op"
+  status=0
+  out="$(run_shim pr merge 12 -R mine/repo 2>&1)" || status=$?
+  equals "$status" 1
+  equals "$(tail -1 "$TMP/stderr")" "gh: could not read the write token for my.example.com from 1Password."
+  lacks "$(cat "$TMP/stderr")" "approval timed out"
+  lacks "$out" "GH RAN"
+  rm -rf "$TMP"
+}
