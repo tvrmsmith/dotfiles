@@ -6,9 +6,16 @@ import type { Pending } from '../types'
 const BANNER = 'gh: needs write access, asking 1Password to approve:'
 const pending = atom({ plugin: '1p-retry-band', key: 'pending' } as const, null)
 
-const lastGhLine = (text: string): string | undefined => {
-  const after = text.slice(text.lastIndexOf(BANNER) + BANNER.length)
-  return after.split('\n').find(line => line.trim() !== '')?.trim()
+// The shim's own failure line, op's error line, or a call cut off while waiting.
+const ONE_PASSWORD_FAILED = /could not read the write token|\[ERROR\]|timed out|timeout/i
+
+// The gh line after the last banner, and whether the text below it shows 1Password failing.
+const afterLastBanner = (text: string) => {
+  const [ghLine, ...rest] = text
+    .slice(text.lastIndexOf(BANNER) + BANNER.length)
+    .split('\n')
+    .filter(line => line.trim() !== '')
+  return { ghLine: ghLine?.trim(), isFailed: ONE_PASSWORD_FAILED.test(rest.join('\n')) }
 }
 
 const PROBE_EVERY_MS = 15_000
@@ -24,32 +31,36 @@ const probeAgent = async ($: Engine): Promise<Pending['agent']> => {
 }
 
 const retry = async ($: Engine) => {
-  const shown = await read($, pending)
-  if (!shown) return
-  const command = shown.command
-
   // Claim the press inside the write, so a double press cannot both pass.
+  let command = ''
   let isClaimed = false
   await update($, pending, (p: Pending | null) => {
     isClaimed = p !== null && !p.isRetrying
-    return p !== null && isClaimed ? { ...p, isRetrying: true } : p
+    if (p === null || !isClaimed) return p
+    command = p.command
+    return { ...p, isRetrying: true }
   })
   if (!isClaimed) return
 
-  const res = await $.tool.call({
-    tool: 'Bash',
-    command,
-    consent: 'The user pressed "Retry" on the 1Password retry band',
-  })
-  const isOk = res.deny === undefined && res.isError !== true
-
-  await update($, pending, (p: Pending | null) => {
-    if (p === null || p.command !== command) return p
-    return isOk ? null : { ...p, isRetrying: false }
-  })
+  let isOk = false
+  let output = ''
+  try {
+    const res = await $.tool.call({
+      tool: 'Bash',
+      command,
+      consent: 'The user pressed "Retry" on the 1Password retry band',
+    })
+    isOk = res.deny === undefined && res.isError !== true
+    output = (res.deny ?? res.text ?? '').slice(0, 2000)
+  } finally {
+    await update($, pending, (p: Pending | null) => {
+      if (p === null || p.command !== command) return p
+      return isOk ? null : { ...p, isRetrying: false }
+    })
+  }
 
   const outcome = isOk ? 'It succeeded.' : 'It failed.'
-  const text = `The person re-ran \`${command}\` from the 1Password retry band. ${outcome}\n\n${(res.deny ?? res.text ?? '').slice(0, 2000)}`
+  const text = `The person re-ran \`${command}\` from the 1Password retry band. ${outcome}\n\n${output}`
   await $.session.append({ message: { type: 'user', content: [{ type: 'text', text }] } }).catch(() => undefined)
 }
 
@@ -98,19 +109,18 @@ export const register: Register = on => {
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const ran = await next(e)
 
-    if (ran.deny === undefined && ran.text?.includes(BANNER)) {
-      if (ran.isError === true) {
-        const timedOut: Pending = {
-          command: e.command,
-          ghLine: lastGhLine(ran.text) ?? e.command,
-          agent: 'checking',
-          isRetrying: false,
-        }
-        await update($, pending, () => timedOut).catch(() => undefined)
-        startProbe($)
-      } else {
-        await update($, pending, (p: Pending | null) => (p?.command === e.command ? null : p)).catch(() => undefined)
-      }
+    if (ran.deny !== undefined || !ran.text?.includes(BANNER)) return ran
+
+    if (ran.isError !== true) {
+      await update($, pending, (p: Pending | null) => (p?.command === e.command ? null : p)).catch(() => undefined)
+      return ran
+    }
+
+    const { ghLine, isFailed } = afterLastBanner(ran.text)
+    if (isFailed) {
+      const stuck: Pending = { command: e.command, ghLine: ghLine ?? e.command, agent: 'checking', isRetrying: false }
+      await update($, pending, () => stuck).catch(() => undefined)
+      startProbe($)
     }
 
     return ran
@@ -132,7 +142,7 @@ export const register: Register = on => {
         </Box>
         {shown.command !== shown.ghLine && (
           <Box key="runs">
-            <Text>r re-runs: {shown.command.slice(0, 120)}</Text>
+            <Text>r re-runs: {shown.command}</Text>
           </Box>
         )}
         <Box key="agent">

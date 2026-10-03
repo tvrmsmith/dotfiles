@@ -16,7 +16,7 @@ const ERRORED = [
 const bash = { stdout: '', stderr: '', interrupted: false }
 const SURFACES = ['terminal', 'desktop'] as const
 
-type Answer = { text: string; isError?: true } | { deny: string }
+type Answer = { text: string; isError?: true } | { deny: string } | { throws: string }
 
 // The world beneath the plugin: the engine's Bash answers from `bashAnswers` in
 // order (the last repeats), its probe answers `probe`, and the test records what
@@ -25,17 +25,17 @@ const engine = (on: On, bashAnswers: Answer[]) => {
   const world = {
     commands: [] as string[],
     toasts: [] as string[],
-    probes: 0,
+    probeArgvs: [] as (readonly string[])[],
     probe: (): { exitCode: number } => ({ exitCode: 2 }),
   }
   on('tool.call', { tool: 'Bash' }, (_$, e) => {
     const answer = bashAnswers[Math.min(world.commands.length, bashAnswers.length - 1)]!
     world.commands.push(e.command)
+    if ('throws' in answer) throw new Error(answer.throws)
     return 'deny' in answer ? answer : { result: bash, ...answer }
   })
   on('process.run', (_$, e) => {
-    world.probes += 1
-    expect(e.argv).toEqual(['ssh-add', '-l'])
+    world.probeArgvs.push(e.argv)
     return {
       value: { stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false, ...world.probe() },
     }
@@ -111,6 +111,24 @@ test('an errored result without the banner shows no band', async ($, on) => {
   }
 })
 
+test('an errored result whose banner is followed by gh output and a failing later step shows no band', async ($, on) => {
+  const approvedThenFailed = [
+    BANNER,
+    '    gh issue create -t x -b y',
+    'https://github.com/tvrmsmith/dotfiles/issues/99',
+    'npm ERR! Test failed.  See above for more details.',
+  ].join('\n')
+  engine(on, [{ text: approvedThenFailed, isError: true }])
+
+  await $.tool.call({ tool: 'Bash', command: 'gh issue create -t x -b y && npm test' })
+
+  for (const surface of SURFACES) {
+    const ui = await mountBand($, surface)
+    expect(await ui.find({ key: 'retry' })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
 test('a successful result carrying the banner shows no band', async ($, on) => {
   engine(on, [{ text: SUCCEEDED }])
 
@@ -155,6 +173,11 @@ const onEachSurface = (name: string, body: ($: Engine, on: On, surface: Surface)
   }
 }
 
+// The kit cannot show the session note a retry appends: a plugin's own
+// $.session.append never reaches the test's (or an inline plugin's)
+// session.append hook, and the kit's bottom rejects it. This test holds what
+// the kit can show, that the press settles and the band follows the outcome
+// even though the append rejects.
 onEachSurface('retry re-runs the whole command and clears the band on success', async ($, on, surface) => {
   const world = engine(on, [{ text: ERRORED, isError: true }, { text: SUCCEEDED }])
   await $.tool.call({ tool: 'Bash', command: COMPOUND })
@@ -166,39 +189,40 @@ onEachSurface('retry re-runs the whole command and clears the band on success', 
   expect(await ui.find({ key: 'retry' })).toBeUndefined()
 })
 
-// Scenarios 8 and 9 also assert the row the plugin appends to the session. The
-// kit cannot show it: a plugin's own $.session.append never reaches the test's
-// (or an inline plugin's) session.append hook, and the kit's bottom rejects it.
-// These tests hold what the kit can show, that the press settles and the band
-// follows the outcome even though the append rejects.
-onEachSurface('a successful retry settles though the session note cannot be stored', async ($, on, surface) => {
-  engine(on, [{ text: ERRORED, isError: true }, { text: SUCCEEDED }])
+onEachSurface('a retry that errors again keeps the band and retries again', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }])
   await $.tool.call({ tool: 'Bash', command: COMPOUND })
   const ui = await mountBand($, surface)
 
   await ui.press({ key: 'retry' })
+  expect(await ui.find({ key: 'retry' })).toBeDefined()
+  await ui.press({ key: 'retry' })
 
+  expect(world.commands).toEqual([COMPOUND, COMPOUND, COMPOUND])
+})
+
+onEachSurface('a denied retry keeps the band and retries again', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }, { deny: 'denied' }])
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  const ui = await mountBand($, surface)
+
+  await ui.press({ key: 'retry' })
+  expect(await ui.find({ key: 'retry' })).toBeDefined()
+  await ui.press({ key: 'retry' })
+
+  expect(world.commands).toEqual([COMPOUND, COMPOUND, COMPOUND])
+})
+
+onEachSurface('a retry whose call throws leaves the band able to retry again', async ($, on, surface) => {
+  const world = engine(on, [{ text: ERRORED, isError: true }, { throws: 'tool call failed' }, { text: SUCCEEDED }])
+  await $.tool.call({ tool: 'Bash', command: COMPOUND })
+  const ui = await mountBand($, surface)
+
+  await ui.press({ key: 'retry' }).catch(() => undefined)
+  await ui.press({ key: 'retry' })
+
+  expect(world.commands).toEqual([COMPOUND, COMPOUND, COMPOUND])
   expect(await ui.find({ key: 'retry' })).toBeUndefined()
-})
-
-onEachSurface('a retry that errors again keeps the band', async ($, on, surface) => {
-  engine(on, [{ text: ERRORED, isError: true }])
-  await $.tool.call({ tool: 'Bash', command: COMPOUND })
-  const ui = await mountBand($, surface)
-
-  await ui.press({ key: 'retry' })
-
-  expect(await ui.find({ key: 'retry' })).toBeDefined()
-})
-
-onEachSurface('a denied retry keeps the band', async ($, on, surface) => {
-  engine(on, [{ text: ERRORED, isError: true }, { deny: 'denied' }])
-  await $.tool.call({ tool: 'Bash', command: COMPOUND })
-  const ui = await mountBand($, surface)
-
-  await ui.press({ key: 'retry' })
-
-  expect(await ui.find({ key: 'retry' })).toBeDefined()
 })
 
 onEachSurface('dismiss clears the band', async ($, on, surface) => {
@@ -236,6 +260,7 @@ onEachSurface('the probe reads the agent and toasts once when it starts answerin
 
   expect(await agentText(ui)).toBe('1Password agent: answers')
   expect(world.toasts).toEqual([`1Password answers again. Press r on the band to retry: ${GH_LINE}`])
+  expect(world.probeArgvs.every(argv => argv.join(' ') === 'ssh-add -l')).toBe(true)
 })
 
 onEachSurface('exit 1 reads as answering and a rejecting probe as not answering', async ($, on, surface) => {
@@ -272,12 +297,12 @@ onEachSurface('the probe stops once the band clears', async ($, on, surface) => 
   await world.clock.settle()
   const ui = await mountBand($, surface)
   await ui.press({ key: 'dismiss' })
-  const before = world.probes
+  const before = world.probeArgvs.length
   expect(before).toBeGreaterThan(0)
 
   await world.clock.advance(30000)
 
-  expect(world.probes).toBe(before)
+  expect(world.probeArgvs.length).toBe(before)
 })
 
 onEachSurface('a pending band draws nothing while a survey is showing', async ($, on, surface) => {
