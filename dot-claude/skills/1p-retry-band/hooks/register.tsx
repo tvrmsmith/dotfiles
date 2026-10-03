@@ -6,19 +6,32 @@ import type { Pending } from '../types'
 const BANNER = 'gh: needs write access, asking 1Password to approve:'
 const pending = atom({ plugin: '1p-retry-band', key: 'pending' } as const, null)
 
-// The shim's own failure line, op's error line, or the Bash tool's timeout notice.
-const ONE_PASSWORD_FAILED = [/^gh: could not read the write token/, /^\[ERROR\]/, /timed out/i]
+const DIR_PREFIX = /^ {4}in /
 
-// The gh line after the last line that is the banner, and whether the first line
-// after it shows 1Password failing: none (cut off while op waited) or a failure line.
-// Any other line there is gh's own output, so the write went through.
-const lastBanner = (text: string) => {
+// The shim's own failure lines, op's error line, or the Bash tool's timeout notice.
+const ONE_PASSWORD_FAILED = [
+  /^gh: could not read the write token/,
+  /^gh: 1Password approval timed out/,
+  /^\[ERROR\]/,
+  /timed out/i,
+]
+
+// The last banner's gh line, the directory line after it when there is one, and
+// whether the first line after those shows 1Password failing: none (cut off while
+// op waited) or a failure line. Any other line there is gh's own output, so the
+// write went through. `command` is what a retry runs: the failed gh call in its
+// directory, or the whole Bash command when an older shim printed no directory.
+const lastBanner = (text: string, bashCommand: string) => {
   const lines = text.split('\n')
   const at = lines.lastIndexOf(BANNER)
   if (at === -1) return undefined
-  const next = lines.slice(at + 2).find(line => line.trim() !== '')?.trim()
+  const ghLine = lines[at + 1]?.trim() ?? ''
+  const dirLine = lines[at + 2]
+  const hasDir = dirLine !== undefined && DIR_PREFIX.test(dirLine)
+  const next = lines.slice(at + (hasDir ? 3 : 2)).find(line => line.trim() !== '')?.trim()
   return {
-    ghLine: lines[at + 1]?.trim(),
+    ghLine,
+    command: hasDir ? `cd ${dirLine.replace(DIR_PREFIX, '')} && ${ghLine}` : bashCommand,
     isFailed: next === undefined || ONE_PASSWORD_FAILED.some(failed => failed.test(next)),
   }
 }
@@ -120,16 +133,16 @@ export const register: Register = on => {
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const ran = await next(e)
 
-    const banner = ran.deny === undefined && ran.text !== undefined ? lastBanner(ran.text) : undefined
+    const banner = ran.deny === undefined && ran.text !== undefined ? lastBanner(ran.text, e.command) : undefined
     if (banner === undefined) return ran
 
     if (ran.isError !== true) {
-      await update($, pending, (p: Pending | null) => (p?.command === e.command ? null : p)).catch(() => undefined)
+      await update($, pending, (p: Pending | null) => (p?.command === banner.command ? null : p)).catch(() => undefined)
       return ran
     }
 
     if (banner.isFailed) {
-      const stuck: Pending = { command: e.command, ghLine: banner.ghLine || e.command, agent: 'checking', isRetrying: false }
+      const stuck: Pending = { command: banner.command, ghLine: banner.ghLine || e.command, agent: 'checking', isRetrying: false }
       await update($, pending, () => stuck).catch(() => undefined)
       startProbe($)
     }

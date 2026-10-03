@@ -410,3 +410,68 @@ onEachSurface('session start re-runs the probe for a band already showing', asyn
   expect(world.probeArgvs.length).toBeGreaterThan(before)
   expect(await agentText(ui)).toBe('1Password agent: answers')
 })
+
+// The shim's current output: banner, gh line, then the directory it ran in.
+const DIR = '/Users/me/dev/personal/dotfiles'
+const DIR_LINE = `    in ${DIR}`
+const MERGE_LINE = `    ${GH_LINE}`
+const RETRY = `cd ${DIR} && ${GH_LINE}`
+const COULD_NOT_READ = 'gh: could not read the write token for my.1password.com from 1Password.'
+const FROM_ANOTHER_DIR = 'cd ~/x && gh pr merge --auto --squash 12; echo after'
+const withDir = (...after: string[]) => [BANNER, MERGE_LINE, DIR_LINE, ...after].join('\n')
+
+onEachSurface('a failure after the three shim lines shows the band and retries in the shim directory', async ($, on, surface) => {
+  const world = engine(on, [{ text: withDir(COULD_NOT_READ), isError: true }, { text: withDir('done') }])
+  await $.tool.call({ tool: 'Bash', command: FROM_ANOTHER_DIR })
+  const ui = await mountBand($, surface)
+
+  expect((await ui.find({ key: 'waiting' }))?.text).toBe(`gh is waiting on 1Password: ${GH_LINE}`)
+  expect((await ui.find({ key: 'runs' }))?.text).toBe(`r re-runs: ${RETRY}`)
+
+  await ui.press({ key: 'retry' })
+
+  expect(world.commands[1]).toBe(RETRY)
+})
+
+onEachSurface("the shim's own approval timeout line arms the band", async ($, on, surface) => {
+  engine(on, [{ text: withDir('gh: 1Password approval timed out after 100s.'), isError: true }])
+  await $.tool.call({ tool: 'Bash', command: FROM_ANOTHER_DIR })
+  const ui = await mountBand($, surface)
+
+  expect((await ui.find({ key: 'waiting' }))?.text).toBe(`gh is waiting on 1Password: ${GH_LINE}`)
+})
+
+const QUOTED_LINE = "    gh issue comment 5 --body $'line one\\nmentions timeout'"
+const QUOTED_GH = QUOTED_LINE.trim()
+
+onEachSurface('a quoted multi-line body with gh output and a later failure shows no band', async ($, on, surface) => {
+  const text = [
+    BANNER,
+    QUOTED_LINE,
+    DIR_LINE,
+    'https://github.com/o/r/issues/5#issuecomment-1',
+    'npm ERR! Exceeded timeout of 5000 ms',
+  ].join('\n')
+  engine(on, [{ text, isError: true }])
+  await $.tool.call({ tool: 'Bash', command: 'gh issue comment 5 && npm test' })
+  const ui = await mountBand($, surface)
+
+  expect(await ui.find({ key: 'retry' })).toBeUndefined()
+})
+
+onEachSurface('a quoted multi-line body failing on the token shows its gh line verbatim', async ($, on, surface) => {
+  engine(on, [{ text: [BANNER, QUOTED_LINE, DIR_LINE, COULD_NOT_READ].join('\n'), isError: true }])
+  await $.tool.call({ tool: 'Bash', command: 'gh issue comment 5' })
+  const ui = await mountBand($, surface)
+
+  expect((await ui.find({ key: 'waiting' }))?.text).toBe(`gh is waiting on 1Password: ${QUOTED_GH}`)
+})
+
+onEachSurface('a success carrying the same gh line and directory clears the band', async ($, on, surface) => {
+  engine(on, [{ text: withDir(COULD_NOT_READ), isError: true }, { text: withDir('done') }])
+  await $.tool.call({ tool: 'Bash', command: FROM_ANOTHER_DIR })
+  await $.tool.call({ tool: 'Bash', command: 'gh pr merge --auto --squash 12' })
+  const ui = await mountBand($, surface)
+
+  expect(await ui.find({ key: 'retry' })).toBeUndefined()
+})
