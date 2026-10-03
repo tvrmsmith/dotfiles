@@ -41,6 +41,8 @@ export type World = {
   suggests: { text: string }[]
   probes: ModelCompleteRequest[]
   spawns: ProcessSpawnRequest[]
+  /** The id $.session.id() answers with. Set it to model a switch to another session. */
+  sessionId: string
   /** The key-value store as the plugin left it. mock.store hides its contents, so the harness keeps its own. */
   store: Record<string, unknown>
   /** What the last message of the session says. */
@@ -64,6 +66,7 @@ export function createWorld(on: On, options: WorldOptions = {}): World {
     suggests: [],
     probes: [],
     spawns: [],
+    sessionId: 's1',
     store: { ...options.store },
     lastMessage: { role: 'assistant', text: NETWORK_ERROR, toolUses: [] },
     probeAnswer: () => ANSWERED,
@@ -84,7 +87,7 @@ export function createWorld(on: On, options: WorldOptions = {}): World {
   on('turn.complete', (_$, e) => ({ text: e.answer }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
-  on('session.id', () => ({ value: 's1' }))
+  on('session.id', () => ({ value: world.sessionId }))
   on('session.model', () => ({ value: 'test-model' }))
   on('session.messages', () => ({ value: [world.lastMessage] }))
   on('ui.toast', (_$, e) => {
@@ -102,11 +105,11 @@ export function createWorld(on: On, options: WorldOptions = {}): World {
   })
   on('model.complete', async (_$, e) => {
     world.probes.push(e)
-    const answer = world.probeAnswer(world.probes.length)
+    const call = world.probes.length
     if (world.probeDelayMs > 0) {
       await clock.sleep(world.probeDelayMs)
     }
-    return { value: answer }
+    return { value: world.probeAnswer(call) }
   })
   on('process.spawn', async function* (_$, e) {
     world.spawns.push(e)

@@ -143,6 +143,7 @@ test('stops resuming after three continues whose turn still failed', async ($, o
   expect(world.toasts.at(-1)).toBe('Resumed 3 times and the turn still failed. Not resuming.')
   expect(world.submits).toHaveLength(3)
   expect(world.probes).toHaveLength(3)
+  expect(world.spawns).toHaveLength(3)
   expect(world.store['pending:s1']).toBeUndefined()
 })
 
@@ -368,7 +369,35 @@ test('a probe that throws backs off to the next attempt and keeps going', async 
   ])
 })
 
-test('a probe in flight when the session ends neither resumes nor re-arms', async ($, on) => {
+const endSession = { reason: 'other', sessionId: 's1' } as const
+
+for (const probe of ['answers', 'throws'] as const) {
+  test(`a probe in flight that ${probe} after the session ends neither resumes nor re-arms`, async ($, on) => {
+    const world = createWorld(on)
+    world.probeDelayMs = 5_000
+    world.probeAnswer = () => {
+      if (probe === 'throws') {
+        throw new Error('probe transport broke')
+      }
+      return ANSWERED
+    }
+
+    await $.turn.complete(errorTurn)
+    await world.clock.advance(30_000)
+    expect(world.probes).toHaveLength(1)
+
+    await $.session.end(endSession as Parameters<typeof $.session.end>[0])
+    world.sessionId = 's2'
+    await world.clock.advance(10 * 60_000)
+
+    expect(world.submits).toHaveLength(0)
+    expect(world.probes).toHaveLength(1)
+    expect(world.spawns).toHaveLength(1)
+    expect(world.store['pending:s1']).toEqual({ attempt: 1, resumes: 0, dueAt: 30_000 })
+  })
+}
+
+test('an attempt still in flight for the old session does not block the new one', async ($, on) => {
   const world = createWorld(on)
   world.probeDelayMs = 5_000
 
@@ -376,11 +405,15 @@ test('a probe in flight when the session ends neither resumes nor re-arms', asyn
   await world.clock.advance(30_000)
   expect(world.probes).toHaveLength(1)
 
-  await $.session.end({ reason: 'other', sessionId: 's1' } as Parameters<typeof $.session.end>[0])
+  await $.session.end(endSession as Parameters<typeof $.session.end>[0])
+  world.sessionId = 's2'
+  world.store['pending:s2'] = { attempt: 2, resumes: 0, dueAt: 0 }
+  await $.session.start(sessionStart)
   await world.clock.advance(10 * 60_000)
 
-  expect(world.submits).toHaveLength(0)
-  expect(world.probes).toHaveLength(1)
-  expect(world.spawns).toHaveLength(1)
+  expect(world.submits.map(s => s.text)).toEqual(['continue'])
+  expect(world.probes).toHaveLength(2)
+  expect(world.spawns).toHaveLength(2)
   expect(world.store['pending:s1']).toEqual({ attempt: 1, resumes: 0, dueAt: 30_000 })
+  expect(world.store['pending:s2']).toEqual({ attempt: 3, resumes: 1, dueAt: 35_000 + 120_000 })
 })

@@ -12,6 +12,26 @@ const scutilSays =
     }
   }
 
+/** A scutil stand-in that reports down once, then stays up printing a blank line each second until stopped. */
+function scutilStaysUp(clock: () => { sleep: (ms: number) => Promise<void> }): { spawn: SpawnScript; isRunning: () => boolean } {
+  let isRunning = false
+  return {
+    isRunning: () => isRunning,
+    spawn: async function* () {
+      isRunning = true
+      try {
+        yield { stream: 'stdout', text: 'Not Reachable\n' }
+        for (;;) {
+          await clock().sleep(1_000)
+          yield { stream: 'stdout', text: '\n' }
+        }
+      } finally {
+        isRunning = false
+      }
+    },
+  }
+}
+
 test('a network that comes back wakes the attempt before the backoff timer', async ($, on) => {
   let world!: ReturnType<typeof createWorld>
   world = createWorld(on, {
@@ -105,32 +125,43 @@ test('one watcher serves every attempt of an outage', async ($, on) => {
 })
 
 test('the watcher child is stopped once the resume is submitted', async ($, on) => {
-  let isRunning = false
   let world!: ReturnType<typeof createWorld>
-  world = createWorld(on, {
-    spawn: async function* () {
-      isRunning = true
-      try {
-        yield { stream: 'stdout', text: 'Not Reachable\n' }
-        for (;;) {
-          await world.clock.sleep(1_000)
-          yield { stream: 'stdout', text: '\n' }
-        }
-      } finally {
-        isRunning = false
-      }
-    },
-  })
+  const scutil = scutilStaysUp(() => world.clock)
+  world = createWorld(on, { spawn: scutil.spawn })
 
   await $.turn.complete(errorTurn)
   await world.clock.settle()
-  expect(isRunning).toBe(true)
+  expect(scutil.isRunning()).toBe(true)
 
   await world.clock.advance(30_000)
   expect(world.submits).toHaveLength(1)
   await world.clock.advance(1_000)
-  expect(isRunning).toBe(false)
+  expect(scutil.isRunning()).toBe(false)
 })
+
+for (const cancel of ['a person prompt', '/clear', 'any other session end', 'a probe refused with 401'] as const) {
+  test(`${cancel} stops the watcher child`, async ($, on) => {
+    let world!: ReturnType<typeof createWorld>
+    const scutil = scutilStaysUp(() => world.clock)
+    world = createWorld(on, { spawn: scutil.spawn })
+
+    await $.turn.complete(errorTurn)
+    await world.clock.settle()
+    expect(scutil.isRunning()).toBe(true)
+
+    if (cancel === 'a person prompt') {
+      await $.prompt.submit({ text: 'never mind', wait: false, origin: { kind: 'composer' } })
+    } else if (cancel === 'a probe refused with 401') {
+      world.probeAnswer = () => apiError('unknown', 401)
+      await world.clock.advance(30_000)
+    } else {
+      const reason = cancel === '/clear' ? 'clear' : 'other'
+      await $.session.end({ reason, sessionId: 's1' } as Parameters<typeof $.session.end>[0])
+    }
+    await world.clock.advance(1_000)
+    expect(scutil.isRunning()).toBe(false)
+  })
+}
 
 test('a wake while a probe is in flight does not start a second attempt', async ($, on) => {
   let world!: ReturnType<typeof createWorld>
