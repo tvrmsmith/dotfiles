@@ -486,8 +486,9 @@ mkdir -p "$(dirname "$log")" 2>/dev/null || true
 
 # dot-claude/skills/1p-retry-band matches this banner as a whole line, reads the
 # next line as the gh line it displays, and arms only when the line after that
-# is missing, op's [ERROR] line, or the "could not read the write token" line
-# below. Reword any of them and its retry band goes dark.
+# is missing, op's [ERROR] line, the Bash tool's timeout notice, or the "could
+# not read the write token" line below. Reword any of them and its retry band
+# goes dark.
 echo "gh: needs write access, asking 1Password to approve:" >&2
 echo "    gh $*" >&2
 
