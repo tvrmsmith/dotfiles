@@ -47,6 +47,8 @@ export type World = {
   sessionIdDelayMs: number
   /** How long the mock clock must move before a $.store.get() call resolves. */
   storeGetDelayMs: number
+  /** How long the mock clock must move before a $.store.set() call resolves. The write lands at once. */
+  storeSetDelayMs: number
   /** The key-value store as the plugin left it. mock.store hides its contents, so the harness keeps its own. */
   store: Record<string, unknown>
   /** What the last message of the session says. */
@@ -73,6 +75,7 @@ export function createWorld(on: On, options: WorldOptions = {}): World {
     sessionId: 's1',
     sessionIdDelayMs: 0,
     storeGetDelayMs: 0,
+    storeSetDelayMs: 0,
     store: { ...options.store },
     lastMessage: { role: 'assistant', text: NETWORK_ERROR, toolUses: [] },
     probeAnswer: () => ANSWERED,
@@ -88,8 +91,11 @@ export function createWorld(on: On, options: WorldOptions = {}): World {
     }
     return { value }
   })
-  on('store.set', (_$, e) => {
+  on('store.set', async (_$, e) => {
     world.store[e.key] = JSON.parse(JSON.stringify(e.value))
+    if (world.storeSetDelayMs > 0) {
+      await clock.sleep(world.storeSetDelayMs)
+    }
     return { value: undefined }
   })
   on('store.delete', (_$, e) => {

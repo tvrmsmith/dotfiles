@@ -25,7 +25,7 @@ type SpawnStream = AsyncGenerator<ProcessSpawnChunk, ProcessSpawnResult>
 const attempting = new Set<string>()
 let cancelTimer: (() => void) | undefined
 let watcher: SpawnStream | undefined
-/** Counts stop calls, so a store read that a clear overtook reads as stale. */
+/** Counts stop calls. A flow snapshots it before its first await and acts on nothing once a stop lands after that. */
 let stops = 0
 
 const backoff = (attempt: number): number => Math.min(30_000 * 2 ** (attempt - 1), 300_000)
@@ -60,17 +60,16 @@ async function readPending($: EngineInterface, sessionId: string): Promise<Pendi
 }
 
 /**
- * The session's record while that session is still the current one, so an attempt that outlived it acts on nothing.
- * The store is read last so no await separates the read from the caller's next write or submit, and a stop that lands
- * while the read is in flight voids it.
+ * The session's record while that session is still the current one and no stop has landed since `epoch`, so an
+ * attempt that outlived it acts on nothing. The store is read last so no await separates the read from the caller's
+ * next write or submit.
  */
-async function liveRecord($: EngineInterface, sessionId: string): Promise<Pending | undefined> {
+async function liveRecord($: EngineInterface, sessionId: string, epoch: number): Promise<Pending | undefined> {
   if ((await $.session.id()) !== sessionId) {
     return undefined
   }
-  const stopsBefore = stops
   const pending = await readPending($, sessionId)
-  return stops === stopsBefore ? pending : undefined
+  return stops === epoch ? pending : undefined
 }
 
 async function sweepStale($: EngineInterface, sessionId: string): Promise<void> {
@@ -86,14 +85,20 @@ async function sweepStale($: EngineInterface, sessionId: string): Promise<void> 
   }
 }
 
-/** Stores the record, replaces any scheduled attempt with one at its dueAt, and starts the watcher. */
-async function arm($: EngineInterface, sessionId: string, pending: Pending): Promise<void> {
+/**
+ * Stores the record, replaces any scheduled attempt with one at its dueAt, and starts the watcher. A stop since
+ * `epoch` leaves the store alone, and one that lands during the awaits leaves nothing scheduled or watched.
+ */
+async function arm($: EngineInterface, sessionId: string, pending: Pending, epoch: number): Promise<void> {
+  if (stops !== epoch) {
+    return
+  }
   cancelTimer?.()
   await $.store.set(pendingKey(sessionId), pending)
   const delay = Math.max(pending.dueAt - (await $.clock.now()), 0)
   const host = await apiHost($)
   // A clear or session switch that landed during the awaits above leaves nothing to schedule or watch.
-  if ((await liveRecord($, sessionId)) === undefined) {
+  if ((await liveRecord($, sessionId, epoch)) === undefined) {
     return
   }
   cancelTimer = $.clock.after(delay, () => void runAttempt($, sessionId)).cancel
@@ -199,13 +204,14 @@ async function runAttempt($: EngineInterface, sessionId: string): Promise<void> 
     return
   }
   attempting.add(sessionId)
+  const epoch = stops
   try {
-    await probeAndDecide($, sessionId)
+    await probeAndDecide($, sessionId, epoch)
   } catch {
     const now = await $.clock.now()
-    const pending = await liveRecord($, sessionId)
+    const pending = await liveRecord($, sessionId, epoch)
     if (pending !== undefined) {
-      await scheduleRetry($, sessionId, pending, now)
+      await scheduleRetry($, sessionId, pending, now, epoch)
     }
   } finally {
     attempting.delete(sessionId)
@@ -213,17 +219,23 @@ async function runAttempt($: EngineInterface, sessionId: string): Promise<void> 
 }
 
 /** Arms the attempt after `pending.attempt`, or gives up once the last one has run. */
-async function scheduleRetry($: EngineInterface, sessionId: string, pending: Pending, now: number): Promise<void> {
+async function scheduleRetry(
+  $: EngineInterface,
+  sessionId: string,
+  pending: Pending,
+  now: number,
+  epoch: number,
+): Promise<void> {
   if (pending.attempt >= MAX_ATTEMPTS) {
     $.ui.toast(`API still unreachable after ${MAX_ATTEMPTS} retries. Type continue to resume.`)
     await clear($, sessionId)
     return
   }
-  await arm($, sessionId, pendingAt(pending.attempt + 1, pending.resumes, now))
+  await arm($, sessionId, pendingAt(pending.attempt + 1, pending.resumes, now), epoch)
 }
 
-async function probeAndDecide($: EngineInterface, sessionId: string): Promise<void> {
-  const started = await liveRecord($, sessionId)
+async function probeAndDecide($: EngineInterface, sessionId: string, epoch: number): Promise<void> {
+  const started = await liveRecord($, sessionId, epoch)
   if (started === undefined) {
     return
   }
@@ -237,7 +249,7 @@ async function probeAndDecide($: EngineInterface, sessionId: string): Promise<vo
   })
   const now = await $.clock.now()
   // The person may have typed a prompt while the probe ran, which clears the record, or moved to another session.
-  const pending = await liveRecord($, sessionId)
+  const pending = await liveRecord($, sessionId, epoch)
   if (pending === undefined) {
     return
   }
@@ -254,7 +266,7 @@ async function probeAndDecide($: EngineInterface, sessionId: string): Promise<vo
   if (verdict.kind === 'back') {
     // Stored before the submit so a fast resumed turn that clears the key is not undone by a late write.
     await $.store.set(pendingKey(sessionId), pendingAt(n + 1, pending.resumes + 1, now))
-    if ((await liveRecord($, sessionId)) === undefined) {
+    if ((await liveRecord($, sessionId, epoch)) === undefined) {
       return
     }
     stopWatcher()
@@ -262,7 +274,7 @@ async function probeAndDecide($: EngineInterface, sessionId: string): Promise<vo
     await $.prompt.submit({ text: RESUME_TEXT })
     return
   }
-  await scheduleRetry($, sessionId, { ...pending, attempt: n }, now)
+  await scheduleRetry($, sessionId, { ...pending, attempt: n }, now, epoch)
 }
 
 /** The text of the session's last message when it is an API error, else undefined. */
@@ -271,7 +283,7 @@ async function lastApiError($: EngineInterface): Promise<string | undefined> {
   return last?.role === 'assistant' && last.text.startsWith(ERROR_PREFIX) ? last.text : undefined
 }
 
-async function onMainLoopError($: EngineInterface, sessionId: string): Promise<void> {
+async function onMainLoopError($: EngineInterface, sessionId: string, epoch: number): Promise<void> {
   const errorText = await lastApiError($)
   if (errorText === undefined) {
     await clear($, sessionId)
@@ -287,15 +299,16 @@ async function onMainLoopError($: EngineInterface, sessionId: string): Promise<v
     await clear($, sessionId)
     return
   }
-  await arm($, sessionId, pendingAt(pending.attempt, pending.resumes, await $.clock.now()))
+  await arm($, sessionId, pendingAt(pending.attempt, pending.resumes, await $.clock.now()), epoch)
 }
 
 export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
+      const epoch = stops
       const sessionId = await $.session.id()
       if (e.reason === 'error') {
-        await onMainLoopError($, sessionId)
+        await onMainLoopError($, sessionId, epoch)
       } else {
         await clear($, sessionId)
       }
@@ -305,11 +318,12 @@ export const register: Register = on => {
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
+    const epoch = stops
     const sessionId = await $.session.id()
     await sweepStale($, sessionId)
     const pending = await readPending($, sessionId)
     if (pending !== undefined) {
-      await arm($, sessionId, pending)
+      await arm($, sessionId, pending, epoch)
     }
     return started
   })
