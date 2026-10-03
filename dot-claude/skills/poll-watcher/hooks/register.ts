@@ -8,7 +8,8 @@ const STATUS_COMMAND = new RegExp(`^(?:${STATUS_COMMANDS.join('|')})\\b`)
 // The watcher re-runs the command, so it watches only a read-only status
 // call. Once `2>&1` is set aside, anything that could chain, background,
 // substitute or redirect leaves the command with the model, and a pipe may
-// feed only filters that read and print.
+// feed only filters that read and print. A flag that opens a browser tab or
+// writes a file on every tick does the same.
 const UNSAFE = /[&<;\n`>]|\$\(/
 const FILTER = /^(?:head|tail|grep|jq|cut|sort|uniq|wc|cat)\b/
 const SLEEP_THEN = /^\s*sleep\s+(\d+)([smh]?)\s*(?:;|&&)\s*(.+)$/s
@@ -31,9 +32,18 @@ const VOLATILE = [
 
 type Poll = { command: string; intervalMs: number }
 
+function writes(segment: string): boolean {
+  const [name, ...args] = segment.trim().split(/\s+/)
+  if (name === 'gh') return args.some(a => a === '-w' || a.startsWith('--web'))
+  if (name === 'sort') return args.some(a => /^-[a-zA-Z]*o/.test(a) || a.startsWith('--output'))
+  if (name === 'uniq') return args.filter(a => a === '-' || !a.startsWith('-')).length > 1
+  return false
+}
+
 function isReadOnly(command: string): boolean {
-  const [, ...filters] = command.split('|')
-  return !UNSAFE.test(command) && filters.every(f => FILTER.test(f.trim()))
+  const segments = command.split('|')
+  const [, ...filters] = segments
+  return !UNSAFE.test(command) && filters.every(f => FILTER.test(f.trim())) && !segments.some(writes)
 }
 
 function parsePoll(text: string): Poll | undefined {
@@ -46,36 +56,46 @@ function parsePoll(text: string): Poll | undefined {
   return { command, intervalMs: Math.min(MAX_INTERVAL_MS, Math.max(MIN_INTERVAL_MS, ms)) }
 }
 
-function joinOutput(stdout: string, stderr: string): string {
-  return [stdout, stderr].filter(s => s !== '').join('\n').trim().slice(-OUTPUT_LIMIT)
+type Outcome = { output: string; masked: string; exitCode: number }
+
+// Masked before the cut: a volatile token that changes length would otherwise
+// move where the cut falls and read as a change.
+function outcome(output: string, exitCode: number): Outcome {
+  return { output: output.slice(-OUTPUT_LIMIT), masked: masked(output).slice(-OUTPUT_LIMIT), exitCode }
 }
 
 function note(command: string, intervalMs: number): string {
   return `poll-watcher dropped the sleep and ran \`${command}\` now. It re-runs the command every ${intervalMs / 1000} s and sends you a message when the output changes. Do not poll it again: end your turn or carry on with other work.`
 }
 
-function statusLine(w: PollWatch): string {
-  const first = w.output.split('\n').find(line => line.trim() !== '') ?? ''
-  return `${w.phase} · ${w.command} · ${first}`.slice(0, STATUS_LIMIT)
+// A TOON status nests its state under a parent key, so the `status:` line
+// says more than the first one.
+function statusLine(w: Pick<PollWatch, 'phase' | 'command' | 'output'>): string {
+  const lines = w.output.split('\n').map(line => line.trim()).filter(line => line !== '')
+  const shown = lines.find(line => line.startsWith('status:')) ?? lines[0] ?? ''
+  return `${w.phase} · ${w.command} · ${shown}`.slice(0, STATUS_LIMIT)
 }
 
-async function run($: EngineInterface, command: string, cwd: string) {
+async function run($: EngineInterface, command: string, cwd: string): Promise<Outcome> {
   const r = await $.process.run(['/bin/sh', '-c', command], { cwd })
-  return { output: joinOutput(r.stdout, r.stderr), exitCode: r.exitCode }
+  return outcome([r.stdout, r.stderr].filter(s => s !== '').join('\n').trim(), r.exitCode)
 }
 
 // The engine leads a refused call's rejection with the plugin and the call;
-// the prompt already names both.
+// the text around it already names both.
 const REFUSAL_PREFIX = /^poll-watcher: \$\.process\.run: /
+
+function messageOf(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error)).replace(REFUSAL_PREFIX, '')
+}
 
 // A run that rejects reads as output, so a command that starts failing is a
 // change like any other.
-async function runForTick($: EngineInterface, command: string, cwd: string) {
+async function runForTick($: EngineInterface, command: string, cwd: string): Promise<Outcome> {
   try {
     return await run($, command, cwd)
   } catch (error) {
-    const message = (error instanceof Error ? error.message : String(error)).replace(REFUSAL_PREFIX, '')
-    return { output: `could not run: ${message}`, exitCode: -1 }
+    return outcome(`could not run: ${messageOf(error)}`, -1)
   }
 }
 
@@ -105,7 +125,20 @@ function keyOf(w: { command: string; cwd: string }): string {
 
 function arm($: EngineInterface, w: PollWatch, delayMs = w.intervalMs): void {
   timers.get(keyOf(w))?.cancel()
-  timers.set(keyOf(w), $.clock.after(delayMs, () => void tick($, w)))
+  timers.set(keyOf(w), $.clock.after(delayMs, () => void tick($, w).catch(error => halt($, w, error))))
+}
+
+function isArmed(w: PollWatch, armed: PollWatch): boolean {
+  return sameKey(w, armed) && w.armedAt === armed.armedAt
+}
+
+// A tick that failed armed nothing after it: show it stopped rather than
+// leave it watching with no timer.
+async function halt($: EngineInterface, armed: PollWatch, error: unknown): Promise<void> {
+  $.ui.status(statusLine({ ...armed, phase: 'stopped', output: messageOf(error) }))
+  await update($, WATCHES, list =>
+    (list ?? []).map(w => (isArmed(w, armed) ? { ...w, phase: 'stopped' as const } : w)),
+  ).catch(() => undefined)
 }
 
 // A reload drops the timers but keeps $.state: re-arm each watch still
@@ -137,14 +170,14 @@ type Checked = { watch: PollWatch; prompt?: string }
 
 // One tick's outcome for the watch it ran: what to store, and what to tell a
 // model still waiting on it. A stopped watch is not re-armed.
-function check(w: PollWatch, result: { output: string; exitCode: number }, now: number): Checked {
-  const isChanged = masked(result.output) !== masked(w.output) || result.exitCode !== w.exitCode
+function check(w: PollWatch, result: Outcome, now: number): Checked {
+  const isChanged = result.masked !== w.masked || result.exitCode !== w.exitCode
   const isWaiting = w.phase === 'watching'
   if (isChanged) {
     const watch: PollWatch = { ...w, ...result, phase: 'changed', checkedAt: now, changedAt: now }
     return { watch, prompt: isWaiting ? changePrompt(watch) : undefined }
   }
-  const watch: PollWatch = { ...w, output: result.output, checkedAt: now }
+  const watch: PollWatch = { ...w, ...result, checkedAt: now }
   if (now - w.changedAt < STOP_AFTER_MS) return { watch }
   const stopped: PollWatch = { ...watch, phase: 'stopped' }
   return { watch: stopped, prompt: isWaiting ? stopPrompt(stopped) : undefined }
@@ -157,7 +190,7 @@ async function tick($: EngineInterface, armed: PollWatch): Promise<void> {
   await update($, WATCHES, list =>
     (list ?? []).map(w => {
       // A stale tick: the model re-polled since this one was armed.
-      if (!sameKey(w, armed) || w.armedAt !== armed.armedAt) return w
+      if (!isArmed(w, armed)) return w
       checked = check(w, result, now)
       return checked.watch
     }),
@@ -165,9 +198,11 @@ async function tick($: EngineInterface, armed: PollWatch): Promise<void> {
   if (!checked) return
   const { watch, prompt } = checked
   $.ui.status(statusLine(watch))
+  // Armed before the prompt: submit waits for the model's turn, and a re-poll
+  // meanwhile arms a newer watch this one must not replace.
+  if (watch.phase !== 'stopped') arm($, watch)
   // A refused prompt is dropped: state and the status entry already tell it.
   if (prompt) await $.prompt.submit({ text: prompt }).catch(() => undefined)
-  if (watch.phase !== 'stopped') arm($, watch)
 }
 
 export const register: Register = on => {
@@ -187,10 +222,14 @@ export const register: Register = on => {
     if (ran.deny !== undefined || didNotFinish(ran.result)) return ran
     const cwd = await $.session.cwd()
     // The baseline is a second run, not ran's stdout, so every compared value
-    // comes from the same runner. One that cannot run leaves the model the
-    // status result without the sleep, and nothing armed.
-    const baseline = await run($, poll.command, cwd).catch(() => undefined)
-    if (!baseline) return ran
+    // comes from the same runner. One that cannot run arms nothing, and the
+    // model is told so.
+    let baseline: Outcome
+    try {
+      baseline = await run($, poll.command, cwd)
+    } catch (error) {
+      return { ...ran, context: [...(ran.context ?? []), `poll-watcher could not arm: ${messageOf(error)}`] }
+    }
     const now = await $.clock.now()
     const watch: PollWatch = {
       command: poll.command,
