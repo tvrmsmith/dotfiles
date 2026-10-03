@@ -225,6 +225,9 @@ export const register: Register = on => {
     const isWatchable = isInteractive && e.agentId === undefined && e.run_in_background !== true
     const poll = isWatchable ? parsePoll(e.command) : undefined
     if (!poll) return next(e)
+    // Ticks re-run the command outside Bash permissions, so only a command
+    // the rules already allow is watched. One that would ask or be denied
+    // goes through untouched, sleep and all.
     const { decision } = await $.tool.check({ tool: 'Bash', input: { command: poll.command } })
     if (decision !== 'allow') return next(e)
 
