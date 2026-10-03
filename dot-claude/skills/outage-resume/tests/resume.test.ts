@@ -1,0 +1,304 @@
+import type { ModelCompleteResult } from 'claude-code'
+import { test } from 'claude-code/testing'
+
+import {
+  ANSWERED,
+  LOGIN_ERROR,
+  apiError,
+  createWorld,
+  errorTurn,
+  expect,
+  sessionStart,
+} from './harness'
+
+test('resumes with continue once the API answers, with no typed prompt', async ($, on) => {
+  const world = createWorld(on)
+
+  await $.turn.complete(errorTurn)
+
+  await world.clock.advance(29_999)
+  expect(world.probes).toHaveLength(0)
+
+  await world.clock.advance(1)
+  expect(world.probes).toHaveLength(1)
+  expect(world.submits.map(s => s.text)).toEqual(['continue'])
+  expect(world.toasts).toEqual(['API unreachable. Retry 1 of 20.', 'API is back. Resuming.'])
+})
+
+test('a failed probe backs off to attempt 2 and resumes when it answers', async ($, on) => {
+  const world = createWorld(on)
+  world.probeAnswer = call => (call === 1 ? apiError('server_error', 503) : ANSWERED)
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(30_000)
+
+  expect(world.submits).toHaveLength(0)
+  expect(world.store['pending:s1']).toEqual({ attempt: 2, resumes: 0, dueAt: 90_000 })
+
+  await world.clock.advance(59_999)
+  expect(world.probes).toHaveLength(1)
+
+  await world.clock.advance(1)
+  expect(world.probes).toHaveLength(2)
+  expect(world.submits.map(s => s.text)).toEqual(['continue'])
+})
+
+test('an expired login offers /login and never probes or retries', async ($, on) => {
+  const world = createWorld(on)
+  world.lastMessage = { role: 'assistant', text: LOGIN_ERROR, toolUses: [] }
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(10 * 60_000)
+
+  expect(world.toasts).toEqual(['Login expired. Run /login to reconnect.'])
+  expect(world.suggests).toEqual([{ text: '/login' }])
+  expect(world.probes).toHaveLength(0)
+  expect(world.submits).toHaveLength(0)
+  expect(world.store['pending:s1']).toBeUndefined()
+})
+
+test('a probe refused with 401 turns into the login offer, with no resume', async ($, on) => {
+  const world = createWorld(on)
+  world.probeAnswer = () => apiError('unknown', 401)
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(30_000)
+
+  expect(world.toasts).toEqual([
+    'API unreachable. Retry 1 of 20.',
+    'Login expired. Run /login to reconnect.',
+  ])
+  expect(world.suggests).toEqual([{ text: '/login' }])
+  expect(world.submits).toHaveLength(0)
+  expect(world.store['pending:s1']).toBeUndefined()
+
+  await world.clock.advance(10 * 60_000)
+  expect(world.probes).toHaveLength(1)
+})
+
+test('a probe the API refuses outright stops the loop and names the error', async ($, on) => {
+  const world = createWorld(on)
+  world.probeAnswer = () => apiError('model_not_found', 404)
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(30_000)
+
+  expect(world.toasts).toEqual([
+    'API unreachable. Retry 1 of 20.',
+    'API refused the retry (model_not_found). Not resuming.',
+  ])
+  expect(world.submits).toHaveLength(0)
+  expect(world.store['pending:s1']).toBeUndefined()
+  await world.clock.advance(10 * 60_000)
+  expect(world.probes).toHaveLength(1)
+})
+
+test('a probe failing with authentication_failed and no status is a login offer', async ($, on) => {
+  const world = createWorld(on)
+  world.probeAnswer = () => apiError('authentication_failed', null)
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(30_000)
+
+  expect(world.suggests).toEqual([{ text: '/login' }])
+  expect(world.submits).toHaveLength(0)
+})
+
+test('a probe the model answers with no text still counts as the API being back', async ($, on) => {
+  const world = createWorld(on)
+  world.probeAnswer = () => ({ isAnswered: false, reason: 'empty-reply', usage: ANSWERED.usage }) as ModelCompleteResult
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(30_000)
+
+  expect(world.submits.map(s => s.text)).toEqual(['continue'])
+})
+
+test('gives up after 20 failed probes and tells the person to type continue', async ($, on) => {
+  const world = createWorld(on)
+  world.probeAnswer = () => apiError('server_error', 503)
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(3 * 60 * 60_000)
+
+  expect(world.probes).toHaveLength(20)
+  expect(world.toasts.at(-1)).toBe('API still unreachable after 20 retries. Type continue to resume.')
+  expect(world.toasts.at(-2)).toBe('API unreachable. Retry 20 of 20.')
+  expect(world.submits).toHaveLength(0)
+  expect(world.store['pending:s1']).toBeUndefined()
+})
+
+test('stops resuming after three continues whose turn still failed', async ($, on) => {
+  const world = createWorld(on)
+
+  for (let cycle = 1; cycle <= 3; cycle++) {
+    await $.turn.complete(errorTurn)
+    await world.clock.advance(300_000)
+    expect(world.submits).toHaveLength(cycle)
+  }
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(60 * 60_000)
+
+  expect(world.toasts.at(-1)).toBe('Resumed 3 times and the turn still failed. Not resuming.')
+  expect(world.submits).toHaveLength(3)
+  expect(world.probes).toHaveLength(3)
+  expect(world.store['pending:s1']).toBeUndefined()
+})
+
+for (const reason of ['answer', 'aborted', 'refusal'] as const) {
+  test(`a main-loop turn that ends in ${reason} clears the pending resume`, async ($, on) => {
+    const world = createWorld(on)
+    await $.turn.complete(errorTurn)
+    expect(world.store['pending:s1']).toBeDefined()
+
+    await $.turn.complete({
+      ...errorTurn,
+      reason,
+      ...(reason === 'refusal' ? { refusal: { message: 'no' } } : {}),
+    } as Parameters<typeof $.turn.complete>[0])
+    await world.clock.advance(10 * 60_000)
+
+    expect(world.store['pending:s1']).toBeUndefined()
+    expect(world.probes).toHaveLength(0)
+  })
+}
+
+test('a subagent error turn schedules nothing', async ($, on) => {
+  const world = createWorld(on)
+
+  await $.turn.complete({ ...errorTurn, agentId: 'agent-1' })
+  await world.clock.advance(10 * 60_000)
+
+  expect(world.store['pending:s1']).toBeUndefined()
+  expect(world.probes).toHaveLength(0)
+})
+
+test('a subagent answered turn leaves a main-loop pending resume alone', async ($, on) => {
+  const world = createWorld(on)
+  await $.turn.complete(errorTurn)
+
+  await $.turn.complete({ ...errorTurn, reason: 'answer', agentId: 'agent-1' })
+
+  expect(world.store['pending:s1']).toBeDefined()
+})
+
+test('/clear drops the pending resume', async ($, on) => {
+  const world = createWorld(on)
+  await $.turn.complete(errorTurn)
+
+  await $.session.end({ reason: 'clear', sessionId: 's1' } as Parameters<typeof $.session.end>[0])
+  await world.clock.advance(10 * 60_000)
+
+  expect(world.store['pending:s1']).toBeUndefined()
+  expect(world.probes).toHaveLength(0)
+})
+
+for (const kind of ['composer', 'bridge', 'sdk'] as const) {
+  test(`a prompt from the person (${kind}) cancels the pending resume`, async ($, on) => {
+    const world = createWorld(on)
+    await $.turn.complete(errorTurn)
+
+    await $.prompt.submit({ text: 'try this instead', wait: false, origin: { kind } })
+    await world.clock.advance(10 * 60_000)
+
+    expect(world.store['pending:s1']).toBeUndefined()
+    expect(world.probes).toHaveLength(0)
+  })
+}
+
+test('a prompt submitted by the plugin itself keeps the pending resume', async ($, on) => {
+  const world = createWorld(on)
+  await $.turn.complete(errorTurn)
+
+  await $.prompt.submit({
+    text: 'continue',
+    wait: false,
+    origin: { kind: 'plugin', name: 'outage-resume' },
+  })
+
+  expect(world.store['pending:s1']).toBeDefined()
+  await world.clock.advance(30_000)
+  expect(world.probes).toHaveLength(1)
+})
+
+test('a restart runs an overdue pending attempt right away', async ($, on) => {
+  const world = createWorld(on, {
+    now: 10_000,
+    store: { 'pending:s1': { attempt: 3, resumes: 0, dueAt: 5_000 } },
+  })
+
+  await $.session.start(sessionStart)
+  await world.clock.settle()
+
+  expect(world.toasts).toEqual(['API unreachable. Retry 3 of 20.', 'API is back. Resuming.'])
+  expect(world.submits.map(s => s.text)).toEqual(['continue'])
+})
+
+test('a restart waits out the rest of a pending delay', async ($, on) => {
+  const world = createWorld(on, {
+    now: 10_000,
+    store: { 'pending:s1': { attempt: 2, resumes: 1, dueAt: 40_000 } },
+  })
+
+  await $.session.start(sessionStart)
+  await world.clock.advance(29_999)
+  expect(world.probes).toHaveLength(0)
+
+  await world.clock.advance(1)
+  expect(world.toasts[0]).toBe('API unreachable. Retry 2 of 20.')
+  expect(world.store['pending:s1']).toEqual({ attempt: 3, resumes: 2, dueAt: 40_000 + 120_000 })
+})
+
+test('a restart deletes other sessions pending records older than 24 hours only', async ($, on) => {
+  const hour = 60 * 60_000
+  const world = createWorld(on, {
+    now: 100 * hour,
+    store: {
+      'pending:old': { attempt: 1, resumes: 0, dueAt: 75 * hour },
+      'pending:recent': { attempt: 1, resumes: 0, dueAt: 99 * hour },
+      'unrelated': 'kept',
+    },
+  })
+
+  await $.session.start(sessionStart)
+
+  expect(Object.keys(world.store).sort()).toEqual(['pending:recent', 'unrelated'])
+})
+
+test('any other session end stops the timer but keeps the record for a restart', async ($, on) => {
+  const world = createWorld(on)
+  await $.turn.complete(errorTurn)
+
+  await $.session.end({ reason: 'other', sessionId: 's1' } as Parameters<typeof $.session.end>[0])
+  await world.clock.advance(10 * 60_000)
+
+  expect(world.probes).toHaveLength(0)
+  expect(world.store['pending:s1']).toEqual({ attempt: 1, resumes: 0, dueAt: 30_000 })
+})
+
+test('the pending record is stored before the resume is submitted', async ($, on) => {
+  const world = createWorld(on)
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(30_000)
+
+  expect(world.pendingAtSubmit).toEqual([{ attempt: 2, resumes: 1, dueAt: 30_000 + 60_000 }])
+})
+
+test('a person prompt typed while the probe is in flight stops the resume', async ($, on) => {
+  const world = createWorld(on)
+  world.probeDelayMs = 5_000
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(30_000)
+  expect(world.probes).toHaveLength(1)
+
+  await world.clock.advance(1_000)
+  await $.prompt.submit({ text: 'never mind', wait: false, origin: { kind: 'composer' } })
+  await world.clock.advance(10_000)
+
+  expect(world.submits.map(s => s.text)).toEqual(['never mind'])
+  expect(world.toasts).toEqual(['API unreachable. Retry 1 of 20.'])
+  expect(world.store['pending:s1']).toBeUndefined()
+})
