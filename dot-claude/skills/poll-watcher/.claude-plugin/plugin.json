@@ -1,0 +1,9 @@
+{
+  "name": "poll-watcher",
+  "version": "0.1.0",
+  "description": "Drops the sleep from a sleep-then-status Bash poll, runs the status now, and wakes the session when its output changes.",
+  "author": {
+    "name": "Trevor Smith"
+  },
+  "types": "./types/index.d.ts"
+}
