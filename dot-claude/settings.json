@@ -265,16 +265,6 @@
         ]
       },
       {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/load-gate.sh",
-            "timeout": 960
-          }
-        ]
-      },
-      {
         "matcher": "Bash|Edit|Write|MultiEdit",
         "hooks": [
           {
