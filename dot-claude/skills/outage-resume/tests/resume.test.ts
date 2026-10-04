@@ -180,8 +180,12 @@ test('a subagent answered turn leaves a main-loop pending resume alone', async (
   await $.turn.complete(errorTurn)
 
   await $.turn.complete({ ...errorTurn, reason: 'answer', agentId: 'agent-1' })
-
   expect(world.store['pending:s1']).toEqual({ attempt: 1, resumes: 0, dueAt: 30_000 })
+
+  await world.clock.advance(30_000)
+
+  expect(world.submits.map(s => s.text)).toEqual(['continue'])
+  expect(world.probes).toHaveLength(1)
 })
 
 test('/clear drops the pending resume', async ($, on) => {
@@ -416,4 +420,228 @@ test('an attempt still in flight for the old session does not block the new one'
   expect(world.spawns).toHaveLength(2)
   expect(world.store['pending:s1']).toEqual({ attempt: 1, resumes: 0, dueAt: 30_000 })
   expect(world.store['pending:s2']).toEqual({ attempt: 3, resumes: 1, dueAt: 35_000 + 120_000 })
+})
+
+test('a person prompt that lands while the plugin reads the session id leaves no stray continue', async ($, on) => {
+  const world = createWorld(on)
+  // The second session.id of the attempt, the one after the probe, is the slow one.
+  world.probeAnswer = () => {
+    world.sessionIdDelayMs = 5_000
+    return ANSWERED
+  }
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(30_000)
+  expect(world.probes).toHaveLength(1)
+
+  world.sessionIdDelayMs = 0
+  await $.prompt.submit({ text: 'never mind', wait: false, origin: { kind: 'composer' } })
+  await world.clock.advance(10 * 60_000)
+
+  expect(world.submits.map(s => s.text)).toEqual(['never mind'])
+  expect(world.store['pending:s1']).toBeUndefined()
+})
+
+test('a person prompt that lands while an error turn arms schedules no attempt and starts no watcher', async ($, on) => {
+  const world = createWorld(on)
+  world.sessionIdDelayMs = 5_000
+
+  const turn = $.turn.complete(errorTurn)
+  await world.clock.advance(5_000)
+  expect(world.store['pending:s1']).toEqual({ attempt: 1, resumes: 0, dueAt: 35_000 })
+
+  world.sessionIdDelayMs = 0
+  await $.prompt.submit({ text: 'never mind', wait: false, origin: { kind: 'composer' } })
+  await world.clock.advance(10 * 60_000)
+  await turn
+
+  expect(world.spawns).toHaveLength(0)
+  expect(world.probes).toHaveLength(0)
+  expect(world.submits.map(s => s.text)).toEqual(['never mind'])
+  expect(world.store['pending:s1']).toBeUndefined()
+})
+
+test('a person prompt that lands while the plugin reads the record leaves no stray continue', async ($, on) => {
+  const world = createWorld(on)
+  // The store read after the probe is the slow one, so it answers with the record from before the prompt.
+  world.probeAnswer = () => {
+    world.storeGetDelayMs = 5_000
+    return ANSWERED
+  }
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(30_000)
+  expect(world.probes).toHaveLength(1)
+
+  world.storeGetDelayMs = 0
+  await $.prompt.submit({ text: 'never mind', wait: false, origin: { kind: 'composer' } })
+  await world.clock.advance(10 * 60_000)
+
+  expect(world.submits.map(s => s.text)).toEqual(['never mind'])
+  expect(world.store['pending:s1']).toBeUndefined()
+})
+
+const entryDelays = [
+  ['session id', 'sessionIdDelayMs'],
+  ['record', 'storeGetDelayMs'],
+] as const
+
+for (const [read, delay] of entryDelays) {
+  test(`a person prompt that lands while an error turn reads the ${read} arms nothing`, async ($, on) => {
+    const world = createWorld(on)
+    world[delay] = 5_000
+
+    const turn = $.turn.complete(errorTurn)
+    await world.clock.advance(1_000)
+
+    world[delay] = 0
+    await $.prompt.submit({ text: 'never mind', wait: false, origin: { kind: 'composer' } })
+    await world.clock.advance(10 * 60_000)
+    await turn
+
+    expect(world.spawns).toHaveLength(0)
+    expect(world.probes).toHaveLength(0)
+    expect(world.submits.map(s => s.text)).toEqual(['never mind'])
+    expect(world.store['pending:s1']).toBeUndefined()
+  })
+}
+
+test('a person prompt that lands while a session start reads the record arms nothing', async ($, on) => {
+  const world = createWorld(on, { store: { 'pending:s1': { attempt: 1, resumes: 0, dueAt: 0 } } })
+  world.storeGetDelayMs = 5_000
+
+  const start = $.session.start(sessionStart)
+  await world.clock.advance(1_000)
+
+  world.storeGetDelayMs = 0
+  await $.prompt.submit({ text: 'never mind', wait: false, origin: { kind: 'composer' } })
+  await world.clock.advance(10 * 60_000)
+  await start
+
+  expect(world.spawns).toHaveLength(0)
+  expect(world.probes).toHaveLength(0)
+  expect(world.submits.map(s => s.text)).toEqual(['never mind'])
+  expect(world.store['pending:s1']).toBeUndefined()
+})
+
+test('a session end that lands while arm reads the session id schedules no attempt and starts no watcher', async ($, on) => {
+  const world = createWorld(on)
+  // Both session.id calls are slow: advancing 5s releases the hook's, so arm has stored the record and stalls in its own.
+  world.sessionIdDelayMs = 5_000
+
+  const turn = $.turn.complete(errorTurn)
+  await world.clock.advance(5_000)
+
+  await $.session.end(endSession as Parameters<typeof $.session.end>[0])
+  world.sessionId = 's2'
+  world.sessionIdDelayMs = 0
+  await world.clock.advance(10 * 60_000)
+  await turn
+
+  expect(world.spawns).toHaveLength(0)
+  expect(world.probes).toHaveLength(0)
+  expect(world.store['pending:s1']).toEqual({ attempt: 1, resumes: 0, dueAt: 35_000 })
+})
+
+test('a session end that lands while the plugin reads the session id after a probe counts no resume', async ($, on) => {
+  const world = createWorld(on)
+  world.probeAnswer = () => {
+    world.sessionIdDelayMs = 5_000
+    return ANSWERED
+  }
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(30_000)
+  expect(world.probes).toHaveLength(1)
+
+  await $.session.end(endSession as Parameters<typeof $.session.end>[0])
+  world.sessionId = 's2'
+  world.sessionIdDelayMs = 0
+  await world.clock.advance(10 * 60_000)
+
+  expect(world.submits).toHaveLength(0)
+  expect(world.store['pending:s1']).toEqual({ attempt: 1, resumes: 0, dueAt: 30_000 })
+})
+
+test('a person prompt that lands while the plugin stores the resume leaves no stray continue', async ($, on) => {
+  const world = createWorld(on)
+  // Only the write after the probe is slow, so the prompt lands between it and the submit.
+  world.probeAnswer = () => {
+    world.storeSetDelayMs = 5_000
+    return ANSWERED
+  }
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(30_000)
+  expect(world.probes).toHaveLength(1)
+
+  world.storeSetDelayMs = 0
+  await $.prompt.submit({ text: 'never mind', wait: false, origin: { kind: 'composer' } })
+  await world.clock.advance(10 * 60_000)
+
+  expect(world.submits.map(s => s.text)).toEqual(['never mind'])
+  expect(world.store['pending:s1']).toBeUndefined()
+})
+
+test('a second error turn after an answered probe backs off from attempt 2', async ($, on) => {
+  const world = createWorld(on)
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(30_000)
+  await $.turn.complete(errorTurn)
+
+  expect(world.store['pending:s1']).toEqual({ attempt: 2, resumes: 1, dueAt: 90_000 })
+
+  await world.clock.advance(59_999)
+  expect(world.probes).toHaveLength(1)
+
+  await world.clock.advance(1)
+  expect(world.probes).toHaveLength(2)
+  expect(world.toasts).toEqual([
+    'API unreachable. Retry 1 of 20.',
+    'API is back. Resuming.',
+    'API unreachable. Retry 2 of 20.',
+    'API is back. Resuming.',
+  ])
+})
+
+const unreadable: [string, unknown][] = [
+  ['a string', 'garbage'],
+  ['null', null],
+  ['attempt 0', { attempt: 0, resumes: 0, dueAt: 0 }],
+  ['attempt 21', { attempt: 21, resumes: 0, dueAt: 0 }],
+  ['attempt 1.5', { attempt: 1.5, resumes: 0, dueAt: 0 }],
+  ['resumes -1', { attempt: 1, resumes: -1, dueAt: 0 }],
+  ['dueAt -Infinity', { attempt: 1, resumes: 0, dueAt: -Infinity }],
+]
+
+for (const [label, seeded] of unreadable) {
+  test(`a stored record that is ${label} is ignored and the next error starts over`, async ($, on) => {
+    const world = createWorld(on, { now: 1_000, store: { 'pending:s1': seeded } })
+
+    await $.session.start(sessionStart)
+    await world.clock.advance(10 * 60_000)
+    expect(world.probes).toHaveLength(0)
+    expect(world.spawns).toHaveLength(0)
+
+    await $.turn.complete(errorTurn)
+
+    expect(world.store['pending:s1']).toEqual({
+      attempt: 1,
+      resumes: 0,
+      dueAt: 1_000 + 10 * 60_000 + 30_000,
+    })
+  })
+}
+
+test('a probe aborted before it answered counts as a failed attempt', async ($, on) => {
+  const world = createWorld(on)
+  world.probeAnswer = () =>
+    ({ isAnswered: false, reason: 'aborted', usage: ANSWERED.usage }) as ModelCompleteResult
+
+  await $.turn.complete(errorTurn)
+  await world.clock.advance(30_000)
+
+  expect(world.submits).toHaveLength(0)
+  expect(world.store['pending:s1']).toEqual({ attempt: 2, resumes: 0, dueAt: 90_000 })
 })
