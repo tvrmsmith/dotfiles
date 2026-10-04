@@ -45,3 +45,7 @@ dot-config/corporate-ca.crt
 # no-mistakes writes its own skill here (`no-mistakes init`, or `make install`
 # in a checkout) so the skill always matches the installed binary. Not vendored.
 dot-claude/skills/no-mistakes/
+
+# Claude Code writes each mod's API types here when it loads the mod, and
+# rewrites them after every update. Generated per build, never committed.
+dot-claude/skills/*/.claude-plugin/types/

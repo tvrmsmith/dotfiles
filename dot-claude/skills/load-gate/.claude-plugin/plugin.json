@@ -1,0 +1,6 @@
+{
+  "name": "load-gate",
+  "version": "0.1.0",
+  "description": "Hold Bash test runs while the machine is short of memory or CPU, then release them one per tick.",
+  "author": { "name": "Trevor Smith" }
+}
