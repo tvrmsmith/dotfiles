@@ -5,7 +5,7 @@ import type { On } from 'claude-code'
 const NOW = 1791000000000
 const FLAG = '/home/t/.claude/afk'
 const LOG = '/home/t/.local/state/agent-decision-logs/afk-sess-1.tsv'
-const T1 = 1791039600
+const T1 = 1791039607
 
 const SURFACES = ['terminal', 'desktop'] as const
 
@@ -61,8 +61,8 @@ const ran = (exitCode: number, stdout = '', stderr = '') => ({
 })
 
 const DATES: Record<string, string> = {
-  '1791039600': 'Sat 3 Oct 10:00',
-  '1791043200': 'Sat 3 Oct 11:00',
+  '1791039607': 'Sat 3 Oct 10:00',
+  '1791043207': 'Sat 3 Oct 11:00',
 }
 
 const bandText = async ($: Engine, surface: (typeof SURFACES)[number], hasSurvey = false) => {
@@ -131,6 +131,13 @@ for (const surface of SURFACES) {
     expect(await bandText($, surface)).toBe(BAND_T1)
   })
 
+  test(`stray characters on the flag line count as afk-guard.sh reads them (${surface})`, async ($, on) => {
+    const w = world(on, { files: { [FLAG]: `${T1} \r\n`, [LOG]: LOG_TEXT } })
+    await start($)
+    expect(rmCalls(w)).toEqual([])
+    expect(await bandText($, surface)).toBe(BAND_T1)
+  })
+
   test(`XDG_STATE_HOME moves the log (${surface})`, async ($, on) => {
     world(on, {
       env: { XDG_STATE_HOME: '/state' },
@@ -191,8 +198,10 @@ for (const [name, flag] of [
   }
 }
 
-const TO_T1 = 39_600_000
+// Off the poll grid, so only the deadline timer can act at the deadline.
+const TO_T1 = T1 * 1000 - NOW
 const ENDED = ['AFK ended']
+const POLL = 15_000
 
 for (const surface of SURFACES) {
   test(`the deadline clears the flag, toasts once, drops the band (${surface})`, async ($, on) => {
@@ -202,6 +211,10 @@ for (const surface of SURFACES) {
     expect(rmCalls(w)).toEqual([RM])
     expect(w.toasts).toEqual(ENDED)
     expect(await bandText($, surface)).toBeUndefined()
+
+    await w.clock.advance(POLL)
+    expect(rmCalls(w)).toEqual([RM])
+    expect(w.toasts).toEqual(ENDED)
   })
 }
 
@@ -222,8 +235,7 @@ for (const surface of SURFACES) {
   })
 }
 
-const POLL = 15_000
-const T2 = 1791043200
+const T2 = 1791043207
 
 for (const surface of SURFACES) {
   test(`another session arming shows up on the next poll (${surface})`, async ($, on) => {
@@ -250,7 +262,7 @@ for (const surface of SURFACES) {
     expect(rmCalls(w)).toEqual([])
     expect(w.toasts).toEqual([])
 
-    await w.clock.advance(3_600_000)
+    await w.clock.advance((T2 - T1) * 1000)
     expect(rmCalls(w)).toEqual([RM])
     expect(w.toasts).toEqual(ENDED)
   })
@@ -275,6 +287,7 @@ for (const surface of SURFACES) {
     await start($)
 
     await w.clock.advance(TO_T1)
+    expect(rmCalls(w)).toEqual([RM])
     expect(w.toasts).toEqual([])
     expect(await bandText($, surface)).toBe(BAND_T1)
 

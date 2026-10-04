@@ -12,6 +12,7 @@ const armed = atom({ plugin: 'afk-band', key: 'armed' } as const, null as Afk | 
 let deadline: Timer | null = null
 let poll: Timer | null = null
 let isInteractive = false
+let queue: Promise<unknown> = Promise.resolve()
 
 async function refresh($: Api) {
   const home = await $.env.get('HOME')
@@ -21,9 +22,9 @@ async function refresh($: Api) {
 
   const flag = await $.fs.read(flagPath).catch(() => null)
   const first = flag === null ? '' : (String(flag).split('\n')[0] ?? '')
-  const until = /^\d+$/.test(first) ? Number(first) : NaN
+  const until = Number(first.replace(/\D/g, ''))
 
-  if (flag !== null && !(until * 1000 > now)) {
+  if (flag !== null && until * 1000 <= now) {
     const removed = await $.process.run(['rm', '-f', flagPath])
     if (removed.exitCode !== 0) return
   }
@@ -31,7 +32,7 @@ async function refresh($: Api) {
   deadline?.cancel()
   deadline = null
 
-  if (flag === null || !(until * 1000 > now)) {
+  if (flag === null || until * 1000 <= now) {
     if (previous !== null) {
       await update($, armed, () => null)
       if (previous.until * 1000 <= now) $.ui.toast('AFK ended')
@@ -64,10 +65,15 @@ async function returnTime($: Api, until: number) {
   return stdout.trim()
 }
 
-// A failed refresh only logs: a timer callback has nobody to reject to, and
-// the next poll tries again.
+// Each refresh waits for the one before, so a poll landing on the deadline
+// sees what the timer already cleared and toasts nothing more. A failed
+// refresh only logs: a timer callback has nobody to reject to, and the next
+// poll tries again.
 function refreshQuietly($: Api) {
-  return refresh($).catch(error => $.ui.log(`afk-band refresh failed: ${error}`, { to: 'debug' }))
+  queue = queue
+    .then(() => refresh($))
+    .catch(error => $.ui.log(`afk-band refresh failed: ${error}`, { to: 'debug' }))
+  return queue
 }
 
 export const register: Register = on => {
