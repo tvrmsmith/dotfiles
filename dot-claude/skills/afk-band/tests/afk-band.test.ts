@@ -63,6 +63,7 @@ const ran = (exitCode: number, stdout = '', stderr = '') => ({
 const DATES: Record<string, string> = {
   '1791039607': 'Sat 3 Oct 10:00',
   '1791043207': 'Sat 3 Oct 11:00',
+  '1791007207': 'Sat 3 Oct 01:00',
 }
 
 const bandText = async ($: Engine, surface: (typeof SURFACES)[number], hasSurvey = false) => {
@@ -308,6 +309,25 @@ for (const surface of SURFACES) {
     w.dateExit.code = 0
     await w.clock.advance(POLL)
     expect(await bandText($, surface)).toBe(BAND_T1)
+  })
+}
+
+// Past the longest single wait the deadline timer takes, off the poll grid.
+const T3 = 1791007207
+
+for (const surface of SURFACES) {
+  test(`a deadline past the longest wait still ends on time (${surface})`, async ($, on) => {
+    const w = world(on, { files: { [FLAG]: `${T3}\n`, [LOG]: LOG_TEXT } })
+    await start($)
+    expect(await bandText($, surface)).toBe('AFK until Sat 3 Oct 01:00 · 2 parked')
+
+    await w.clock.advance(T3 * 1000 - NOW - 1)
+    expect(rmCalls(w)).toEqual([])
+    expect(w.toasts).toEqual([])
+
+    await w.clock.advance(1)
+    expect(rmCalls(w)).toEqual([RM])
+    expect(w.toasts).toEqual(ENDED)
   })
 }
 

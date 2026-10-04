@@ -6,6 +6,7 @@ import type { Afk } from '../types'
 type Api = Parameters<Hook<'session.start'>>[0]
 
 const POLL_MS = 15_000
+const MAX_WAIT_MS = 3_600_000
 
 const armed = atom({ plugin: 'afk-band', key: 'armed' } as const, null as Afk | null)
 
@@ -40,7 +41,7 @@ async function refresh($: Api) {
     return
   }
 
-  deadline = $.clock.after(until * 1000 - now, () => refreshQuietly($))
+  deadline = $.clock.after(Math.min(until * 1000 - now, MAX_WAIT_MS), () => refreshQuietly($))
 
   const label = previous?.until === until ? previous.label : await returnTime($, until)
   const sessionId = await $.session.id()
