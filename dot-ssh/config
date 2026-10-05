@@ -3,7 +3,11 @@
 # 1Password SSH agent authorization: the agent binds a remembered approval to
 # the requesting *process*, so the app's "remember key approval for 4 hours"
 # never applies to an agent's short-lived, terminal-less git invocations. One
-# approval now covers the whole hour. See dotfiles-udc.
+# approval now lasts until the master sits idle for 4h, the same window the app
+# grants an interactive approval. See dotfiles-udc.
+#
+# ServerAlive* lets a master whose network vanished exit within ~90s. Without it
+# a push rides the dead socket and hangs until TCP gives up.
 #
 # The two hosts MUST NOT share a ControlPath. %C hashes (localhost, HostName,
 # port, user), and github-personal resolves to exactly the same github.com/git
@@ -20,7 +24,9 @@ Host github-personal
 	IdentitiesOnly yes
 	ControlMaster auto
 	ControlPath ~/.ssh/sockets/personal-%C
-	ControlPersist 1h
+	ControlPersist 4h
+	ServerAliveInterval 30
+	ServerAliveCountMax 3
 
 # IdentityFile is pinned for the same reason the personal block pins one. With no
 # pin this block takes whichever key the 1Password agent offers first, so a master
@@ -33,7 +39,9 @@ Host github.com
 	IdentitiesOnly yes
 	ControlMaster auto
 	ControlPath ~/.ssh/sockets/work-%C
-	ControlPersist 1h
+	ControlPersist 4h
+	ServerAliveInterval 30
+	ServerAliveCountMax 3
 
 Match host * exec "test $(uname) = Darwin"
 	IdentityAgent "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
