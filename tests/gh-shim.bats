@@ -6,6 +6,11 @@ SHIM="${BATS_TEST_DIRNAME}/../dot-local/bin/gh"
 
 routes() { GH_SHIM_EXPLAIN=1 bash "$SHIM" "$@"; }
 
+# The token tests stub `security`, so pin gh-keyring to the macOS backend
+# whatever this suite runs on. The Linux backend has its own tests below and in
+# tests/gh-keyring.bats.
+export GH_KEYRING_BACKEND=security
+
 # Every tier now reports the owner it resolved, so a test that only cares which
 # tier was chosen takes the first field rather than pinning the owner too.
 tier() { routes "$@" | awk '{print $1}'; }
@@ -371,6 +376,34 @@ STUB
   equals "$(PATH="$BIN:$PATH" bash "$SHIM" pr create --fill 2>&1)" "token=pr-token"
   # The read tier still picks the read-only entry.
   equals "$(PATH="$BIN:$PATH" bash "$SHIM" pr list 2>&1)" "token=read-token"
+
+  rm -rf "$TMP"
+}
+
+# On Linux (CachyOS) the same two tiers read the Secret Service, keyed the same
+# way. Before gh-keyring the lookup was `security` alone, which Linux lacks, so
+# every read fell through to a 1Password approval.
+@test "on Linux the read and pr-write tiers read the Secret Service" {
+  TMP="$(mktemp -d)"
+  BIN="$TMP/bin"
+  mkdir -p "$BIN"
+  cat > "$BIN/secret-tool" <<'STUB'
+#!/bin/bash
+[ "$1" = lookup ] || exit 1
+[ "$5" = some-org ] || exit 1
+case "$3" in gh-readonly) printf read-token ;; gh-prwrite) printf pr-token ;; *) exit 1 ;; esac
+STUB
+  printf '#!/bin/bash\necho "token=$GH_TOKEN"\n' > "$BIN/gh"
+  printf '#!/bin/bash\necho "op $*"\n' > "$BIN/op"
+  chmod +x "$BIN"/*
+
+  cd "$TMP"
+  git init -q .
+  git remote add origin git@github.com:some-org/Thing.git
+
+  linux() { GH_KEYRING_BACKEND=secret-tool PATH="$BIN:$PATH" bash "$SHIM" "$@" 2>&1; }
+  equals "$(linux pr list)" "token=read-token"
+  equals "$(linux pr create --fill)" "token=pr-token"
 
   rm -rf "$TMP"
 }

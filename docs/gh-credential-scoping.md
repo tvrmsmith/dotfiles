@@ -68,6 +68,9 @@ stop on a human, and the prompts that remain are rare enough that I read them.
 ## In this repo
 
 - `dot-local/bin/gh` is the wrapper.
-- `tests/gh-shim.bats` covers the classifier.
+- `dot-local/bin/gh-keyring` is the only file that knows the OS keyring: the
+  macOS keychain via `security`, or the Linux Secret Service via `secret-tool`.
+  Why it is still bash, and when that changes: `docs/adr/0001-gh-shim-stays-bash.md`.
+- `tests/gh-shim.bats` covers the classifier; `tests/gh-keyring.bats` the keyring backends.
 - `extras/gh-readonly-tokens.sh` provisions the tokens and the write tier's
   owner -> approval-source map; it's rerunnable.

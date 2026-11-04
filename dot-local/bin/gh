@@ -358,12 +358,15 @@ dir_owner() {
 	esac
 }
 
-# Two keychain entries per owner, written by extras/gh-readonly-tokens.sh: a
+# Two keyring entries per owner, written by extras/gh-readonly-tokens.sh: a
 # read-only token, and one scoped `Pull requests: write` with contents kept at
 # read. gh's own `gh:github.com` entries are keyed by account and so cannot hold
 # two tokens for one user; these are ours, under distinct service names.
+#
+# Which keyring (macOS keychain, Linux Secret Service) is gh-keyring's business,
+# so nothing below this line knows what OS it is on.
 keychain_token() {
-	security find-generic-password -s "${2:-gh-readonly}" -a "$1" -w 2>/dev/null
+	"$shim_dir/gh-keyring" get "${2:-gh-readonly}" "$1"
 }
 
 # Report the routing decision and exit without running anything. Lets the bats

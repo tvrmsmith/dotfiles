@@ -185,7 +185,7 @@ finish() {
 
 TOTAL_STAGES=6
 
-# Two kinds of token, each its own keychain service, each keyed by owner login.
+# Two kinds of token, each its own keyring service, each keyed by owner login.
 # gh-readonly is read-only everywhere. gh-prwrite adds `Pull requests: write`
 # and nothing else, so it opens PRs and cannot merge one: GitHub gates merging
 # on `Contents: write`, which this token does not have. See dotfiles-jwp.
@@ -193,6 +193,12 @@ TOTAL_STAGES=6
 # Kept as separate tokens rather than one combined token so that a command the
 # shim misclassifies as a read still cannot write. That property is why the
 # read tier can safely borrow a token across owners.
+# The keyring itself (macOS keychain or Linux Secret Service) is gh-keyring's
+# concern, shared with the shim so the platform split lives in one file. It is
+# reached by the repo path, not PATH, so a fresh machine can run this before
+# install.sh has stowed anything.
+KEYRING="${KEYRING:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/dot-local/bin/gh-keyring}"
+
 KIND_SERVICE() { case "$1" in pr) echo gh-prwrite ;; *) echo gh-readonly ;; esac; }
 KIND_LABEL()   { case "$1" in pr) echo "PR-write" ;; *) echo "read-only" ;; esac; }
 
@@ -231,22 +237,21 @@ store_token() {
     SKIPPED+=("$label token for $owner (duplicate owner, not stored)")
     return 1
   fi
-  if security add-generic-password -U -s "$service" -a "$owner" -w "$token" \
-       -D "GitHub $label PAT" 2>/dev/null; then
+  if printf '%s' "$token" | "$KEYRING" set "$service" "$owner" "GitHub $label PAT"; then
     case "$kind" in
       pr) STORED_PR_OWNERS+=("$owner") ;;
       *)  STORED_OWNERS+=("$owner") ;;
     esac
     printf '  %s✓ stored%s %s token for %s\n' "$GREEN" "$RESET" "$label" "$owner"
   else
-    SKIPPED+=("$label token for $owner (keychain write failed)")
-    warn "could not write the keychain entry for $owner"
+    SKIPPED+=("$label token for $owner (keyring write failed)")
+    warn "could not write the keyring entry for $owner"
   fi
   return 0
 }
 
 has_token() {
-  security find-generic-password -s "$(KIND_SERVICE "${2:-read}")" -a "$1" -w >/dev/null 2>&1
+  "$KEYRING" has "$(KIND_SERVICE "${2:-read}")" "$1"
 }
 
 # Every owner this run named, whatever came of it. Stage 4 offers a PR token for
@@ -511,7 +516,7 @@ done
 # makes this the one write GitHub offers that is safe to fire at a live repo.
 verify_owner() {
   local owner="$1" token repo status
-  token=$(security find-generic-password -s gh-readonly -a "$owner" -w 2>/dev/null) || {
+  token=$("$KEYRING" get gh-readonly "$owner") || {
     warn "$owner: no token stored, so its reads still prompt"; return; }
   repo=$(GH_TOKEN="$token" gh api "/user/repos?per_page=100&affiliation=owner,organization_member" \
            --jq ".[] | select(.owner.login == \"$owner\") | .full_name" 2>/dev/null | head -1)
@@ -568,7 +573,7 @@ verify_checks_read() {
 # cannot merge without going anywhere near a real merge.
 verify_pr_owner() {
   local owner="$1" token repo create_status blob_status
-  token=$(security find-generic-password -s gh-prwrite -a "$owner" -w 2>/dev/null) || {
+  token=$("$KEYRING" get gh-prwrite "$owner") || {
     note "$owner: no PR token, so opening a PR there still prompts"; return; }
   repo=$(GH_TOKEN="$token" gh api "/user/repos?per_page=100&affiliation=owner,organization_member" \
            --jq ".[] | select(.owner.login == \"$owner\") | .full_name" 2>/dev/null | head -1)

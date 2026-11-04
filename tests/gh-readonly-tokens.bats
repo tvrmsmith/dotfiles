@@ -34,6 +34,9 @@ EOF
   done
   printf '#!/bin/bash\nexit 0\n' > "$BIN/gh"
   chmod +x "$BIN"/*
+  # The stub stands in for macOS's keychain whatever this suite runs on.
+  # tests/gh-keyring.bats covers the Linux backend.
+  export GH_KEYRING_BACKEND=security
   # The write tier's owner map is a plain file, so point it at the sandbox
   # rather than the machine's real ~/.config.
   export PATH="$BIN:$PATH" ENV_FILE="$BIN/.env" PRESENT="" PRESENT_PR="" \
@@ -160,7 +163,9 @@ PREFIX='\n\np-tok\n\nw-tok\ndone\nn\nn\ndone\n'
 
 @test "the map is written unreadable by anyone else" {
   run_wizard_map "$PREFIX"'y\nmy.example.com\nop://v/i/token\nn\ndone\n' >/dev/null
-  equals "$(stat -f %Lp "$WRITE_MAP")" 600
+  # GNU stat spells it -c %a, BSD stat -f %Lp. GNU first: its -f means
+  # filesystem status and succeeds with the wrong answer.
+  equals "$(stat -c %a "$WRITE_MAP" 2>/dev/null || stat -f %Lp "$WRITE_MAP")" 600
 }
 
 @test "an owner the run never asks about keeps its line" {
