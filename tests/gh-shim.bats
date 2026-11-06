@@ -6,6 +6,11 @@ SHIM="${BATS_TEST_DIRNAME}/../dot-local/bin/gh"
 
 routes() { GH_SHIM_EXPLAIN=1 bash "$SHIM" "$@"; }
 
+# The token tests stub `security`, so pin gh-keyring to the macOS backend
+# whatever this suite runs on. The Linux backend has its own tests below and in
+# tests/gh-keyring.bats.
+export GH_KEYRING_BACKEND=security
+
 # Every tier now reports the owner it resolved, so a test that only cares which
 # tier was chosen takes the first field rather than pinning the owner too.
 tier() { routes "$@" | awk '{print $1}'; }
@@ -304,15 +309,36 @@ tier() { routes "$@" | awk '{print $1}'; }
   rm -rf "$TMP"
 }
 
+# The owner loop returns on its first match. While it streamed remote URLs from
+# a pipe, the writer was still feeding the closed pipe, and under a parent that
+# ignores SIGPIPE (common for agent launchers) GNU cut printed "write error:
+# Broken pipe" on every Linux gh call. Enough remotes to overflow a pipe buffer
+# make the race certain rather than lucky.
+@test "resolving the owner from a non-origin remote writes nothing to stderr" {
+  TMP="$(mktemp -d)"
+  cd "$TMP"
+  git init -q .
+  git remote add origin /srv/gate.git
+  for i in $(seq 1 3000); do printf '[remote "r%s"]\n\turl = git@github.com:o%s/x.git\n' "$i" "$i"; done >> .git/config
+
+  err="$( (trap '' PIPE; GH_SHIM_EXPLAIN=1 bash "$SHIM" pr list) 2>&1 >/dev/null )"
+  is_empty "$err"
+  equals "$(routes pr list)" "read o1"
+
+  rm -rf "$TMP"
+}
+
 @test "outside a repo the owner falls back on the directory rule" {
   TMP="$(mktemp -d)"
   cd "$TMP"
   equals "$(routes pr list)" "read TrevorSmith-Wellsky"
 
+  # A scratch HOME: the directory rule reads $HOME, and a repo left under the
+  # real ~/dev/personal by a failed run broke every run after it.
+  export HOME="$TMP/home"
   mkdir -p "$HOME/dev/personal/gh-shim-test" && cd "$HOME/dev/personal/gh-shim-test"
   equals "$(routes pr list)" "read tvrmsmith"
 
-  rmdir "$HOME/dev/personal/gh-shim-test"
   rm -rf "$TMP"
 }
 
@@ -335,6 +361,7 @@ STUB
   printf '#!/bin/bash\nexit 0\n' > "$BIN/op"
   chmod +x "$BIN"/*
 
+  export HOME="$TMP/home"   # scratch: the directory rule reads $HOME
   mkdir -p "$HOME/dev/personal/gh-shim-borrow" && cd "$HOME/dev/personal/gh-shim-borrow"
   git init -q .
   git remote add origin git@github.com:third-party/thing.git
@@ -343,7 +370,7 @@ STUB
   equals "$out" "token=personal-token"
 
   cd "$TMP"
-  rm -rf "$HOME/dev/personal/gh-shim-borrow" "$TMP"
+  rm -rf "$TMP"
 }
 
 @test "a pr-write uses the owner's gh-prwrite entry, not the read-only one" {
@@ -375,6 +402,59 @@ STUB
   rm -rf "$TMP"
 }
 
+# On Linux (CachyOS) the same two tiers read the Secret Service, keyed the same
+# way. Before gh-keyring the lookup was `security` alone, which Linux lacks, so
+# every read fell through to a 1Password approval.
+# install.sh makes ~/.local/bin a real directory, so stow links each file in it
+# separately and a newly added helper has no link there until the next install.
+# The shim has to find gh-keyring beside its real file in the repo, or a machine
+# that only pulled sends every read to a 1Password prompt.
+@test "a stowed shim finds gh-keyring in the repo when its link dir lacks one" {
+  TMP="$(mktemp -d)"
+  BIN="$TMP/bin"
+  LINKS="$TMP/links"
+  mkdir -p "$BIN" "$LINKS"
+  ln -s "$SHIM" "$LINKS/gh"
+  printf '#!/bin/bash\necho stored-token\n' > "$BIN/security"
+  printf '#!/bin/bash\necho "token=$GH_TOKEN"\n' > "$BIN/gh"
+  printf '#!/bin/bash\necho "op $*"\n' > "$BIN/op"
+  chmod +x "$BIN"/*
+
+  cd "$TMP"
+  git init -q .
+  git remote add origin git@github.com:some-org/Thing.git
+
+  out="$(PATH="$BIN:$PATH" bash "$LINKS/gh" pr list 2>&1)"
+  equals "$out" "token=stored-token"
+
+  rm -rf "$TMP"
+}
+
+@test "on Linux the read and pr-write tiers read the Secret Service" {
+  TMP="$(mktemp -d)"
+  BIN="$TMP/bin"
+  mkdir -p "$BIN"
+  cat > "$BIN/secret-tool" <<'STUB'
+#!/bin/bash
+[ "$1" = lookup ] || exit 1
+[ "$5" = some-org ] || exit 1
+case "$3" in gh-readonly) printf read-token ;; gh-prwrite) printf pr-token ;; *) exit 1 ;; esac
+STUB
+  printf '#!/bin/bash\necho "token=$GH_TOKEN"\n' > "$BIN/gh"
+  printf '#!/bin/bash\necho "op $*"\n' > "$BIN/op"
+  chmod +x "$BIN"/*
+
+  cd "$TMP"
+  git init -q .
+  git remote add origin git@github.com:some-org/Thing.git
+
+  linux() { GH_KEYRING_BACKEND=secret-tool PATH="$BIN:$PATH" bash "$SHIM" "$@" 2>&1; }
+  equals "$(linux pr list)" "token=read-token"
+  equals "$(linux pr create --fill)" "token=pr-token"
+
+  rm -rf "$TMP"
+}
+
 # The borrow loop exists so a public read finds any valid token. That reasoning
 # does not carry to a credential that can write, so a PR against an owner we hold
 # no PR token for prompts instead of reaching for someone else's.
@@ -391,6 +471,7 @@ STUB
   printf '#!/bin/bash\necho "op $*"\n' > "$BIN/op"
   chmod +x "$BIN"/*
 
+  export HOME="$TMP/home"   # scratch: the directory rule reads $HOME
   mkdir -p "$HOME/dev/personal/gh-shim-prborrow" && cd "$HOME/dev/personal/gh-shim-prborrow"
   git init -q .
   git remote add origin git@github.com:third-party/thing.git
@@ -401,7 +482,7 @@ STUB
   lacks "$out" "personal-token"
 
   cd "$TMP"
-  rm -rf "$HOME/dev/personal/gh-shim-prborrow" "$TMP"
+  rm -rf "$TMP"
 }
 
 @test "a write is never satisfied by a borrowed token" {

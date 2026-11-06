@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# gh-keyring — the one place that knows which OS keyring holds the gh tokens.
+#
+#   gh-keyring get <service> <owner>          print the token, or exit 1
+#   gh-keyring has <service> <owner>          exit 0 if a token is stored
+#   gh-keyring set <service> <owner> [label]  store the token read from stdin
+#
+# The gh shim and extras/gh-readonly-tokens.sh both come through here, so a
+# platform is one branch below rather than a copy in each caller. Services are
+# gh-readonly and gh-prwrite, keyed by GitHub owner login.
+#
+#   macOS   the login keychain via security(1)
+#   Linux   the Secret Service (KWallet, gnome-keyring) via secret-tool(1),
+#           from libsecret
+#
+# GH_KEYRING_BACKEND=security|secret-tool overrides the uname choice. The bats
+# suites use it to drive either backend from any machine.
+#
+# No backend at all (a Linux sandbox with no secret-tool) is an ordinary miss:
+# exit 1, so the shim falls through to its next tier instead of breaking.
+#
+# Staying in bash, and when that stops being the right call, is
+# docs/adr/0001-gh-shim-stays-bash.md.
+set -uo pipefail
+
+op="${1:-}" service="${2:-}" owner="${3:-}"
+label="${4:-GitHub token}"
+if [ -z "$op" ] || [ -z "$service" ] || [ -z "$owner" ]; then
+	echo "usage: gh-keyring get|has|set <service> <owner> [label]" >&2
+	exit 2
+fi
+
+backend="${GH_KEYRING_BACKEND:-}"
+if [ -z "$backend" ]; then
+	case "$(uname -s)" in
+		Darwin) backend=security ;;
+		*) backend=secret-tool ;;
+	esac
+fi
+command -v "$backend" >/dev/null 2>&1 || exit 1
+
+case "$backend:$op" in
+	security:get) exec security find-generic-password -s "$service" -a "$owner" -w 2>/dev/null ;;
+	security:has) exec security find-generic-password -s "$service" -a "$owner" -w >/dev/null 2>&1 ;;
+	# security has no stdin form for -w: without a value it prompts on the tty.
+	security:set)
+		token="$(cat)"
+		exec security add-generic-password -U -s "$service" -a "$owner" -w "$token" \
+			-D "$label" 2>/dev/null ;;
+
+	# lookup prints no trailing newline, so $(...) and a pipe read it the same.
+	secret-tool:get) exec secret-tool lookup service "$service" account "$owner" 2>/dev/null ;;
+	secret-tool:has) exec secret-tool lookup service "$service" account "$owner" >/dev/null 2>&1 ;;
+	# store replaces an existing item with the same attributes, matching -U.
+	secret-tool:set)
+		exec secret-tool store --label="$label ($service/$owner)" \
+			service "$service" account "$owner" 2>/dev/null ;;
+esac
+
+echo "gh-keyring: unknown backend or operation: $backend $op" >&2
+exit 2

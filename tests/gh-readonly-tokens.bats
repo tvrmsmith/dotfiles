@@ -34,6 +34,9 @@ EOF
   done
   printf '#!/bin/bash\nexit 0\n' > "$BIN/gh"
   chmod +x "$BIN"/*
+  # The stub stands in for macOS's keychain whatever this suite runs on.
+  # tests/gh-keyring.bats covers the Linux backend.
+  export GH_KEYRING_BACKEND=security
   # The write tier's owner map is a plain file, so point it at the sandbox
   # rather than the machine's real ~/.config.
   export PATH="$BIN:$PATH" ENV_FILE="$BIN/.env" PRESENT="" PRESENT_PR="" \
@@ -160,7 +163,9 @@ PREFIX='\n\np-tok\n\nw-tok\ndone\nn\nn\ndone\n'
 
 @test "the map is written unreadable by anyone else" {
   run_wizard_map "$PREFIX"'y\nmy.example.com\nop://v/i/token\nn\ndone\n' >/dev/null
-  equals "$(stat -f %Lp "$WRITE_MAP")" 600
+  # GNU stat spells it -c %a, BSD stat -f %Lp. GNU first: its -f means
+  # filesystem status and succeeds with the wrong answer.
+  equals "$(stat -c %a "$WRITE_MAP" 2>/dev/null || stat -f %Lp "$WRITE_MAP")" 600
 }
 
 @test "an owner the run never asks about keeps its line" {
@@ -222,6 +227,28 @@ EOF
   lacks "$out" "Add Checks"
   lacks "$out" "cannot read commit statuses"
   lacks "$out" "cannot read Actions runs"
+}
+
+# The wizard finds gh-keyring from its own path. A symlinked copy has to follow
+# the link back to the repo, and a run with no path to follow (piped into bash)
+# has to stop, rather than report every store as a failed write.
+@test "a symlinked wizard still finds gh-keyring in the repo" {
+  ln -s "$WIZARD" "$BIN/linked-wizard.sh"
+  printf '%b' '\n\np-tok\n\nw-tok\ndone\n\n' | bash "$BIN/linked-wizard.sh" >/dev/null 2>&1 || true
+  contains "$(cat "$LOG")" "add-generic-password -U -s gh-readonly -a tvrmsmith -w p-tok"
+}
+
+@test "a wizard piped into bash stops instead of guessing where gh-keyring is" {
+  run bash -c 'bash < "$1"' _ "$WIZARD"
+  [ "$status" -ne 0 ]
+  contains "$output" "cannot find gh-keyring"
+  lacks "$output" "keyring write failed"
+}
+
+@test "a KEYRING that is not there stops the wizard before any stage" {
+  run env KEYRING="$BIN/nope" bash "$WIZARD" </dev/null
+  [ "$status" -ne 0 ]
+  contains "$output" "cannot find gh-keyring at $BIN/nope"
 }
 
 @test "no token is ever written to a file" {
