@@ -27,21 +27,23 @@ rewrite could drop.
 
 Stay in bash. Every platform difference lives in `dot-local/bin/gh-keyring`,
 which picks `security` on Darwin and `secret-tool` (libsecret) elsewhere. The
-shim and `extras/gh-readonly-tokens.sh` call only `gh-keyring`, and neither
-mentions an OS.
+shim and `extras/gh-readonly-tokens.sh` call only `gh-keyring` for tokens, and
+neither branches on the OS to find one.
 
 Port the shim to Go when **any one** of these happens:
 
 1. **A third platform branch.** `gh-keyring` needs a third backend (Windows
-   Credential Manager, WSL), or OS-specific code appears anywhere outside
-   `gh-keyring`.
+   Credential Manager, WSL), or the shim or wizard gains a new branch on the OS
+   or keyring of its own. The portability the shim already carries does not
+   count: BSD `readlink` in `canon()`, the Homebrew prefixes, the perl watchdog
+   standing in for macOS's missing timeout(1).
 2. **Two more argv-parsing fixes.** Two bugs fixed after this ADR where the
    classifier or owner resolution misread argv: a flag value taken as an
    endpoint, a missed `--flag=value` spelling, a new verb shape. Label each
    such bead `gh-shim:argv`. `bd list --label gh-shim:argv --status closed`
    reaching 2 is the trigger. Adding a verb to an existing `case` list does not
    count.
-3. **Size.** `dot-local/bin/gh` passes 750 lines. It was 555 at this decision.
+3. **Size.** `dot-local/bin/gh` passes 750 lines. It was 566 at this decision.
 4. **Structure bash does badly.** A feature that needs a token cached across
    invocations, JSON parsed from a `gh` or `op` response, concurrent work, or
    another helper-language workaround like the perl timeout watchdog.
@@ -53,6 +55,9 @@ Linux support on its own is not a trigger. This decision is the answer to it.
 - Linux needs `libsecret` (`secret-tool`) and an unlocked keyring (KWallet 5.97+
   or gnome-keyring, unlocked at login through PAM) for silent reads. Without
   `secret-tool` the shim falls through tiers exactly as a Linux sandbox does.
+- The shim finds `gh-keyring` beside its own real file in the repo, not in
+  `~/.local/bin`, so a machine that pulls this change works before
+  `install.sh` links the new helper.
 - The bats suites pin `GH_KEYRING_BACKEND` so either backend is tested on
   either OS. `tests/gh-keyring.bats` owns the backend calls.
 - When a trigger fires, port in two steps. First, a Go binary that passes the

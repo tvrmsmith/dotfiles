@@ -229,6 +229,28 @@ EOF
   lacks "$out" "cannot read Actions runs"
 }
 
+# The wizard finds gh-keyring from its own path. A symlinked copy has to follow
+# the link back to the repo, and a run with no path to follow (piped into bash)
+# has to stop, rather than report every store as a failed write.
+@test "a symlinked wizard still finds gh-keyring in the repo" {
+  ln -s "$WIZARD" "$BIN/linked-wizard.sh"
+  printf '%b' '\n\np-tok\n\nw-tok\ndone\n\n' | bash "$BIN/linked-wizard.sh" >/dev/null 2>&1 || true
+  contains "$(cat "$LOG")" "add-generic-password -U -s gh-readonly -a tvrmsmith -w p-tok"
+}
+
+@test "a wizard piped into bash stops instead of guessing where gh-keyring is" {
+  run bash -c 'bash < "$1"' _ "$WIZARD"
+  [ "$status" -ne 0 ]
+  contains "$output" "cannot find gh-keyring"
+  lacks "$output" "keyring write failed"
+}
+
+@test "a KEYRING that is not there stops the wizard before any stage" {
+  run env KEYRING="$BIN/nope" bash "$WIZARD" </dev/null
+  [ "$status" -ne 0 ]
+  contains "$output" "cannot find gh-keyring at $BIN/nope"
+}
+
 @test "no token is ever written to a file" {
   run_wizard '\n\np-tok\n\nw-tok\ndone\n\n' >/dev/null
   [ -f "$ENV_FILE" ] && lacks "$(cat "$ENV_FILE")" "p-tok"

@@ -3,7 +3,7 @@
 #
 # Three tiers, each with its own credential:
 #
-#   read      a read-only token from the login keychain, silent
+#   read      a read-only token from the OS keyring (gh-keyring), silent
 #   pr-write  a token scoped `Pull requests: write` with contents at read, silent
 #   write     a full-access token read from 1Password, which asks for approval
 #
@@ -365,8 +365,16 @@ dir_owner() {
 #
 # Which keyring (macOS keychain, Linux Secret Service) is gh-keyring's business,
 # so nothing below this line knows what OS it is on.
+#
+# Found beside this file's real path, not beside the link to it. install.sh
+# makes ~/.local/bin a real directory, so stow links its files one by one and a
+# new helper has no link there until the next install. Looked for in
+# $shim_dir, it was missing on every machine that had only pulled, and each
+# read fell through to a 1Password prompt. The repo copy always exists, and in
+# a sandbox that copies dot-local/bin the two directories are the same.
+keyring="$(dirname "$self")/gh-keyring"
 keychain_token() {
-	"$shim_dir/gh-keyring" get "${2:-gh-readonly}" "$1"
+	"$keyring" get "${2:-gh-readonly}" "$1" 2>/dev/null
 }
 
 # Report the routing decision and exit without running anything. Lets the bats

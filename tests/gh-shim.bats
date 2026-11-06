@@ -383,6 +383,31 @@ STUB
 # On Linux (CachyOS) the same two tiers read the Secret Service, keyed the same
 # way. Before gh-keyring the lookup was `security` alone, which Linux lacks, so
 # every read fell through to a 1Password approval.
+# install.sh makes ~/.local/bin a real directory, so stow links each file in it
+# separately and a newly added helper has no link there until the next install.
+# The shim has to find gh-keyring beside its real file in the repo, or a machine
+# that only pulled sends every read to a 1Password prompt.
+@test "a stowed shim finds gh-keyring in the repo when its link dir lacks one" {
+  TMP="$(mktemp -d)"
+  BIN="$TMP/bin"
+  LINKS="$TMP/links"
+  mkdir -p "$BIN" "$LINKS"
+  ln -s "$SHIM" "$LINKS/gh"
+  printf '#!/bin/bash\necho stored-token\n' > "$BIN/security"
+  printf '#!/bin/bash\necho "token=$GH_TOKEN"\n' > "$BIN/gh"
+  printf '#!/bin/bash\necho "op $*"\n' > "$BIN/op"
+  chmod +x "$BIN"/*
+
+  cd "$TMP"
+  git init -q .
+  git remote add origin git@github.com:some-org/Thing.git
+
+  out="$(PATH="$BIN:$PATH" bash "$LINKS/gh" pr list 2>&1)"
+  equals "$out" "token=stored-token"
+
+  rm -rf "$TMP"
+}
+
 @test "on Linux the read and pr-write tiers read the Secret Service" {
   TMP="$(mktemp -d)"
   BIN="$TMP/bin"

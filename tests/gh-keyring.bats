@@ -6,13 +6,17 @@ load helpers/assert
 KEYRING="${BATS_TEST_DIRNAME}/../dot-local/bin/gh-keyring"
 
 setup() {
+  # An exported override in the caller's shell would decide every test below.
+  unset GH_KEYRING_BACKEND
   BIN="$(mktemp -d)"
   export LOG="$BIN/calls.log"
   for tool in security secret-tool; do
     cat > "$BIN/$tool" <<'EOF'
 #!/bin/bash
+# Only the store calls take stdin. Reading it on every call hangs a lookup
+# run from a shell whose stdin is an open pipe, as in a background job.
 stdin=""
-[ -t 0 ] || stdin="$(cat)"
+case "$1" in add-generic-password | store) stdin="$(cat)" ;; esac
 echo "$(basename "$0") $* ${stdin:+<stdin:$stdin>}" >> "$LOG"
 case "$1" in find-generic-password | lookup) printf stored-token ;; esac
 EOF
@@ -59,7 +63,9 @@ keyring() { PATH="$BIN:$PATH" bash "$KEYRING" "$@"; }
 # treat that as "no token here" and fall through, not die.
 @test "a missing backend is a plain miss, not an error" {
   rm "$BIN/secret-tool"
-  run env GH_KEYRING_BACKEND=secret-tool PATH="$BIN:/usr/bin:/bin" bash "$KEYRING" get gh-readonly x
+  # PATH is the stub dir alone, so a real secret-tool on this machine (any
+  # CachyOS box with libsecret) cannot answer and turn this into a lookup test.
+  run env GH_KEYRING_BACKEND=secret-tool PATH="$BIN" "$BASH" "$KEYRING" get gh-readonly x
   equals "$status" 1
   is_empty "$output"
 }

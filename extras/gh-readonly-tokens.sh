@@ -197,7 +197,28 @@ TOTAL_STAGES=6
 # concern, shared with the shim so the platform split lives in one file. It is
 # reached by the repo path, not PATH, so a fresh machine can run this before
 # install.sh has stowed anything.
-KEYRING="${KEYRING:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/dot-local/bin/gh-keyring}"
+#
+# The symlink chain is followed so a linked copy of this script still finds the
+# repo. Piped into bash there is no script path at all, and a guessed one made
+# every store report "keyring write failed" and every owner look tokenless, so
+# that case stops here instead. KEYRING=/path/to/gh-keyring overrides.
+keyring_path() {
+  local src="${BASH_SOURCE[0]:-}" dir
+  [ -n "$src" ] && [ -f "$src" ] || return 1
+  while [ -h "$src" ]; do
+    dir="$(cd -P "$(dirname "$src")" && pwd)"
+    src="$(readlink "$src")"
+    [ "${src#/}" = "$src" ] && src="$dir/$src"
+  done
+  printf '%s/dot-local/bin/gh-keyring\n' "$(cd -P "$(dirname "$src")/.." && pwd)"
+}
+KEYRING="${KEYRING:-$(keyring_path || true)}"
+if [ -z "$KEYRING" ] || [ ! -x "$KEYRING" ]; then
+  printf 'gh-readonly-tokens: cannot find gh-keyring%s.\n' "${KEYRING:+ at $KEYRING}" >&2
+  printf '  Run this script from the dotfiles checkout (bash extras/gh-readonly-tokens.sh),\n' >&2
+  printf '  or set KEYRING=/path/to/dot-local/bin/gh-keyring.\n' >&2
+  exit 1
+fi
 
 KIND_SERVICE() { case "$1" in pr) echo gh-prwrite ;; *) echo gh-readonly ;; esac; }
 KIND_LABEL()   { case "$1" in pr) echo "PR-write" ;; *) echo "read-only" ;; esac; }
