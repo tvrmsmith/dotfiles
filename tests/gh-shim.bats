@@ -309,15 +309,36 @@ tier() { routes "$@" | awk '{print $1}'; }
   rm -rf "$TMP"
 }
 
+# The owner loop returns on its first match. While it streamed remote URLs from
+# a pipe, the writer was still feeding the closed pipe, and under a parent that
+# ignores SIGPIPE (common for agent launchers) GNU cut printed "write error:
+# Broken pipe" on every Linux gh call. Enough remotes to overflow a pipe buffer
+# make the race certain rather than lucky.
+@test "resolving the owner from a non-origin remote writes nothing to stderr" {
+  TMP="$(mktemp -d)"
+  cd "$TMP"
+  git init -q .
+  git remote add origin /srv/gate.git
+  for i in $(seq 1 3000); do printf '[remote "r%s"]\n\turl = git@github.com:o%s/x.git\n' "$i" "$i"; done >> .git/config
+
+  err="$( (trap '' PIPE; GH_SHIM_EXPLAIN=1 bash "$SHIM" pr list) 2>&1 >/dev/null )"
+  is_empty "$err"
+  equals "$(routes pr list)" "read o1"
+
+  rm -rf "$TMP"
+}
+
 @test "outside a repo the owner falls back on the directory rule" {
   TMP="$(mktemp -d)"
   cd "$TMP"
   equals "$(routes pr list)" "read TrevorSmith-Wellsky"
 
+  # A scratch HOME: the directory rule reads $HOME, and a repo left under the
+  # real ~/dev/personal by a failed run broke every run after it.
+  export HOME="$TMP/home"
   mkdir -p "$HOME/dev/personal/gh-shim-test" && cd "$HOME/dev/personal/gh-shim-test"
   equals "$(routes pr list)" "read tvrmsmith"
 
-  rmdir "$HOME/dev/personal/gh-shim-test"
   rm -rf "$TMP"
 }
 
@@ -340,6 +361,7 @@ STUB
   printf '#!/bin/bash\nexit 0\n' > "$BIN/op"
   chmod +x "$BIN"/*
 
+  export HOME="$TMP/home"   # scratch: the directory rule reads $HOME
   mkdir -p "$HOME/dev/personal/gh-shim-borrow" && cd "$HOME/dev/personal/gh-shim-borrow"
   git init -q .
   git remote add origin git@github.com:third-party/thing.git
@@ -348,7 +370,7 @@ STUB
   equals "$out" "token=personal-token"
 
   cd "$TMP"
-  rm -rf "$HOME/dev/personal/gh-shim-borrow" "$TMP"
+  rm -rf "$TMP"
 }
 
 @test "a pr-write uses the owner's gh-prwrite entry, not the read-only one" {
@@ -449,6 +471,7 @@ STUB
   printf '#!/bin/bash\necho "op $*"\n' > "$BIN/op"
   chmod +x "$BIN"/*
 
+  export HOME="$TMP/home"   # scratch: the directory rule reads $HOME
   mkdir -p "$HOME/dev/personal/gh-shim-prborrow" && cd "$HOME/dev/personal/gh-shim-prborrow"
   git init -q .
   git remote add origin git@github.com:third-party/thing.git
@@ -459,7 +482,7 @@ STUB
   lacks "$out" "personal-token"
 
   cd "$TMP"
-  rm -rf "$HOME/dev/personal/gh-shim-prborrow" "$TMP"
+  rm -rf "$TMP"
 }
 
 @test "a write is never satisfied by a borrowed token" {

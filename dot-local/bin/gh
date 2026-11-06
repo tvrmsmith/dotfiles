@@ -337,14 +337,22 @@ gh_owner() {
 	#
 	# origin first, then any other remote: a gate repo or a local clone can hold
 	# a filesystem origin while the real GitHub URL sits on a second remote.
-	local url owner
+	#
+	# Read whole before the loop, not streamed into it. The loop returns on the
+	# first match, and a writer still feeding a closed pipe gets EPIPE: under a
+	# parent that ignores SIGPIPE, GNU cut then printed "write error: Broken
+	# pipe" on every Linux gh call. BSD cut stayed quiet, so macOS never showed it.
+	local url owner key urls
+	urls="$(
+		git config --get remote.origin.url 2>/dev/null || true
+		git config --get-regexp '^remote\..*\.url$' 2>/dev/null || true
+	)"
 	while IFS= read -r url; do
+		# --get-regexp lines are "remote.NAME.url URL"; origin's line is bare.
+		case "$url" in remote.*' '*) key="${url%% *}"; url="${url#"$key" }" ;; esac
 		[ -n "$url" ] || continue
 		owner="$(owner_from_url "$url")" && [ -n "$owner" ] && { printf '%s\n' "$owner"; return; }
-	done < <(
-		git config --get remote.origin.url 2>/dev/null || true
-		git config --get-regexp '^remote\..*\.url$' 2>/dev/null | cut -d' ' -f2- || true
-	)
+	done <<< "$urls"
 
 	dir_owner
 }
