@@ -13,6 +13,8 @@ postgres = "latest"
 "npm:typescript-language-server" = "latest"
 "npm:typescript" = "latest"
 "gem:ruby-lsp" = "0.26.11"
+gh = "latest"
+op = "latest"
 
 [settings]
 
