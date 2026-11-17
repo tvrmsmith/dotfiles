@@ -27,6 +27,9 @@ Host github-personal
 	ControlPersist 4h
 	ServerAliveInterval 30
 	ServerAliveCountMax 3
+	# OpenSSH 10's host-bound pubkey extension fails signing through the
+	# 1Password agent ("Load key ...: invalid format"); unbound skips it.
+	PubkeyAuthentication unbound
 
 # IdentityFile is pinned for the same reason the personal block pins one. With no
 # pin this block takes whichever key the 1Password agent offers first, so a master
@@ -42,6 +45,7 @@ Host github.com
 	ControlPersist 4h
 	ServerAliveInterval 30
 	ServerAliveCountMax 3
+	PubkeyAuthentication unbound
 
 Match host * exec "test $(uname) = Darwin"
 	IdentityAgent "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
