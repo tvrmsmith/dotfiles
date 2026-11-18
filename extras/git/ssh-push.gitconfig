@@ -1,0 +1,9 @@
+# Push GitHub over SSH, so the shim's read-only fetch token never has to write.
+# pushInsteadOf is matched against the URL as written, before insteadOf, so
+# mapping a prefix to itself keeps pushes on SSH. install.sh links this to
+# ~/.gitconfig.ssh-push only where 1Password's SSH agent can sign the push.
+[url "git@github.com:"]
+	pushInsteadOf = git@github.com:
+	pushInsteadOf = https://github.com/
+[url "git@github-personal:"]
+	pushInsteadOf = git@github-personal:

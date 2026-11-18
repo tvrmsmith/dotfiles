@@ -370,6 +370,29 @@ link_beads_prime() {
 	fi
 }
 
+# Pushes ride SSH only where 1Password's SSH agent can sign them; anywhere else
+# (a Cloud Workstation, a sandbox) they stay on HTTPS with gh's credential. The
+# agent's directory, not its socket, is the signal: the socket exists only while
+# the app runs, and an install with 1Password closed must not drop the link.
+onepassword_agent_dir() {
+	if [ -n "${ONEPASSWORD_AGENT_DIR:-}" ]; then
+		printf '%s\n' "$ONEPASSWORD_AGENT_DIR"
+	elif [ "$(uname)" = Darwin ]; then
+		printf '%s\n' "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password"
+	else
+		printf '%s\n' "$HOME/.1password"
+	fi
+}
+
+link_ssh_push() {
+	local link="$HOME/.gitconfig.ssh-push"
+	if [ -d "$(onepassword_agent_dir)" ]; then
+		ln -sfn "$SCRIPT_DIR/extras/git/ssh-push.gitconfig" "$link"
+	elif [ -L "$link" ]; then
+		rm -f "$link"
+	fi
+}
+
 main() {
 	install_gnu_stow
 	init_submodules
@@ -381,6 +404,7 @@ main() {
 	unlink_brew_gh
 	link_slice_pipeline
 	link_beads_prime
+	link_ssh_push
 	echo "Dot files installed."
 }
 

@@ -189,3 +189,37 @@ teardown() { _install_test_teardown; }
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
+
+# Runs link_ssh_push against the scratch home, with $1 as 1Password's agent dir.
+run_link_ssh_push() {
+  run env HOME="$FAKE_HOME" PATH="$PATH" ONEPASSWORD_AGENT_DIR="$1" bash -c \
+    "source '$INSTALL_SH' && SCRIPT_DIR='$FAKE_REPO' && link_ssh_push"
+}
+
+@test "a machine with 1Password's ssh agent gets the ssh-push gitconfig" {
+  mkdir -p "$FAKE_REPO/extras/git" "$TMP/1password"
+  echo push > "$FAKE_REPO/extras/git/ssh-push.gitconfig"
+
+  run_link_ssh_push "$TMP/1password"
+  [ "$status" -eq 0 ]
+  [ "$FAKE_HOME/.gitconfig.ssh-push" -ef "$FAKE_REPO/extras/git/ssh-push.gitconfig" ]
+}
+
+@test "a machine without 1Password's ssh agent loses a stale ssh-push link" {
+  mkdir -p "$FAKE_REPO/extras/git"
+  echo push > "$FAKE_REPO/extras/git/ssh-push.gitconfig"
+  ln -s "$FAKE_REPO/extras/git/ssh-push.gitconfig" "$FAKE_HOME/.gitconfig.ssh-push"
+
+  run_link_ssh_push "$TMP/no-such-dir"
+  [ "$status" -eq 0 ]
+  [ ! -e "$FAKE_HOME/.gitconfig.ssh-push" ]
+  [ ! -L "$FAKE_HOME/.gitconfig.ssh-push" ]
+}
+
+@test "a hand-written ssh-push file survives a machine without the agent" {
+  echo '[url "git@example:"]' > "$FAKE_HOME/.gitconfig.ssh-push"
+
+  run_link_ssh_push "$TMP/no-such-dir"
+  [ "$status" -eq 0 ]
+  grep -qF 'git@example:' "$FAKE_HOME/.gitconfig.ssh-push"
+}
