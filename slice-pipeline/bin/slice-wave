@@ -8,7 +8,7 @@
 set -uo pipefail
 
 usage() {
-	echo "usage: slice-wave <branch-name|claim|release|verify-commit|validate|review-round|merge|close> ..." >&2
+	echo "usage: slice-wave <branch-name|claim|release|verify-commit|validate|review-round|review-watch|merge|close> ..." >&2
 }
 
 # Prints the branch git-check-ref-format accepts for $1, or returns 2 with
@@ -47,8 +47,9 @@ cmd_branch_name() {
 }
 
 # Sets the caller's `bead`, `beads_dir`, `verified`, `delivered`, `approved`,
-# `head_sha`, `pr`, `repo`, `pr_url` and `since` locals from the flag of the
-# same name, accepting only the flags named in the space-separated list $1.
+# `head_sha`, `pr`, `repo`, `pr_url`, `run`, `answer`, `answer_text` and
+# `shown_head` locals from the flag of the same name, accepting only the
+# flags named in the space-separated list $1.
 # Returns 2 on any other flag or a flag with no value after it.
 parse_flags() {
 	local accepted=" $1 "
@@ -69,7 +70,10 @@ parse_flags() {
 			--pr) pr="$2" ;;
 			--repo) repo="$2" ;;
 			--pr-url) pr_url="$2" ;;
-			--since) since="$2" ;;
+			--run) run="$2" ;;
+			--answer) answer="$2" ;;
+			--answer-text) answer_text="$2" ;;
+			--shown-head) shown_head="$2" ;;
 		esac
 		shift 2
 	done
@@ -1246,42 +1250,11 @@ cmd_merge() {
 	return 0
 }
 
-# Sets the caller's outcome, cursor, head_sha, comments and reason from
-# watching pull request $1's tuicr session in repository $2 for a send past
-# cursor $3, a `<release_count>:<session path>` pair or empty for none yet.
-# Polls every $poll seconds until a send decides the round or $wait seconds
-# have passed since review-round started, both the caller's.
-# Returns 1, naming the state on stderr, once the pull request is not open.
-wait_for_send() {
-	local pr="$1" repo="$2" since="$3" slug="gh:$2/pr/$1"
-	local base_count="${since%%:*}" base_path="${since#*:}"
-	local pr_state pr_head count path session_head read_problem=""
-	while :; do
-		# A failed gh read leaves the head unknown, so this pass judges
-		# nothing and the next one sees the same session again.
-		if read_pr_head "$pr" "$repo"; then
-			[ "$pr_state" = OPEN ] || {
-				echo "slice-wave: pull request $pr is $pr_state, so review ended without a merge" >&2
-				return 1
-			}
-			if read_session "$repo" "$slug" && judge_session "$slug"; then
-				return 0
-			fi
-		fi
-		[ "$SECONDS" -lt "$wait" ] || break
-		sleep "$poll"
-	done
-	outcome=none
-	cursor="${base_path:+$base_count:$base_path}"
-	[ -z "$read_problem" ] || add_reason "$read_problem"
-	reason="no send arrived within ${wait}s${reason:+; $reason}"
-}
-
 # Judges the caller's session read (count, path, session_head) against its
 # baseline (base_count, base_path) and pull request head pr_head. Returns 0
-# with outcome, cursor, comments and head_sha set when a send decides the
-# round; otherwise moves the baseline as the read requires and returns 1,
-# setting read_problem when the comments could not be read.
+# with outcome, comments and head_sha set when a send decides the round;
+# otherwise moves the baseline as the read requires and returns 1, setting
+# read_problem when the comments could not be read.
 judge_session() {
 	local slug="$1"
 	if [ "$path" != "$base_path" ]; then
@@ -1305,7 +1278,6 @@ judge_session() {
 		read_problem="cannot read the tuicr comments of $slug: $sent"
 		return 1
 	}
-	cursor="$count:$path"
 	if [ "$sent" -gt 0 ]; then
 		outcome=comments
 		comments="$sent"
@@ -1342,28 +1314,6 @@ read_pr_head() {
 	}
 }
 
-# Sets the caller's since to session $2's cursor in the `tuicr review list` of
-# repository $1, leaving it empty when the list holds no such session. A list
-# tuicr cannot give is retried every $poll seconds, since the session it hides
-# may already hold releases, and returns 1 with read_problem set once $wait
-# seconds have passed since review-round started.
-snapshot_session() {
-	local count path session_head rc
-	while :; do
-		rc=0
-		read_session "$1" "$2" || rc=$?
-		case "$rc" in
-			0)
-				since="$count:$path"
-				return 0
-				;;
-			2) return 0 ;;
-		esac
-		[ "$SECONDS" -lt "$wait" ] || return 1
-		sleep "$poll"
-	done
-}
-
 # Sets the caller's count, path and session_head from session $2 in the
 # `tuicr review list` of repository $1. Otherwise sets read_problem saying
 # why, and returns 2 when the list read but holds no such session, or 1 when
@@ -1398,9 +1348,10 @@ read_session() {
 }
 
 # Opens the review tab titled $3 in Orca, running tuicr on pull request $1
-# of repository $2, unless a tab of that title is already open.
+# of repository $2 beside a review-watch for Archon run $4, unless a tab of
+# that title is already open.
 ensure_review_tab() {
-	local pr="$1" repo="$2" title="$3" terminals main registered worktree="" candidate
+	local pr="$1" repo="$2" title="$3" run="$4" terminals main registered worktree="" candidate
 	terminals="$(orca_json terminal list --json --include-visual-layouts)" || return 1
 	# Only the tab title counts: a program in the pane can overwrite the
 	# terminal's own. A split nests groups, so tabs are searched at any depth.
@@ -1420,9 +1371,17 @@ ensure_review_tab() {
 		orca_json repo add --path "$main" --json >/dev/null || return 1
 		worktree="$main"
 	fi
-	local created
+	# The watcher writes only to its log, since anything it printed would
+	# land on tuicr's screen. nohup keeps it watching after the tab closes,
+	# so a send from a tuicr reopened by hand still answers the gate. It runs
+	# this script by absolute path, since the tab's shell has Orca's PATH,
+	# which may resolve another copy.
+	local self command created
+	self="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
+	command="$(printf 'nohup %q review-watch --run %q --pr %q --repo %q >/dev/null 2>&1 & exec tuicr pr %q' \
+		"$self" "$run" "$pr" "$repo" "$repo#$pr")"
 	created="$(orca_json terminal create --worktree "path:$worktree" --title "$title" \
-		--command "tuicr pr $repo#$pr" --json)" || return 1
+		--command "$command" --json)" || return 1
 	# The tab appearing is the engineer's only notice, so one Orca could not
 	# show fails review rather than waiting on a send nobody knows to make.
 	jq -e '.result.terminal.surface == "visible"' <<<"$created" >/dev/null || {
@@ -1443,33 +1402,35 @@ orca_json() {
 	printf '%s\n' "$said"
 }
 
-# True when $1 is empty or a `<release_count>:<session path>` cursor. The
-# count ends at the first colon, since the path may hold more.
-is_cursor() {
-	case "$1" in
-		"") return 0 ;;
-		*:*) ;;
-		*) return 1 ;;
-	esac
-	case "${1%%:*}" in
-		"" | *[!0-9]*) return 1 ;;
-	esac
+# True when $1 is an owner/name repository, the only shape that goes into
+# the review tab's shell command.
+is_repo_name() {
+	[[ "$1" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
 }
 
-# Opens the review tab for a delivered slice's pull request and waits for
-# the engineer to send from it. The workflow's review loop reads this output
-# on every path, so once its flags are valid it reports through the JSON
-# object rather than its exit status, save for the failures that end review.
+# True when $1 is an Archon run id: letters, digits, dashes and underscores.
+is_run_id() {
+	[[ "$1" =~ ^[A-Za-z0-9_-]+$ ]]
+}
+
+# Opens a delivered slice's review tab and reports the review gate's
+# question, or reports the approval the gate's last answer carried. The
+# workflow's review loop reads this output on every path, so once its flags
+# are valid it reports through the JSON object rather than its exit status,
+# save for the failures that end review. It never waits: the gate after it
+# is a native Archon wait, which review-watch answers from the tab.
 cmd_review_round() {
-	# Unset until parse_flags sees the flag, so the empty value the undelivered
-	# path passes still counts as given. bash 3.2's bare `local` assigns an
-	# empty string, hence the unset; the names stay local after it.
-	local bead delivered pr repo since
-	unset bead delivered pr repo since
-	parse_flags "--bead --delivered --pr --repo --since" "$@" || { usage; return 2; }
+	# Unset until parse_flags sees the flag, so the empty value the first
+	# iteration and the undelivered path pass still counts as given. bash
+	# 3.2's bare `local` assigns an empty string, hence the unset; the names
+	# stay local after it.
+	local bead delivered pr repo run answer answer_text shown_head
+	unset bead delivered pr repo run answer answer_text shown_head
+	parse_flags "--bead --delivered --pr --repo --run --answer --answer-text --shown-head" "$@" || { usage; return 2; }
 	if [ -z "${bead+set}" ] || [ -z "${delivered+set}" ] || [ -z "${pr+set}" ] ||
-		[ -z "${repo+set}" ] || [ -z "${since+set}" ]; then
-		echo "slice-wave: review-round needs --bead, --delivered, --pr, --repo and --since" >&2
+		[ -z "${repo+set}" ] || [ -z "${run+set}" ] || [ -z "${answer+set}" ] ||
+		[ -z "${answer_text+set}" ] || [ -z "${shown_head+set}" ]; then
+		echo "slice-wave: review-round needs --bead, --delivered, --pr, --repo, --run, --answer, --answer-text and --shown-head" >&2
 		usage
 		return 2
 	fi
@@ -1491,44 +1452,217 @@ cmd_review_round() {
 				return 2
 				;;
 		esac
-		[ -n "$repo" ] || {
-			echo "slice-wave: a delivered review-round needs --repo" >&2
+		is_repo_name "$repo" || {
+			echo "slice-wave: a delivered review-round needs --repo as owner/name, not '$repo'" >&2
 			usage
 			return 2
 		}
-		is_cursor "$since" || {
-			echo "slice-wave: --since must be empty or <release_count>:<session path>, not '$since'" >&2
+		is_run_id "$run" || {
+			echo "slice-wave: a delivered review-round needs --run as an Archon run id, not '$run'" >&2
 			usage
 			return 2
 		}
+		case "$answer" in
+			"" | approved | comments) ;;
+			*)
+				echo "slice-wave: --answer must be empty, approved or comments, not '$answer'" >&2
+				usage
+				return 2
+				;;
+		esac
 	fi
 
-	local outcome="" cursor="" head_sha="" comments=0 reason="" read_problem=""
-	local poll="${SLICE_WAVE_REVIEW_POLL_SECONDS:-15}" wait="${SLICE_WAVE_REVIEW_WAIT_SECONDS:-28800}"
-	case "$delivered" in
-		true)
-			# A first round baselines on the session as it stands before the
-			# tab opens, so a send made in it before the first poll still counts.
-			if [ -z "$since" ] && ! snapshot_session "$repo" "gh:$repo/pr/$pr"; then
-				outcome=none
-				reason="tuicr gave no review list to snapshot within ${wait}s, so no review tab opened: $read_problem"
-			else
-				ensure_review_tab "$pr" "$repo" "review $bead #$pr" || return 1
-				wait_for_send "$pr" "$repo" "$since" || return 1
-			fi
-			;;
-		false)
-			outcome=undelivered
-			reason="the slice was not delivered, so there is nothing to review"
-			;;
-	esac
+	local outcome="" head_sha="" question="" reason="" read_problem="" pr_state pr_head
+	if [ "$delivered" = false ]; then
+		outcome=undelivered
+		reason="the slice was not delivered, so there is nothing to review"
+	elif [ "$answer" = approved ]; then
+		# review-watch answers with the head the empty send reviewed. A person
+		# answering by hand may leave the text empty, approving the head the
+		# question showed them.
+		head_sha="$answer_text"
+		is_commit_sha "$head_sha" || head_sha="$shown_head"
+		is_commit_sha "$head_sha" || {
+			echo "slice-wave: the review gate approved, but neither its text '$answer_text' nor the head it showed '$shown_head' is a 40-hex commit, so there is nothing safe to merge" >&2
+			return 1
+		}
+		outcome=approved
+		reason="approved at head $head_sha"
+	else
+		read_pr_head "$pr" "$repo" || {
+			echo "slice-wave: $read_problem" >&2
+			return 1
+		}
+		[ "$pr_state" = OPEN ] || {
+			echo "slice-wave: pull request $pr is $pr_state, so review ended without a merge" >&2
+			return 1
+		}
+		ensure_review_tab "$pr" "$repo" "review $bead #$pr" "$run" || return 1
+		outcome=waiting
+		head_sha="$pr_head"
+		question="Review $repo#$pr at $head_sha in the Orca tab 'review $bead #$pr'. A send with no comments approves that head and one with comments starts another round; the tab answers this for you."
+		[ "$answer" != comments ] || reason="comments were sent, so this is a new round"
+	fi
 
 	local approved=false
 	[ "$outcome" != approved ] || approved=true
-	jq -n --arg outcome "$outcome" --argjson approved "$approved" --arg cursor "$cursor" \
-		--arg head_sha "$head_sha" --argjson comments "$comments" --arg reason "$reason" \
-		'{outcome: $outcome, approved: $approved, cursor: $cursor, head_sha: $head_sha,
-		  comments: $comments, reason: $reason}'
+	jq -n --arg outcome "$outcome" --argjson approved "$approved" --arg head_sha "$head_sha" \
+		--arg question "$question" --arg reason "$reason" \
+		'{outcome: $outcome, approved: $approved, head_sha: $head_sha,
+		  question: $question, reason: $reason}'
+}
+
+# Appends one timestamped line to the watcher's log, which is its stdout.
+watch_log() {
+	printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
+}
+
+# Sets the caller's run_status, wait_kind and pause_id from Archon run $1,
+# or returns 1 with read_problem saying why archon cannot say.
+read_run() {
+	local got
+	got="$(archon workflow get "$1" --json 2>&1)" || {
+		read_problem="archon workflow get $1 failed: $got"
+		return 1
+	}
+	local fields
+	# Every field gets a placeholder, since an empty one would shift the rest
+	# under read's whitespace splitting.
+	fields="$(jq -r '"\(.status // "-") \(.metadata.wait.kind // "-") \(.metadata.wait.pauseId // "-")"' <<<"$got" 2>/dev/null)" || {
+		read_problem="cannot read archon workflow get $1: $got"
+		return 1
+	}
+	read -r run_status wait_kind pause_id <<<"$fields"
+	[ "$run_status" != - ] || {
+		read_problem="archon workflow get $1 reported no status: $got"
+		return 1
+	}
+}
+
+# Answers run $1's open review gate with option $2 and text $3, then resumes
+# the run detached, so the merge behind the gate outlives the tab. Waits for
+# a pause other than the caller's `answered`, the one it last answered, since
+# a round still running has not reached its gate. Returns 1 once the run is
+# neither paused nor running, and 2 when archon refuses the answer three
+# times, which is what a gate already answered by hand looks like.
+answer_gate() {
+	local run="$1" choice="$2" text="$3" refused=0 said
+	while :; do
+		if read_run "$run"; then
+			case "$run_status" in
+				paused | running) ;;
+				*) return 1 ;;
+			esac
+			if [ "$run_status" = paused ] && [ "$wait_kind" = attention ] && [ "$pause_id" != - ] && [ "$pause_id" != "$answered" ]; then
+				if said="$(archon workflow answer "$run" --occurrence "$pause_id" --choose "$choice" \
+					--text "$text" --as review-watch --json 2>&1)"; then
+					answered="$pause_id"
+					watch_log "answered $choice ($text) at pause $pause_id"
+					nohup archon workflow resume "$run" >>"$log" 2>&1 &
+					return 0
+				fi
+				refused=$((refused + 1))
+				watch_log "archon refused answer $choice at pause $pause_id: $said"
+				if [ "$refused" -ge 3 ]; then
+					answered="$pause_id"
+					return 2
+				fi
+			fi
+		else
+			watch_log "$read_problem"
+		fi
+		sleep "$poll"
+	done
+}
+
+# Watches pull request --pr's tuicr session in repository --repo and answers
+# Archon run --run's review gate from it: comments for a send with comments,
+# approved with the head for an empty send on the pull request's head. Exits
+# once it approves, the pull request closes, or the run stops. Runs in the
+# review tab beside tuicr, so everything it says goes to its log.
+cmd_review_watch() {
+	local run="" pr="" repo=""
+	parse_flags "--run --pr --repo" "$@" || { usage; return 2; }
+	if ! is_run_id "$run" || ! is_repo_name "$repo" || [[ ! "$pr" =~ ^[1-9][0-9]*$ ]]; then
+		echo "slice-wave: review-watch needs --run as an Archon run id, --pr as a pull request number and --repo as owner/name" >&2
+		usage
+		return 2
+	fi
+	local dir="${XDG_STATE_HOME:-$HOME/.local/state}/slice-pipeline"
+	mkdir -p "$dir" || return 1
+	local log="$dir/review-$run.log" pidfile="$dir/review-$run.pid" holder
+	exec >>"$log" 2>&1
+	# One watcher per run: a tab reopened in a later round finds the first
+	# still watching, and two would answer each send twice.
+	holder="$(cat "$pidfile" 2>/dev/null)"
+	if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
+		watch_log "watcher $holder already watches run $run"
+		return 0
+	fi
+	echo "$$" >"$pidfile"
+	# shellcheck disable=SC2064 # the pidfile path is fixed now
+	trap "rm -f '$pidfile'" EXIT
+
+	local poll="${SLICE_WAVE_REVIEW_POLL_SECONDS:-15}" slug="gh:$repo/pr/$pr"
+	local count path session_head base_count=0 base_path="" rc read_problem="" reason=""
+	local pr_state pr_head run_status wait_kind pause_id answered="" outcome comments head_sha
+	# The baseline is the session as it stands before tuicr starts, so a
+	# send made before the first poll still counts. A list tuicr cannot give
+	# may hide releases, so the watch waits for one rather than guess.
+	while :; do
+		rc=0
+		read_session "$repo" "$slug" || rc=$?
+		case "$rc" in
+			0) base_count="$count" base_path="$path"; break ;;
+			2) break ;;
+		esac
+		watch_log "$read_problem"
+		sleep "$poll"
+	done
+	watch_log "watching $slug for run $run from release $base_count"
+
+	while :; do
+		if read_run "$run"; then
+			case "$run_status" in
+				paused | running) ;;
+				*)
+					watch_log "run $run is $run_status, so the watch ends"
+					return 0
+					;;
+			esac
+		else
+			watch_log "$read_problem"
+		fi
+		# A failed gh read leaves the head unknown, so this pass judges
+		# nothing and the next one sees the same session again.
+		if read_pr_head "$pr" "$repo"; then
+			[ "$pr_state" = OPEN ] || {
+				watch_log "pull request $pr is $pr_state, so the watch ends"
+				return 0
+			}
+			reason=""
+			if read_session "$repo" "$slug" && judge_session "$slug"; then
+				base_count="$count"
+				rc=0
+				case "$outcome" in
+					comments) answer_gate "$run" comments "$comments comments sent in release $count" || rc=$? ;;
+					approved) answer_gate "$run" approved "$head_sha" || rc=$? ;;
+				esac
+				case "$rc" in
+					0) [ "$outcome" != approved ] || return 0 ;;
+					1)
+						watch_log "run $run stopped before its gate took the $outcome send, so the watch ends"
+						return 0
+						;;
+					2) watch_log "dropped the $outcome send at release $count, since its gate took no answer" ;;
+				esac
+			fi
+			[ -z "$reason" ] || watch_log "$reason"
+		fi
+		[ -z "$read_problem" ] || watch_log "$read_problem"
+		read_problem=""
+		sleep "$poll"
+	done
 }
 
 # Sets the caller's worktree_removed and reason locals from removing the
@@ -1608,6 +1742,11 @@ case "${1:-}" in
 	review-round)
 		shift
 		cmd_review_round "$@"
+		exit $?
+		;;
+	review-watch)
+		shift
+		cmd_review_watch "$@"
 		exit $?
 		;;
 	merge)

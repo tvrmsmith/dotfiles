@@ -32,24 +32,33 @@ request open. A failed review is the exception, below.
 
 Every delivered slice ends at a review tab. `review` opens an Orca tab in the
 target's main checkout, titled `review <bead> #<pr>` and running
-`tuicr pr owner/name#<pr>`, and waits for a send from it. An empty `:send`
-approves, and only then does `merge` run, pinned by `--match-head-commit` to
-the head that was reviewed. A send with comments does not approve. The run
-waits again, and fixing the comments is the next slice's job. Quitting tuicr
-without a send is not approval either. A round counts every send tuicr
-records after the tab opens, including one in the fresh session file tuicr
-starts when it reloads onto a new head. Sends a session held before the tab
-opened never count. With no send within 8 hours, `review`
-starts another wait, up to 20 of them. After that the run fails with the bead
-still claimed and the pull request open, and `archon workflow resume <run-id>`
-picks the review back up. A pull request closed or merged outside the pipeline
-fails the review the same way.
+`tuicr pr owner/name#<pr>` beside `slice-wave review-watch`, then pauses the
+run at `review-gate`, a native Archon attention wait. The watcher answers the
+gate from tuicr. An empty `:send` on the pull request's current head answers
+`approved` with that head, and only then does `merge` run, pinned by
+`--match-head-commit` to the head that was reviewed. A send with comments
+answers `comments`, and the run pauses again in a new round; fixing the
+comments is the next slice's job. Quitting tuicr without a send is not
+approval either. The watcher counts every send tuicr records after the tab
+opens, including one in the fresh session file tuicr starts when it reloads
+onto a new head. Sends a session held before the tab opened never count.
+
+The watcher resumes the run itself, detached, so closing the tab after a send
+cannot stop the merge. It survives the tab closing, logs to
+`~/.local/state/slice-pipeline/review-<run-id>.log`, and exits once it
+approves, the pull request closes, or the run stops. Answering the gate by
+hand works too: `archon workflow answer <run-id> --occurrence <pauseId>
+--choose approved` (the pauseId is in `archon workflow get <run-id> --json`),
+then `archon workflow resume <run-id>`. An approval with no text approves the
+head the gate's question showed. After 20 rounds the run fails with the bead
+still claimed and the pull request open, and `archon workflow resume
+<run-id>` picks the review back up. A pull request closed or merged outside
+the pipeline fails the review the same way.
 
 Review needs Orca running and a tuicr built from Trevor's fork branch
 `groupdiff`, which keeps a released session after tuicr quits and reports its
 `head_sha` in `review list`. `SLICE_WAVE_REVIEW_POLL_SECONDS` (default 15) sets
-how often a wait reads tuicr and the forge, and `SLICE_WAVE_REVIEW_WAIT_SECONDS`
-(default 28800) how long one wait lasts.
+how often the watcher reads tuicr, the forge and the run.
 
 The target repo needs a GitHub remote gh can open pull requests on, a git
 credential that can push to origin, and its validator. `claim` checks all
@@ -126,8 +135,10 @@ drive, review, merge and close) and checks the branch, the committed code, the
 closed bead, the merged pull request, its findings record comment and the
 removed worktree directly. The run waits in review like any other, so the
 suite plays the engineer. It waits for the review tab in Orca and for tuicr to
-persist the session, sends an empty `:send`, and then checks the tab's title
-and that the session released with no comments.
+persist the session, sends an empty `:send`, follows the run the watcher
+resumes until it ends, and then checks the tab's title and that the session
+released with no comments. `SLICE_E2E_MERGE_TIMEOUT_SECONDS` (default 10800)
+bounds that last wait.
 `SLICE_E2E_REVIEW_TIMEOUT_SECONDS` (default 16200) bounds that wait, and a
 send that never happens kills the run. It needs Orca and tuicr as review
 does. A green run merges a small script and its test into the

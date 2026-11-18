@@ -1,10 +1,11 @@
 # Shared fakes for slice-wave's external tools: bd (the issue tracker), gh
-# (the forge), no-mistakes and imr (the validation gates), orca (the editor hosting
-# the review tab) and tuicr (the review tool). Every stub appends one
-# line per call, tool name then argv tab-separated, to $CALL_LOG, so a test
-# can assert the order calls happened in across tools. bd also keeps writing
-# its pre-existing $BD_LOG in the BEADS_DIR-then-argv shape, since tests
-# written before gh and no-mistakes existed assert on that shape directly.
+# (the forge), no-mistakes and imr (the validation gates), orca (the editor
+# hosting the review tab), tuicr (the review tool) and archon (the review
+# gate). Every stub appends one line per call, tool name then argv
+# tab-separated, to $CALL_LOG, so a test can assert the order calls happened
+# in across tools. bd also keeps writing its pre-existing $BD_LOG in the
+# BEADS_DIR-then-argv shape, since tests written before gh and no-mistakes
+# existed assert on that shape directly.
 #
 # Call install_stubs from setup() once $STUB_BIN and $FIXTURES_DIR are
 # exported; it writes the scripts into $STUB_BIN and initializes the
@@ -254,6 +255,42 @@ case "${1:-} ${2:-}" in
 esac
 EOF
 	chmod +x "$STUB_BIN/orca"
+
+	# Default: a run paused at attention wait p1 that takes every answer.
+	# ARCHON_GET_SEQUENCE lists what each `workflow get` call reports, one
+	# word per call, `<status>[:<pauseId>]`, a pauseId making it an attention
+	# wait. Calls past the end repeat the last word, and FAIL makes that call
+	# exit 1. ARCHON_ANSWER_EXIT makes `workflow answer` refuse.
+	cat > "$STUB_BIN/archon" <<'EOF'
+#!/bin/bash
+printf 'archon\t%s\n' "$*" >> "$CALL_LOG"
+case "${1:-} ${2:-}" in
+	"workflow get")
+		calls="$(cat "$STUB_BIN/archon-get-calls" 2>/dev/null || echo 0)"
+		echo $((calls + 1)) > "$STUB_BIN/archon-get-calls"
+		# shellcheck disable=SC2086 # One word per call.
+		set -- ${ARCHON_GET_SEQUENCE:-paused:p1}
+		[ "$calls" -lt $# ] || calls=$(($# - 1))
+		shift "$calls"
+		[ "$1" != FAIL ] || { echo "archon: stub workflow get configured to fail" >&2; exit 1; }
+		status="${1%%:*}" pause=""
+		[ "$1" = "$status" ] || pause="${1#*:}"
+		jq -cn --arg status "$status" --arg pause "$pause" \
+			'{id: "run-1", status: $status}
+			 + if $pause == "" then {} else {metadata: {wait: {kind: "attention", nodeId: "review", pauseId: $pause}}} end'
+		;;
+	"workflow answer")
+		[ "${ARCHON_ANSWER_EXIT:-0}" -eq 0 ] || { echo "archon: stub workflow answer configured to fail" >&2; exit "$ARCHON_ANSWER_EXIT"; }
+		echo '{"answered":true}'
+		;;
+	"workflow resume") ;;
+	*)
+		echo "archon: stub does not know $*" >&2
+		exit 1
+		;;
+esac
+EOF
+	chmod +x "$STUB_BIN/archon"
 
 	# Default: no persisted review session and no comments. TUICR_LIST_SEQUENCE
 	# lists what each `review list` call prints, one line per call. Lines, not
