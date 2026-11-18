@@ -55,9 +55,7 @@ mysbx build claude-sandbox-ruby-2-6-10
 2. Runs `docker compose -f extras/agent-sandboxing/templates/docker-compose.yml build "$@"`
 3. `docker save | sbx template load` per built image
 
-Args = compose service names (`claude-sandbox-mise`, `claude-sandbox-ruby-2-6-10`); omit to build all.
-
-**Build order matters:** `claude-sandbox-ruby-2-6-10` depends on `claude-sandbox-mise:latest`. Build mise first: `mysbx build claude-sandbox-mise && mysbx build claude-sandbox-ruby-2-6-10`.
+Args = compose service names; omit to build all.
 
 When invoking from a bash tool:
 

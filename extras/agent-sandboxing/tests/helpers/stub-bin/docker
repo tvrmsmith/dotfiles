@@ -2,6 +2,6 @@
 printf 'docker %s\n' "$*" >> "${STUB_DOCKER_LOG:-/dev/null}"
 # `compose ... config --images` must print something iterable.
 if [ "$1" = compose ] && [[ "$*" == *"config --images"* ]]; then
-  echo "claude-sandbox-mise:latest"
+  echo "claude-sandbox-ruby-2.6.10:latest"
 fi
 exit 0
