@@ -1,6 +1,6 @@
 ---
 name: agent-sandboxing
-description: Use when working with agent sandboxes in this dotfiles repo (`mysbx`, `mysbx-*`, `nono-*` aliases, files under `extras/agent-sandboxing/`), invoking sandbox helpers from an agent's bash tool, or rebuilding sandbox images. Triggers on: mysbx, mysbx-cc, mysbx-build, sbx, nono, sandbox, claude-sandbox.
+description: "Use when working with agent sandboxes in this dotfiles repo (`mysbx`, `mysbx-*`, `nono-*` aliases, files under `extras/agent-sandboxing/`), invoking sandbox helpers from an agent's bash tool, or rebuilding sandbox images. Triggers on: mysbx, mysbx-cc, mysbx-build, sbx, nono, sandbox, claude-sandbox."
 ---
 
 # Agent Sandboxing (this repo)
