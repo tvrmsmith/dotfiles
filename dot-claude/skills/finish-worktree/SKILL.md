@@ -106,11 +106,11 @@ the user merging it themselves).
 
 ## 4. Close the beads issue
 
-**The merge closes the issue.** Once the PR is `MERGED`
-(`gh pr view <#> --json state`), run `bd close <id>` with the PR and merge sha
-in `--reason`. A merged PR leaves nothing behind. Work still open after merge
-means the PR was incomplete. Report it to the user as a defect of that PR, and
-close the issue anyway.
+**One issue, one PR, one merge, and the merge closes the issue.** Once the PR
+is `MERGED` (`gh pr view <#> --json state`), run `bd close <id>` with the PR and
+merge sha in `--reason`. A merged PR leaves nothing behind. Work the PR didn't
+finish goes into a new issue, proposed to the user, and never holds the merged
+issue open.
 
 Persist the close (`bd dolt push` if that is how the repo syncs).
 
