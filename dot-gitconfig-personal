@@ -1,6 +1,11 @@
 [user]
 	name = Trevor Smith
 	email = tvrmsmith@gmail.com
-	# Local signing key file, same rationale as dot-gitconfig's work key: no
-	# 1Password agent round trip, so no approval prompt per commit.
+	# Path to the private key, not the literal public key: ssh-keygen signs from
+	# the file with no 1Password agent round trip, so no approval prompt per
+	# commit. git expands the leading ~. The key is generated per machine and
+	# never committed (this repo is public); ~/.ssh/allowed_signers carries the
+	# public half.
 	signingkey = ~/.ssh/git-sign-personal
+[commit]
+	gpgsign = true
