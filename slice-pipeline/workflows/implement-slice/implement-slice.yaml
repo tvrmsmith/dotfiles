@@ -14,8 +14,7 @@ description: |
   NOT for: deciding what to build, or work that cannot land independently.
 
 model: large
-returns: merge
-outcome_field: merged
+returns: {node: merge, outcome: merged}
 
 # Pinned, not left to the caller. The driver fans out several of these at
 # once, and runs sharing one checkout serialize on the working-path lock,
@@ -88,7 +87,7 @@ nodes:
   # Exits 0 on every verdict, landed or not, so the run completes and its
   # artifacts survive either way. Its `verified` field only feeds validate's
   # --verified flag below; the run's authored outcome is `merged`, read from
-  # merge (outcome_field above), since a landed commit is not by itself a
+  # merge (returns above), since a landed commit is not by itself a
   # merged slice.
   - id: verify
     depends_on: [claim, build]
@@ -114,8 +113,8 @@ nodes:
   # unverified path with no external call. depends_on verify alone, under the default trigger rule (not all_done): verify
   # itself exits 0 on every verdict (see its comment above), so it never
   # fails this dependency. The long timeout covers a real no-mistakes drive:
-  # a review, fix rounds and CI, which routinely outruns Archon's 2-minute
-  # default. slice-wave stops reattaching to the drive at 3.5 hours, so it
+  # a review, fix rounds and CI, which routinely outruns a short bound.
+  # slice-wave stops reattaching to the drive at 3.5 hours, so it
   # still reports delivered false before this timeout kills it.
   - id: validate
     depends_on: [verify]
@@ -208,7 +207,7 @@ nodes:
   # after a forge read returns MERGED, never on the merge command's exit status
   # alone. Default trigger rule, since the `when` already requires merge to
   # have produced output. The timeout covers one `bd close` and one
-  # `git worktree remove`, which Archon's 2-minute default already fits.
+  # `git worktree remove`.
   - id: close
     depends_on: [merge]
     when: "$merge.output.merged == true"
