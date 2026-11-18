@@ -17,6 +17,9 @@
 # ~/.ssh/sockets/ must already exist, ssh will not create it (install.sh), and
 # %C keeps the socket path clear of the 104-byte sun_path limit.
 
+# Machine-local hosts, untracked here. A missing file is not an error.
+Include config.local
+
 Host github-personal
 	HostName github.com
 	User git
@@ -46,31 +49,6 @@ Host github.com
 	ServerAliveInterval 30
 	ServerAliveCountMax 3
 	PubkeyAuthentication unbound
-
-# Work cloud workstation, reached through the gcloud tunnel that `wsh`
-# opens on localhost:2222. The workstation gets a new host key at every start,
-# and the Google login is checked when the tunnel opens, so no key check here.
-Host ws
-	HostName localhost
-	Port 2222
-	User user
-	StrictHostKeyChecking no
-	UserKnownHostsFile /dev/null
-	ServerAliveInterval 30
-	ServerAliveCountMax 3
-	LogLevel ERROR
-
-# Same workstation for Orca, on its own tunnel (`wsorca` opens it on 2223) so
-# Orca and wsh never share one, and quitting herdr leaves Orca connected.
-Host ws-orca
-	HostName localhost
-	Port 2223
-	User user
-	StrictHostKeyChecking no
-	UserKnownHostsFile /dev/null
-	ServerAliveInterval 30
-	ServerAliveCountMax 3
-	LogLevel ERROR
 
 Match host * exec "test $(uname) = Darwin"
 	IdentityAgent "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"

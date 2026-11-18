@@ -62,17 +62,6 @@ update_vendored_skills() {
 	fi
 }
 
-export_corporate_ca() {
-	# Must run before anything that talks to a registry: on a TLS-intercepting
-	# corporate network Node rejects every fetch with SELF_SIGNED_CERT_IN_CHAIN and
-	# npm retries silently for minutes before failing. .zshenv exports this for
-	# normal shells; install.sh has to set it for its own npm calls. See dotfiles-3x1.
-	local bundle
-	bundle=$("$SCRIPT_DIR/dot-local/bin/corporate-ca-bundle" --path)
-	"$SCRIPT_DIR/dot-local/bin/corporate-ca-bundle" || return 0
-	[ -s "$bundle" ] && export NODE_EXTRA_CA_CERTS="$bundle"
-}
-
 install_pinned_npm_tools() {
 	# Pinned global npm tools invoked by Claude Code hooks. Pinned (not `npx -y`)
 	# so a later malicious publish is not auto-adopted, and the hook calls the
@@ -249,13 +238,10 @@ setup_dotfiles() {
 	mkdir -p "$HOME/.ssh/sockets"
 	chmod 700 "$HOME/.ssh" "$HOME/.ssh/sockets"
 
-	# ~/.config for the same reason, and this one has teeth: corporate-ca-bundle
-	# writes the trust bundle to $XDG_CONFIG_HOME/corporate-ca.crt. Folded, that
-	# write lands in dot-config/ — the machine's corporate CAs committed into a
-	# public repo. export_corporate_ca runs before stow and mkdir -p's the
-	# directory itself, so today this is belt-and-braces; it stops being that the
-	# moment those calls are reordered. .gitignore covers the same case at the
-	# other end.
+	# ~/.config for the same reason, and this one has teeth: a machine-local
+	# corporate-ca-bundle writes the trust bundle to $XDG_CONFIG_HOME/corporate-ca.crt.
+	# Folded, that write lands in dot-config/ — the machine's corporate CAs
+	# committed into a public repo. .gitignore covers the same case at the other end.
 	mkdir -p "$HOME/.config"
 
 	# Two ~/.config subdirectories are written by the tool that reads them, so
@@ -385,7 +371,6 @@ link_beads_prime() {
 }
 
 main() {
-	export_corporate_ca
 	install_gnu_stow
 	init_submodules
 	update_vendored_skills
