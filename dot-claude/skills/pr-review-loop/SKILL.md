@@ -157,7 +157,7 @@ Deferred findings are NOT fixed.
 
 ### 3f. Commit and push
 
-- **One commit per iteration:** stage this round's fixes and commit as a single commit, message via the `caveman:caveman-commit` style.
+- **One commit per iteration:** stage this round's fixes and commit as a single commit, message as a terse Conventional Commits line stating intent.
 - Push to the PR branch (auth and retry per §2).
 
 **Unattended:** a push that `git-ssh-fix` and one retry did not fix stops the run with verdict `blocked`, emitting the verdict object with the counts so far and the unpushed local commit sha in `stop_reason`, since that commit exists only in this worktree. An empty index after a non-empty approved set means no edit was needed, the ordinary outcome when a finding was informational or the code was already correct. Make no commit and no push, leave `head_sha` at its previous value, and continue to 3g, where those findings take the no-action-needed reply. An iteration that makes no commit cannot change what the bot sees, so skip 3h and 3i and go straight to 3j, where 1a's verdict rule ends the run.
