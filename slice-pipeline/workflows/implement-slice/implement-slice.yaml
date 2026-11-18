@@ -1,7 +1,8 @@
 name: implement-slice
 description: |
   Build one vertical slice from its bead, land its commit on the branch, drive
-  it through no-mistakes to a green pull request with a findings record, open
+  it through the repository's validator (no-mistakes, or imr pr ship where
+  repos.json says so) to a pull request with a findings record, open
   a review tab on that pull request and wait for an engineer's empty send,
   merge the head they approved, and close the bead once the forge confirms the
   merge. The slice's spec lives in the bead's `design` field, the wave's
@@ -35,9 +36,9 @@ inputs:
       gitignored and therefore absent.
 
 nodes:
-  # Timeout covers real network calls, not a bare `bd update`: claim now
-  # checks the target repo through gh and no-mistakes and can drive up to 3
-  # branch-sync rounds through no-mistakes before it claims the bead.
+  # Timeout covers real network calls, not a bare `bd update`: claim checks
+  # the target repo through gh and its validator, and on a no-mistakes target
+  # can drive up to 3 branch-sync rounds before it claims the bead.
   - id: claim
     timeout: 600000
     bash: slice-wave claim --bead "$INPUTS_BEAD" --beads-dir "$INPUTS_BEADS_DIR"
@@ -112,7 +113,10 @@ nodes:
   # script's own --verified false short-circuit already handles the
   # unverified path with no external call. depends_on verify alone, under the default trigger rule (not all_done): verify
   # itself exits 0 on every verdict (see its comment above), so it never
-  # fails this dependency. The long timeout covers a real no-mistakes drive:
+  # fails this dependency. A dependency on claim, to read a validator from it,
+  # would fail validate on a failed claim, since Archon refuses a failed
+  # node's output; validate reads repos.json itself instead. The long timeout
+  # covers a real no-mistakes drive or imr pr ship:
   # a review, fix rounds and CI, which routinely outruns a short bound.
   # slice-wave stops reattaching to the drive at 3.5 hours, so it
   # still reports delivered false before this timeout kills it.

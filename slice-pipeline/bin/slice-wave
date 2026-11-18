@@ -90,9 +90,10 @@ switch_to_branch() {
 
 # Fails a claim on a target repository that cannot host the pull request the
 # rest of the pipeline exists to open: no forge remote claim can push a
-# branch to and have write access on, checked with `gh` in the cwd. Runs
-# before any branch switch or bd call, so a refusal here leaves the worktree
-# exactly where it started.
+# branch to and have write access on, checked with `gh` in the cwd. Sets the
+# caller's target_repo to the repository's owner/name. Runs before any
+# branch switch or bd call, so a refusal here leaves the worktree exactly
+# where it started.
 check_target_forge() {
 	local view perm
 	if ! view="$(gh repo view --json nameWithOwner,viewerPermission 2>&1)"; then
@@ -101,6 +102,7 @@ check_target_forge() {
 	fi
 
 	perm="$(printf '%s' "$view" | jq -r '.viewerPermission // empty' 2>/dev/null)"
+	target_repo="$(printf '%s' "$view" | jq -r '.nameWithOwner // empty' 2>/dev/null)"
 	case "$perm" in
 		ADMIN | MAINTAIN | WRITE) return 0 ;;
 	esac
@@ -138,6 +140,68 @@ check_target_no_mistakes() {
 		echo "slice-wave: no-mistakes is not ready on this target; run 'no-mistakes init'. ${error_line:-$home}" >&2
 		return 1
 	fi
+}
+
+# Fails a claim on a target repository whose validator is imr-ship when no
+# `imr` is on PATH. Runs before any branch switch or bd call, same as
+# check_target_forge.
+check_target_imr() {
+	command -v imr >/dev/null || {
+		echo "slice-wave: repos.json names imr-ship as this target's validator, but no imr is on PATH" >&2
+		return 1
+	}
+}
+
+# Prints the path of the machine-local repos.json, which says how each target
+# repository, keyed by owner/name, is validated and merged. It is
+# machine-local because those are facts about the target, never ones this
+# repository commits.
+repos_config() {
+	printf '%s' "${XDG_CONFIG_HOME:-$HOME/.config}/slice-pipeline/repos.json"
+}
+
+# Sets the caller's validator to the one repos.json names for repository $1,
+# and no-mistakes when the file, the repository or its validator key is
+# absent. A file jq cannot read, or a validator with no adapter here, sets
+# validator_error and returns 1 instead, since guessing would drive the slice
+# through gates its repository never chose.
+repo_validator() {
+	local config named
+	config="$(repos_config)"
+	validator=no-mistakes
+	validator_error=""
+	[ -e "$config" ] || return 0
+	named="$(jq -r --arg repo "$1" '.[$repo].validator // "no-mistakes"' "$config" 2>&1)" || {
+		validator_error="cannot read $config: $named"
+		return 1
+	}
+	case "$named" in
+		no-mistakes | imr-ship) validator="$named" ;;
+		*)
+			validator_error="$config names validator '$named' for $1, which slice-wave has no adapter for (no-mistakes, imr-ship)"
+			return 1
+			;;
+	esac
+}
+
+# Sets the caller's validator for the repository gh resolves in the cwd, as
+# repo_validator does. Asks gh only when repos.json exists, since without it
+# every repository gets no-mistakes.
+cwd_validator() {
+	local view repo
+	validator=no-mistakes
+	validator_error=""
+	[ -e "$(repos_config)" ] || return 0
+	view="$(gh repo view --json nameWithOwner 2>&1)" || {
+		validator_error="gh repo view failed, so repos.json could not be read for this repository: $view"
+		return 1
+	}
+	repo="$(printf '%s' "$view" | jq -r '.nameWithOwner // empty' 2>/dev/null)"
+	[ -n "$repo" ] || {
+		validator_error="gh repo view named no repository, so repos.json could not be read for it"
+		return 1
+	}
+	repo_validator "$repo"
 }
 
 # Strips the double quotes TOON puts around a value that needs them, e.g. an
@@ -257,6 +321,18 @@ cmd_claim() {
 		return 2
 	}
 
+	local target_repo="" validator="" validator_error=""
+	check_target_forge || return 1
+	repo_validator "$target_repo" || {
+		echo "slice-wave: $validator_error, so $bead was not claimed" >&2
+		return 1
+	}
+	check_target_push "$branch" || return 1
+	case "$validator" in
+		no-mistakes) check_target_no_mistakes || return 1 ;;
+		imr-ship) check_target_imr || return 1 ;;
+	esac
+
 	# Built before the switch and the claim, so a failure here strands neither
 	# a checked-out branch nor a claimed bead.
 	local claimed
@@ -266,19 +342,19 @@ cmd_claim() {
 		return 1
 	}
 
-	check_target_forge || return 1
-	check_target_push "$branch" || return 1
-	check_target_no_mistakes || return 1
-
 	switch_to_branch "$branch" || {
 		echo "slice-wave: cannot switch to $branch" >&2
 		return 1
 	}
 
-	reconcile_branch_sync "$branch" || {
-		detach_worktree "$branch"
-		return 1
-	}
+	# Only no-mistakes keeps custody of a branch it pushed to, so only its
+	# branch needs reconciling before the build commits again.
+	if [ "$validator" = no-mistakes ]; then
+		reconcile_branch_sync "$branch" || {
+			detach_worktree "$branch"
+			return 1
+		}
+	fi
 
 	# Detaches on refusal because release never runs after a failed claim, and
 	# a kept worktree still on the branch would block every retry's switch.
@@ -836,9 +912,95 @@ validate_slice() {
 	fi
 }
 
+# Prints the findings record of an imr pr ship that ended with outcome $1,
+# and the line $2 it stopped on, if any.
+ship_record() {
+	local outcome="$1" stop="$2"
+	printf '%s\n' '<!-- slice-pipeline:findings-record -->' '## slice-pipeline findings record' ''
+	printf 'Validator: imr pr ship --autofix-review\nOutcome: %s\n' "$outcome"
+	[ -z "$stop" ] || printf 'Stopped on: %s\n' "$stop"
+	printf '\n%s\n' 'imr pr ship writes its review findings, its decisions and anything it left unfiled into this pull request'"'"'s description.'
+}
+
+# Sets the caller's outcome, pr_number, pr_url, repo, record_posted and reason
+# locals from one `imr pr ship --autofix-review` of bead $1's committed slice,
+# and posts the findings record on its pull request. --autofix-review stops
+# the ship before ci, so review and merge stay the pipeline's, and outcome
+# reads opened once it exits 0.
+#
+# Any other exit is a halt or a failure, and outcome reads halted. The ship
+# waits there for a person: its gates take a decision the pipeline cannot
+# make, and a fresh `imr pr ship` must never restart it, so the reason names
+# the resume command and where to run it. Past $SLICE_WAVE_DRIVE_LIMIT_SECONDS
+# (3.5 hours) the ship gets SIGTERM, which imr handles as it does Ctrl-C and
+# leaves resumable, so validate still reports ahead of its node's 4 h
+# timeout. Not SIGINT: bash starts a background job with SIGINT ignored.
+ship_slice() {
+	local bead="$1" beads_dir="$2" intent log pid rc=0 stop limit="${SLICE_WAVE_DRIVE_LIMIT_SECONDS:-12600}"
+	intent="$(bead_intent "$bead" "$beads_dir")" || {
+		add_reason "cannot read bead $bead with bd show, so imr pr ship never ran"
+		return
+	}
+	[ -n "$intent" ] || {
+		add_reason "bead $bead has no title, description, design, acceptance criteria or notes to give imr pr ship as its intent, so imr pr ship never ran"
+		return
+	}
+
+	log="$(mktemp)" || {
+		add_reason "cannot create a log file, so imr pr ship never ran"
+		return
+	}
+	imr pr ship --autofix-review --plain --intent "$intent" >"$log" 2>&1 &
+	pid=$!
+	while kill -0 "$pid" 2>/dev/null; do
+		if [ "$SECONDS" -ge "$limit" ]; then
+			kill -TERM "$pid" 2>/dev/null
+			add_reason "imr pr ship was still running when validate reached its time limit, so it was interrupted"
+			break
+		fi
+		sleep "${SLICE_WAVE_SHIP_POLL_SECONDS:-5}"
+	done
+	wait "$pid" || rc=$?
+	stop="$(grep -E '^(stopped:|⏸|✗)' "$log" | tail -1)"
+	rm -f "$log"
+
+	if [ "$rc" -eq 0 ]; then
+		outcome=opened
+	else
+		outcome=halted
+		# shellcheck disable=SC2016 # the quotes sit inside a double-quoted string, so $stop expands
+		add_reason "imr pr ship exited $rc${stop:+ on '$stop'}; read the halt and run 'imr pr ship --resume --autofix-review' in $PWD"
+	fi
+
+	repo="$(gh repo view --json nameWithOwner | jq -r '.nameWithOwner // empty')" || repo=""
+	[ -n "$repo" ] || {
+		add_reason "gh repo view named no repository, so no findings record was posted"
+		return
+	}
+	find_open_pr "$repo"
+	[ "$pr_number" -gt 0 ] || return
+
+	if ship_record "$outcome" "$stop" | gh pr comment "$pr_url" --body-file - >/dev/null; then
+		record_posted=true
+	else
+		add_reason "cannot post the findings record on pull request $pr_url"
+	fi
+}
+
+# True when validator $1 ended on outcome $2 with a pull request ready for
+# review.
+delivered_outcome() {
+	case "$1" in
+		no-mistakes) green_outcome "$2" ;;
+		imr-ship) [ "$2" = opened ] ;;
+		*) return 1 ;;
+	esac
+}
+
 # The workflow's returns node runs on this output on every path, so once
 # --verified is true or false it exits 0 on every path and reports through the
-# JSON object, never through its exit status.
+# JSON object, never through its exit status. A verified slice goes through
+# the validator repos.json names for the target, as claim chose it.
 cmd_validate() {
 	local bead="" beads_dir="" verified=""
 	parse_flags "--bead --beads-dir --verified" "$@" || { usage; return 2; }
@@ -849,8 +1011,17 @@ cmd_validate() {
 	}
 
 	local outcome="" pr_number=0 pr_url="" repo="" fix_rounds=0 record_posted=false reason=""
+	local validator="" validator_error=""
 	case "$verified" in
-		true) validate_slice "$bead" "$beads_dir" ;;
+		true)
+			if ! cwd_validator; then
+				reason="$validator_error, so nothing was validated"
+			elif [ "$validator" = imr-ship ]; then
+				ship_slice "$bead" "$beads_dir"
+			else
+				validate_slice "$bead" "$beads_dir"
+			fi
+			;;
 		false) reason="verification did not pass, so validation was skipped" ;;
 		*)
 			echo "slice-wave: --verified must be true or false, not '$verified'" >&2
@@ -860,7 +1031,7 @@ cmd_validate() {
 	esac
 
 	local delivered=false
-	green_outcome "$outcome" && [ "$pr_number" -gt 0 ] && [ "$record_posted" = true ] && delivered=true
+	delivered_outcome "$validator" "$outcome" && [ "$pr_number" -gt 0 ] && [ "$record_posted" = true ] && delivered=true
 	jq -n --argjson delivered "$delivered" --arg outcome "$outcome" \
 		--argjson pr_number "$pr_number" --arg pr_url "$pr_url" --arg repo "$repo" \
 		--argjson fix_rounds "$fix_rounds" --argjson record_posted "$record_posted" \
@@ -878,12 +1049,11 @@ is_commit_sha() {
 }
 
 # Sets the caller's `strategy` to how repository $1 merges: merge-queue when
-# the machine-local repos.json gives it a merge_queue of true, else squash.
-# The file is machine-local because which repositories run a merge queue is a
-# fact about the target, never one this repository commits. A file jq cannot
+# repos.json gives it a merge_queue of true, else squash. A file jq cannot
 # read adds a reason and returns 1, since guessing squash could bypass a queue.
 merge_strategy() {
-	local repo="$1" config="${XDG_CONFIG_HOME:-$HOME/.config}/slice-pipeline/repos.json" queued
+	local repo="$1" config queued
+	config="$(repos_config)"
 	strategy=squash
 	[ -e "$config" ] || return 0
 	queued="$(jq --arg repo "$repo" '.[$repo].merge_queue == true' "$config" 2>&1)" || {

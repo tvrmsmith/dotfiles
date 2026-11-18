@@ -1,5 +1,5 @@
 # Shared fakes for slice-wave's external tools: bd (the issue tracker), gh
-# (the forge), no-mistakes (the validation gate), orca (the editor hosting
+# (the forge), no-mistakes and imr (the validation gates), orca (the editor hosting
 # the review tab) and tuicr (the review tool). Every stub appends one
 # line per call, tool name then argv tab-separated, to $CALL_LOG, so a test
 # can assert the order calls happened in across tools. bd also keeps writing
@@ -28,7 +28,8 @@ install_stubs() {
 		ORCA_TERMINAL_LIST_JSON ORCA_TERMINAL_LIST_EXIT \
 		ORCA_REPO_LIST_JSON ORCA_REPO_LIST_EXIT ORCA_REPO_ADD_EXIT \
 		ORCA_TERMINAL_CREATE_EXIT ORCA_TERMINAL_CREATE_SURFACE \
-		TUICR_LIST_SEQUENCE TUICR_COMMENTS_JSON TUICR_COMMENTS_EXIT
+		TUICR_LIST_SEQUENCE TUICR_COMMENTS_JSON TUICR_COMMENTS_EXIT \
+		IMR_EXIT IMR_OUTPUT IMR_SLEEP
 
 	cat > "$STUB_BIN/bd" <<'EOF'
 #!/bin/bash
@@ -200,6 +201,19 @@ case "$1" in
 esac
 EOF
 	chmod +x "$STUB_BIN/no-mistakes"
+
+	# Default: an `imr pr ship` that opens its pull request and exits 0.
+	# IMR_OUTPUT replaces what it prints, IMR_EXIT its exit status, and
+	# IMR_SLEEP makes it run that many seconds first, exec'd so a signal to
+	# the stub reaches the sleep.
+	cat > "$STUB_BIN/imr" <<'EOF'
+#!/bin/bash
+printf 'imr\t%s\n' "$*" >> "$CALL_LOG"
+printf '%s\n' "${IMR_OUTPUT:-$(printf '▶ open\n✓ open (1m2s)')}"
+[ -z "${IMR_SLEEP:-}" ] || exec sleep "$IMR_SLEEP"
+exit "${IMR_EXIT:-0}"
+EOF
+	chmod +x "$STUB_BIN/imr"
 
 	# Default: an Orca with no tabs and no registered repositories, whose
 	# `repo add` and `terminal create` succeed, the create landing as a
