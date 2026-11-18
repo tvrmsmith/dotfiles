@@ -48,11 +48,21 @@ export const register: Register = on => {
     return { text: counts.map(c => `${c.name}  ${c.count}`).join('\n') || NO_BLOCKS }
   })
 
+  // The toast is small and gone in seconds, so the status line under the prompt
+  // keeps the last block in view until the next prompt.
+  on('prompt.submit', async ($, e, next) => {
+    $.ui.status(undefined)
+
+    return next(e)
+  })
+
   on('tool.call', async ($, e, next) => {
     const ran = await next(e)
     const block = ran.isError === true && ran.text ? parseBlock(ran.text) : undefined
     if (block) {
-      $.ui.toast(`${block.name} blocked ${block.tool}: ${block.reason}`)
+      const line = `${block.name} blocked ${block.tool}: ${block.reason}`
+      $.ui.toast(line)
+      $.ui.status(line)
       const key = `${COUNT_PREFIX}${block.name}`
       await $.store.set(key, Number((await $.store.get(key)) ?? 0) + 1)
     }

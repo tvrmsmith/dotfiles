@@ -28,6 +28,17 @@ const collectToasts = (on: On) => {
   return toasts
 }
 
+const collectStatuses = (on: On) => {
+  const statuses: Array<string | undefined> = []
+  on('ui.status', (_$, e) => {
+    statuses.push(e.text)
+
+    return { value: undefined }
+  })
+
+  return statuses
+}
+
 const AFK_REASON =
   'Trevor is AFK and will not see this question. Decide, log, park: take the'
 
@@ -171,6 +182,40 @@ test('an error that quotes a block past its first character raises no toast and 
 
   expect(toasts).toEqual([])
   expect([...store.keys()]).toEqual([])
+})
+
+test('a block pins its line on the status line', async ($, on) => {
+  fakeStore(on)
+  collectToasts(on)
+  const statuses = collectStatuses(on)
+  on('tool.call', () => ({
+    result: undefined,
+    isError: true,
+    text: `PreToolUse:Bash hook error: [$HOME/.claude/hooks/afk-guard.sh]: ${AFK_REASON}\n`,
+  }))
+
+  await $.tool.call({ tool: 'Bash', command: 'ls' })
+
+  expect(statuses).toEqual([`afk-guard.sh blocked Bash: ${AFK_REASON}`])
+})
+
+test('a call that is not a block leaves the status line alone', async ($, on) => {
+  fakeStore(on)
+  const statuses = collectStatuses(on)
+  on('tool.call', () => ({ result: 'hi', text: 'hi' }))
+
+  await $.tool.call({ tool: 'Bash', command: 'echo hi' })
+
+  expect(statuses).toEqual([])
+})
+
+test('the next prompt clears the status line', async ($, on) => {
+  const statuses = collectStatuses(on)
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
+
+  await $.prompt.submit({ text: 'next', wait: false, origin: { kind: 'composer' } })
+
+  expect(statuses).toEqual([undefined])
 })
 
 const runHookBlocks = async ($: Engine, on: On) => {
