@@ -8,11 +8,10 @@
 # three call sites behind that setting fire. The key left dot-claude/settings.json
 # on 2026-08-08 and is not coming back while the MDM gateway policy stands.
 #
-# The one consumer that would bring ADC demand back is OMP, which dot-zshenv
-# still points at a Vertex model. It is invoked by hand, so a stale-ADC failure
-# there already has a human in front of it, and this script is what that human
-# runs. Wiring it to a session-start hook instead would re-create the browser
-# stampede described below for a credential nothing is currently using.
+# Anything that needs ADC now is run by hand, so a stale-ADC failure already
+# has a human in front of it, and this script is what that human runs. Wiring
+# it to a session-start hook instead would re-create the browser stampede
+# described below for a credential nothing is currently using.
 #
 # The browser is unavoidable, not a shortcoming of the escalation below: the
 # reauth window is a Workspace policy, so no refresh_token grant defeats it.

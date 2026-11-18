@@ -7,19 +7,3 @@ services:
     image: claude-sandbox-ruby-2.6.10:latest
     container_name: claude-sandbox-ruby-2-6-10
 
-
-  # Oh My Pi coding agent sandbox
-  omp-sandbox:
-    build:
-      context: .
-      dockerfile: Dockerfile.omp-sandbox
-      additional_contexts:
-        omp-vertex-ext: ${HOME}/dev/personal/omp-extension-anthropic-vertex
-      args:
-        GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-consolo-dev-vertex-wsky}
-        GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-us}
-        OMP_MODEL: ${OMP_MODEL:-anthropic-vertex/claude-opus-4-7}
-        OMP_VERSION: ${OMP_VERSION:-14.5.7}
-    image: omp-sandbox:latest
-    container_name: omp-sandbox
-

@@ -52,18 +52,16 @@ _MYSBX_KITS_TOOLING="$_AGENT_SBX_ROOT/kits/tooling"
 _MYSBX_KITS_CLAUDE_UPDATE="$_AGENT_SBX_ROOT/kits/claude-code-update"
 _MYSBX_KITS_PERSONAL="$_AGENT_SBX_ROOT/kits/personal"
 _MYSBX_KITS_ATLASSIAN="$_AGENT_SBX_ROOT/kits/atlassian"
-_MYSBX_KITS_OMP="$_AGENT_SBX_ROOT/kits/omp"
 
 _mysbx_is_personal() { [[ "$PWD/" == "$DEV_PERSONAL/"* ]]; }
 
 _mysbx_is_preset() {
-  case "$1" in cc|ruby-cc|omp) return 0 ;; *) return 1 ;; esac
+  case "$1" in cc|ruby-cc) return 0 ;; *) return 1 ;; esac
 }
 
 _mysbx_preset_agent() {
   case "$1" in
     cc|ruby-cc) echo claude ;;
-    omp)        echo omp ;;
     *)          return 1 ;;
   esac
 }
@@ -71,13 +69,13 @@ _mysbx_preset_agent() {
 _mysbx_preset_template() {
   case "$1" in
     ruby-cc) echo "claude-sandbox-ruby-2.6.10:latest" ;;
-    cc|omp)  echo "" ;;
+    cc)      echo "" ;;
     *)       return 1 ;;
   esac
 }
 
 # Echo kit dir paths (one per line) for a preset. atlassian appended only
-# off-personal (matches the old dsbx-cc/omp behavior).
+# off-personal (matches the old dsbx-cc behavior).
 _mysbx_preset_kits() {
   local preset="$1"
   local -a kits=()
@@ -85,11 +83,6 @@ _mysbx_preset_kits() {
     cc|ruby-cc)
       kits=("$_MYSBX_KITS_TOOLING" "$_MYSBX_KITS_CLAUDE_UPDATE" "$_MYSBX_KITS_PERSONAL")
       _mysbx_is_personal || kits+=("$_MYSBX_KITS_ATLASSIAN")
-      ;;
-    omp)
-      kits=("$_MYSBX_KITS_PERSONAL")
-      _mysbx_is_personal || kits+=("$_MYSBX_KITS_ATLASSIAN")
-      kits+=("$_MYSBX_KITS_OMP")
       ;;
     *) return 1 ;;
   esac
@@ -203,10 +196,6 @@ _mysbx_name() {
 _MYSBX_HELPER_ADC_DIR="$HOME/.config/gcloud"
 _MYSBX_HELPER_PLUGINS_DIR="$HOME/.claude/plugins"
 _MYSBX_HELPER_DOTFILES_DIR="$DEV_PERSONAL/dotfiles"
-_MYSBX_OMP_FORK_HOST_DIR="$DEV_PERSONAL/oh-my-pi-personal-build"
-_MYSBX_OMP_FORK_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/mysbx/omp-fork"
-_MYSBX_OMP_FORK_BUN_VOLUME="mysbx-omp-fork-buncache"
-_MYSBX_OMP_FORK_CARGO_VOLUME="mysbx-omp-fork-cargocache"
 
 # Echo read-only helper mount specs (host path[:ro]) for `sbx create`. Skips
 # missing dirs and any candidate dir that contains the cwd.
@@ -218,7 +207,6 @@ _mysbx_helper_mounts() {
     "${_MYSBX_HELPER_ADC_DIR}:ro"
     "${_MYSBX_HELPER_PLUGINS_DIR}:ro"
     "${_MYSBX_HELPER_DOTFILES_DIR}:ro"
-    "${_MYSBX_OMP_FORK_CACHE_DIR}:ro"
     "$sandbox_state"
   )
   for entry in "${candidates[@]}"; do
@@ -337,69 +325,11 @@ _mysbx_build() {
       return 1
     fi
   done
-  if [ -d "$_MYSBX_OMP_FORK_HOST_DIR" ] && { [ $# -eq 0 ] || (( ${@[(I)omp-sandbox]} )); }; then
-    echo "[mysbx build] chaining omp-build" >&2
-    _mysbx_omp_build
-  fi
-}
-
-# Ported from dsbx-omp-build (20-dsbx.zsh:210-257).
-_mysbx_omp_build() {
-  if [ ! -d "$_MYSBX_OMP_FORK_HOST_DIR" ]; then
-    echo "[mysbx omp-build] fork worktree missing: $_MYSBX_OMP_FORK_HOST_DIR" >&2
-    return 1
-  fi
-  if ! docker image inspect omp-sandbox:latest >/dev/null 2>&1; then
-    echo "[mysbx omp-build] omp-sandbox:latest not built; run 'mysbx build omp-sandbox' first" >&2
-    return 1
-  fi
-  mkdir -p "$_MYSBX_OMP_FORK_CACHE_DIR"
-  docker volume inspect "$_MYSBX_OMP_FORK_BUN_VOLUME" >/dev/null 2>&1 || \
-    docker volume create "$_MYSBX_OMP_FORK_BUN_VOLUME" >/dev/null
-  docker volume inspect "$_MYSBX_OMP_FORK_CARGO_VOLUME" >/dev/null 2>&1 || \
-    docker volume create "$_MYSBX_OMP_FORK_CARGO_VOLUME" >/dev/null
-  local host_hash=""
-  if command -v git >/dev/null 2>&1; then
-    host_hash=$(git -C "$_MYSBX_OMP_FORK_HOST_DIR" rev-parse HEAD 2>/dev/null || true)
-  fi
-  echo "[mysbx omp-build] building $_MYSBX_OMP_FORK_HOST_DIR ${host_hash:+@ $host_hash} -> $_MYSBX_OMP_FORK_CACHE_DIR" >&2
-  docker run --rm \
-    -v "$_MYSBX_OMP_FORK_HOST_DIR:/src:ro" \
-    -v "$_MYSBX_OMP_FORK_CACHE_DIR:/out" \
-    -v "$_MYSBX_OMP_FORK_BUN_VOLUME:/root/.bun/install/cache" \
-    -v "$_MYSBX_OMP_FORK_CARGO_VOLUME:/usr/local/cargo-cache" \
-    -e CARGO_HOME=/usr/local/cargo-cache \
-    -e CARGO_TARGET_DIR=/usr/local/cargo-cache/target \
-    -e HOST_HASH="$host_hash" \
-    --user 0:0 \
-    omp-sandbox:latest bash -c '\
-      set -euo pipefail; \
-      rsync -a --delete \
-        --exclude=.git --exclude=node_modules --exclude=target \
-        --exclude="packages/natives/native/*.node" \
-        /src/ /out/; \
-      cd /out; \
-      echo "[mysbx omp-build] bun install" >&2; \
-      bun install --frozen-lockfile || bun install; \
-      echo "[mysbx omp-build] cargo build linux-arm64 native" >&2; \
-      bun run --cwd packages/natives build; \
-      printf "%s\n" "$HOST_HASH" > /out/.mysbx-fork-hash; \
-      echo "[mysbx omp-build] ready @ ${HOST_HASH:-unknown}" >&2; \
-    '
-}
-
-# Ported from dsbx-omp-clean (20-dsbx.zsh:261-267).
-_mysbx_omp_clean() {
-  rm -rf "$_MYSBX_OMP_FORK_CACHE_DIR"
-  if [ "${1:-}" = --all ]; then
-    docker volume rm -f "$_MYSBX_OMP_FORK_BUN_VOLUME" "$_MYSBX_OMP_FORK_CARGO_VOLUME" >/dev/null 2>&1 || true
-  fi
-  echo "[mysbx omp-clean] removed $_MYSBX_OMP_FORK_CACHE_DIR${1:+ + named volumes}" >&2
 }
 
 # Ported from dsbx-update (20-dsbx.zsh:412-431). Prefixes are now mysbx-*.
 _mysbx_update() {
-  local -a prefixes=(mysbx-cc mysbx-ruby-cc mysbx-omp)
+  local -a prefixes=(mysbx-cc mysbx-ruby-cc)
   local -a kits=("$_MYSBX_KITS_TOOLING" "$_MYSBX_KITS_CLAUDE_UPDATE" "$_MYSBX_KITS_PERSONAL")
   _mysbx_is_personal || kits+=("$_MYSBX_KITS_ATLASSIAN")
   local found=0 rc=0 prefix name kit
@@ -427,7 +357,6 @@ _mysbx_update() {
 _mysbx_check() {
   local -a entries=(
     'mysbx-ruby-cc:claude-sandbox-ruby-2.6.10:latest'
-    'mysbx-omp:omp-sandbox:latest'
   )
   local rc=0 found=0 entry prefix img name container_id current_id
   # Worktree source participates in the create-time name; reproduce it so
@@ -500,8 +429,6 @@ mysbx_dispatch() {
       exec "$REAL_SBX" "$@"
       ;;
     build)        shift; _mysbx_build "$@"; return $? ;;
-    omp-build)    shift; _mysbx_omp_build "$@"; return $? ;;
-    omp-clean)    shift; _mysbx_omp_clean "$@"; return $? ;;
     update)       shift; _mysbx_update "$@"; return $? ;;
     check)        shift; _mysbx_check "$@"; return $? ;;
     secrets-sync) shift; _mysbx_sync_secrets "${1:?usage: mysbx secrets-sync <name>}"; return $? ;;

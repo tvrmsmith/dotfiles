@@ -10,10 +10,7 @@ _mysbx_load_config
 
 mysbx-cc()      { _mysbx_launch cc "$@"; }
 mysbx-ruby-cc() { _mysbx_launch ruby-cc "$@"; }
-mysbx-omp()     { _mysbx_launch omp "$@"; }
 
 mysbx-build()     { _mysbx_build "$@"; }
-mysbx-omp-build() { _mysbx_omp_build "$@"; }
-mysbx-omp-clean() { _mysbx_omp_clean "$@"; }
 mysbx-update()    { _mysbx_update "$@"; }
 mysbx-check()     { _mysbx_check "$@"; }

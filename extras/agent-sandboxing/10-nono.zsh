@@ -20,7 +20,3 @@ nono-agent() {
 alias nono-cc='nono-agent --profile claude-code-mise -- claude --dangerously-skip-permissions'
 nono-cc-personal() { OP_ACCOUNT=my.1password.com nono-agent --profile claude-code-personal -- claude --dangerously-skip-permissions "$@"; }
 alias nono-cc-csharp='nono-agent --profile claude-code-csharp -- claude --dangerously-skip-permissions'
-# Oh My Pi
-alias nono-omp="$_OMP_VERTEX nono-agent --profile omp-mise -- omp --model $OMP_MODEL"
-nono-omp-personal() { env ${=_OMP_VERTEX} OP_ACCOUNT=my.1password.com nono-agent --profile omp-personal -- omp --model $OMP_MODEL "$@"; }
-alias nono-omp-csharp="$_OMP_VERTEX nono-agent --profile omp-csharp -- omp --model $OMP_MODEL"
