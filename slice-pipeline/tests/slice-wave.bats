@@ -24,6 +24,8 @@ setup() {
   # Absent unless a test writes it, so no run ever reads the machine's real log.
   export TVRMSMITH_WAIVERS="$STUB_BIN/waivers.jsonl"
   install_stubs
+  # No run may read the machine's real repos.json.
+  export XDG_CONFIG_HOME="$STUB_BIN/config"
 
   OLD_PATH="$PATH"
   export PATH="$STUB_BIN:$PATH"
@@ -195,6 +197,64 @@ teardown() {
   contains "$(cat "$STUB_BIN/err")" "repo not initialized (run 'no-mistakes init' first)"
   is_empty "$(cat "$BD_LOG")"
   equals "$(git -C "$REPO" symbolic-ref --short HEAD)" "main"
+}
+
+# Writes $1 as the machine-local repos.json the run reads.
+write_repos_config() {
+  mkdir -p "$XDG_CONFIG_HOME/slice-pipeline"
+  printf '%s\n' "$1" > "$XDG_CONFIG_HOME/slice-pipeline/repos.json"
+}
+
+@test "claim on an imr-ship target checks imr instead of no-mistakes and claims the bead" {
+  write_repos_config '{"owner/repo":{"validator":"imr-ship"}}'
+  out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "/tmp/beads-foo" )"
+  equals "$(printf '%s' "$out" | jq -r .branch)" "slice/foo"
+  contains "$(cat "$BD_LOG")" "$(printf '%s\t%s' "/tmp/beads-foo" "update foo --claim")"
+  lacks "$(cat "$CALL_LOG")" "no-mistakes"
+}
+
+@test "claim keeps no-mistakes for a repository repos.json gives no validator" {
+  write_repos_config '{"owner/repo":{"merge_queue":true},"other/repo":{"validator":"imr-ship"}}'
+  ( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" ) >/dev/null
+  contains "$(cat "$CALL_LOG")" "$(printf 'no-mistakes\taxi')"
+}
+
+@test "claim exits 1 without touching the tracker when an imr-ship target has no imr on PATH" {
+  write_repos_config '{"owner/repo":{"validator":"imr-ship"}}'
+  rm "$STUB_BIN/imr"
+  no_imr_path="$STUB_BIN"
+  IFS=: read -ra dirs <<<"$OLD_PATH"
+  for dir in "${dirs[@]}"; do
+    [ -x "$dir/imr" ] || no_imr_path="$no_imr_path:$dir"
+  done
+  rc=0
+  out="$( cd "$REPO" && PATH="$no_imr_path" "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err" )" || rc=$?
+  equals "$rc" 1
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "no imr is on PATH"
+  is_empty "$(cat "$BD_LOG")"
+  equals "$(git -C "$REPO" symbolic-ref --short HEAD)" "main"
+}
+
+@test "claim exits 1 without touching the tracker when repos.json names a validator it has no adapter for" {
+  write_repos_config '{"owner/repo":{"validator":"ship-it"}}'
+  rc=0
+  out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err" )" || rc=$?
+  equals "$rc" 1
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "names validator 'ship-it' for owner/repo"
+  is_empty "$(cat "$BD_LOG")"
+  lacks "$(cat "$CALL_LOG")" "no-mistakes"
+}
+
+@test "claim exits 1 without touching the tracker when repos.json is unreadable" {
+  write_repos_config '{not json'
+  rc=0
+  out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err" )" || rc=$?
+  equals "$rc" 1
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "cannot read $XDG_CONFIG_HOME/slice-pipeline/repos.json"
+  is_empty "$(cat "$BD_LOG")"
 }
 
 @test "claim exits 1 without touching the tracker or no-mistakes when git cannot push to origin" {

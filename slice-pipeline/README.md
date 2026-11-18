@@ -1,7 +1,7 @@
 # slice-pipeline
 
-Takes a ready ticket to a pull request that no-mistakes drove green, waits for
-an engineer to approve it in a review tab, merges it, then closes the ticket
+Takes a ready ticket to a pull request its repository's validator delivered,
+waits for an engineer to approve it in a review tab, merges it, then closes the ticket
 and removes the run's worktree. An Archon workflow plus
 the script it shells out to, self-contained so it runs against any repo, not
 just this one.
@@ -23,8 +23,8 @@ archon workflow run implement-slice \
 Both inputs are required and the engine rejects the run without them. Read the
 authored outcome (`merged`), not the run status: `verify`, `validate` and
 `merge` all exit 0 on every verdict so the run completes and keeps its
-artifacts either way. `merged` is only true once a commit landed, no-mistakes
-drove it to a checks-passed or passed pull request, the findings record posted
+artifacts either way. `merged` is only true once a commit landed, the validator
+delivered a pull request, the findings record posted
 on that PR, an engineer approved it in review, and the forge reports the PR
 merged. Only then does `close` close the bead and remove the worktree. An
 unmerged run hands the bead back open and unclaimed, and leaves any pull
@@ -52,19 +52,35 @@ how often a wait reads tuicr and the forge, and `SLICE_WAVE_REVIEW_WAIT_SECONDS`
 (default 28800) how long one wait lasts.
 
 The target repo needs a GitHub remote gh can open pull requests on, a git
-credential that can push to origin, and an initialized no-mistakes. `claim`
-checks all three (the push through `git push --dry-run`) before it touches the
-branch or the tracker, and fails the run with what to fix if any is missing.
+credential that can push to origin, and its validator. `claim` checks all
+three (the push through `git push --dry-run`) before it touches the branch or
+the tracker, and fails the run with what to fix if any is missing.
 
-`merge` squashes by default. A repository that uses a merge queue is named in
-the machine-local `${XDG_CONFIG_HOME:-~/.config}/slice-pipeline/repos.json`,
-read at run time and keyed by `owner/name`:
+How each target is validated and merged lives in the machine-local
+`${XDG_CONFIG_HOME:-~/.config}/slice-pipeline/repos.json`, read at run time
+and keyed by `owner/name` as `gh repo view` names it. A repository absent
+from the file, or the file itself absent, gets the defaults: no-mistakes and
+squash.
 
 ```json
-{"owner/name": {"merge_queue": true}}
+{"owner/name": {"validator": "imr-ship", "merge_queue": true}}
 ```
 
-A queued repository is enqueued with no strategy flag. `merge` fails if the
+`validator` is `no-mistakes` (the default) or `imr-ship`. A no-mistakes
+target needs an initialized no-mistakes, and `validate` drives it under
+`--yes` to a checks-passed or passed pull request. An imr-ship target needs
+`imr` on PATH, and `validate` runs `imr pr ship --autofix-review`, which
+stops before ci, so review and merge stay the pipeline's. It delivers once
+that exits 0 with a pull request open. Any other exit is a halt that needs a
+person: the run reports it undelivered and hands the bead back, the reason
+names the line the ship stopped on, and the ship waits in the run's worktree
+for `imr pr ship --resume --autofix-review`. Never start a fresh
+`imr pr ship` over it. A validator the file names but slice-wave has no
+adapter for, or a file jq cannot read, fails `claim` and `validate` rather
+than guess.
+
+`merge` squashes unless `merge_queue` is true. A queued repository is
+enqueued with no strategy flag. `merge` fails if the
 queue drops the pull request after holding it, once a re-read
 `SLICE_WAVE_MERGE_DROP_GRACE_SECONDS` (default 5) later still finds it open and
 unqueued. At the deadline it disables auto-merge and dequeues the pull request,
