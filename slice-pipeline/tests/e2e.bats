@@ -152,21 +152,29 @@ setup_file() {
   # This tree's bin first, so the nodes run the slice-wave under test rather
   # than whatever install.sh last linked onto the machine. In the background,
   # because the run waits in review for a send only this suite makes; nothing
-  # skips review. fd 3 is closed on it so bats does not wait on the run. A
-  # failed send would leave the run waiting through 20 rounds of 8 hours, so
-  # the run and everything under it is killed instead.
+  # skips review. fd 3 is closed on it so bats does not wait on the run. The
+  # run's own process exits once it pauses at review's gate, and the review
+  # tab's watcher resumes it detached after the send, so the suite follows
+  # the run by its status from there. A failed send would leave the run
+  # paused for good, so it is stopped instead.
   local rc=0 run_pid
   (cd "$REPO" && PATH="$TREE/bin:$PATH" archon workflow run implement-slice \
     --workflow-source "$SOURCE" --branch "e2e/$BEAD" \
     --input bead="$BEAD" --input beads_dir="$BEADS_DIR") >>"$RUN_LOG" 2>&1 3>&- &
   run_pid=$!
-  send_empty_review "$BEAD" "$SLICE_E2E_REPO" "$run_pid" 2>&3 || stop_run "$run_pid"
+  send_empty_review "$BEAD" "$SLICE_E2E_REPO" "$run_pid" "$REPO" 2>&3 || stop_run "$run_pid" "$REPO"
   export REVIEW_TAB_TITLE REVIEW_HANDLE REVIEW_PR
   wait "$run_pid" || rc=$?
-  export RUN_RC="$rc"
 
   RUN_ID="$(cd "$REPO" && archon workflow runs --json --limit 1 | jq -r '.runs[0].id // empty')"
   export RUN_ID
+  # The run's status, not its first process's exit, is the verdict, since
+  # that process ends at the pause.
+  if [ -n "$RUN_ID" ]; then
+    rc=0
+    await_run_end "$REPO" "$RUN_ID" 2>&3 || rc=$?
+  fi
+  export RUN_RC="$rc"
 
   # Read from merge, the returns node, whose parsed result the run record
   # keeps whole. merge passes validate's pr_number through on every verdict.
@@ -209,8 +217,10 @@ run_json() {
 # a rerun. The engine's JSON log lines are dropped; the node lines and the
 # final verdict are what say which node failed and why.
 diagnose() {
-  echo "archon exited $RUN_RC; run ${RUN_ID:-none}; log $RUN_LOG" >&2
+  echo "run verdict $RUN_RC; run ${RUN_ID:-none}; log $RUN_LOG" >&2
   grep -v '^{"level"' "$RUN_LOG" | tail -25 >&2
+  local watch_log="${XDG_STATE_HOME:-$HOME/.local/state}/slice-pipeline/review-${RUN_ID:-none}.log"
+  [ ! -f "$watch_log" ] || { echo "review watcher log $watch_log:" >&2; tail -15 "$watch_log" >&2; }
 }
 
 @test "the run reports the authored outcome succeeded" {

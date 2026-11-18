@@ -44,9 +44,8 @@ validate:
 review-round:
   outcome: approved
   approved: true
-  cursor: "1:/state/sessions/a.json"
   head_sha: 1f0c6a4e2b7d9c3a5e8f10b2d4c6a8e0f2b4d6c8
-  comments: 0
+  question: ""
   reason: ""
 merge:
   merged: false

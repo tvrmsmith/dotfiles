@@ -60,16 +60,16 @@ teardown() {
 # every $<node>.output.<field> token pre-substituted, the way Archon
 # substitutes a producer node's declared output into a downstream body before
 # running it. Each field gets a representative value of its own type:
-# `pr_number`, `repo`, `pr_url`, `head_sha` and `cursor` need a number, a slug,
-# a URL, a 40-hex commit (the gh stub's head) and a review cursor for the
-# script to accept them, and every other field this workflow substitutes is a
-# boolean, `approved` and `delivered` among them, so `true`. A
-# $LOOP_PREV.<node>.output.<field> token renders as '', as it does on a loop's
-# first iteration, unless a `LOOP_PREV=<json>` argument supplies the previous
-# iteration's output, whose field it then renders shell quoted once <node>'s
-# output_format declares it. Any further argument, `field=value`, overrides
-# one field's value, written the way Archon writes it into a bash body: shell
-# quoted, so an empty string arrives as ''.
+# `pr_number`, `repo`, `pr_url` and `head_sha` need a number, a slug, a URL
+# and a 40-hex commit (the gh stub's head) for the script to accept them, and
+# every other field this workflow substitutes is a boolean, `approved` and
+# `delivered` among them, so `true`. A $LOOP_PREV.<node>.output.<field> token
+# renders as '', as it does on a loop's first iteration, unless a
+# `LOOP_PREV=<json>` argument supplies the previous iteration's outputs keyed
+# by node id, whose field it then renders shell quoted once <node> declares
+# it. $WORKFLOW_ID arrives as run-1. Any further argument, `field=value`,
+# overrides one field's value, written the way Archon writes it into a bash
+# body: shell quoted, so an empty string arrives as ''.
 run_node_body() {
   local node="$1" body token field value override prev="" producer
   shift
@@ -85,10 +85,10 @@ run_node_body() {
       producer="${producer%%.*}"
       field="${token##*.}"
       bun "$NODE" properties "$WORKFLOW" "$producer" | grep -qxF "$field" || {
-        echo "$token names a field node $producer's output_format does not declare" >&2
+        echo "$token names a field node $producer does not declare" >&2
         return 2
       }
-      value="'$(printf '%s' "$prev" | jq -r --arg field "$field" '.[$field]')'"
+      value="'$(printf '%s' "$prev" | jq -r --arg node "$producer" --arg field "$field" '.[$node][$field] // ""')'"
     fi
     body="${body%%"$token"*}${value}${body#*"$token"}"
   done
@@ -99,7 +99,6 @@ run_node_body() {
       repo) value=owner/repo ;;
       pr_url) value=https://github.com/owner/repo/pull/42 ;;
       head_sha) value=0123456789abcdef0123456789abcdef01234567 ;;
-      cursor) value=1:/state/sessions/a.json ;;
       *) value=true ;;
     esac
     for override in "$@"; do
@@ -107,7 +106,7 @@ run_node_body() {
     done
     body="${body%%"$token"*}${value}${body#*"$token"}"
   done
-  ( cd "$REPO" && env INPUTS_BEAD=foo INPUTS_BEADS_DIR="$STUB_BIN" sh -c "$body" )
+  ( cd "$REPO" && env INPUTS_BEAD=foo INPUTS_BEADS_DIR="$STUB_BIN" WORKFLOW_ID=run-1 sh -c "$body" )
 }
 
 @test "the claim node prints what the workflow declares it prints" {
@@ -150,39 +149,52 @@ run_node_body() {
   printf '%s' "$out" | bun "$NODE" check-output "$WORKFLOW" merge
 }
 
-# A first round, with no cursor yet, on a pull request whose session releases
-# once with no comments on its head, so the round approves in its second read.
+# A first round, before the gate has an answer, opens the review tab and
+# hands the gate its question with the pull request's head.
 @test "the review-round node prints what the workflow declares it prints" {
   export GH_PR_VIEW_STATES=OPEN
-  export SLICE_WAVE_REVIEW_POLL_SECONDS=0 SLICE_WAVE_REVIEW_WAIT_SECONDS=30
-  export TUICR_LIST_SEQUENCE='[{"slug":"gh:owner/repo/pr/42","path":"/state/sessions/a.json","release_count":0,"head_sha":null}]
-[{"slug":"gh:owner/repo/pr/42","path":"/state/sessions/a.json","release_count":1,"head_sha":"0123456789abcdef0123456789abcdef01234567"}]'
   rc=0; out="$(run_node_body review-round)" || rc=$?
   equals "$rc" 0
-  equals "$(printf '%s' "$out" | jq -r .outcome)" approved
+  equals "$(printf '%s' "$out" | jq -r .outcome)" waiting
+  equals "$(printf '%s' "$out" | jq -r .head_sha)" 0123456789abcdef0123456789abcdef01234567
   printf '%s' "$out" | bun "$NODE" check-output "$WORKFLOW" review-round
 }
 
-# A round that ends on comments hands its cursor to the next through
-# $LOOP_PREV, and the next round resumes from it: the comment the first round
-# counted stays counted there, so the empty send after it approves in one pass.
-@test "the review loop's next round resumes from the cursor the last round reported" {
+# The gate's approval reaches the next round through $LOOP_PREV, which turns
+# it into the approved head merge reads.
+@test "the review loop's next round approves the head the gate's answer names" {
   export GH_PR_VIEW_STATES=OPEN
-  export SLICE_WAVE_REVIEW_POLL_SECONDS=0 SLICE_WAVE_REVIEW_WAIT_SECONDS=0
-  export TUICR_COMMENTS_JSON='[{"id":"c0","content":"fix this","released_in":2}]'
-  export TUICR_LIST_SEQUENCE='[{"slug":"gh:owner/repo/pr/42","path":"/state/sessions/a.json","release_count":1,"head_sha":null}]
-[{"slug":"gh:owner/repo/pr/42","path":"/state/sessions/a.json","release_count":2,"head_sha":"0123456789abcdef0123456789abcdef01234567"}]'
   prev="$(run_node_body review-round)"
-  equals "$(printf '%s' "$prev" | jq -r .outcome)" comments
-  equals "$(printf '%s' "$prev" | jq -r .cursor)" 2:/state/sessions/a.json
-  printf '%s' "$prev" | bun "$NODE" check-output "$WORKFLOW" review-round
-
-  rm -f "$STUB_BIN/tuicr-list-calls"
-  export TUICR_LIST_SEQUENCE='[{"slug":"gh:owner/repo/pr/42","path":"/state/sessions/a.json","release_count":3,"head_sha":"0123456789abcdef0123456789abcdef01234567"}]'
-  rc=0; out="$(run_node_body review-round "LOOP_PREV=$prev")" || rc=$?
+  head=fedcba9876543210fedcba9876543210fedcba98
+  loop_prev="$(jq -cn --argjson round "$prev" --arg head "$head" \
+    '{"review-round": $round, "review-gate": {decision: "approved", text: $head}}')"
+  rc=0; out="$(run_node_body review-round "LOOP_PREV=$loop_prev")" || rc=$?
   equals "$rc" 0
   equals "$(printf '%s' "$out" | jq -r .outcome)" approved
-  equals "$(printf '%s' "$out" | jq -r .cursor)" 3:/state/sessions/a.json
+  equals "$(printf '%s' "$out" | jq -r .head_sha)" "$head"
+  printf '%s' "$out" | bun "$NODE" check-output "$WORKFLOW" review-round
+}
+
+# An approval answered by hand with no text approves the head the last
+# round's question showed.
+@test "the review loop's next round approves the shown head on an approval with no text" {
+  export GH_PR_VIEW_STATES=OPEN
+  prev="$(run_node_body review-round)"
+  loop_prev="$(jq -cn --argjson round "$prev" \
+    '{"review-round": $round, "review-gate": {decision: "approved", text: ""}}')"
+  rc=0; out="$(run_node_body review-round "LOOP_PREV=$loop_prev")" || rc=$?
+  equals "$rc" 0
+  equals "$(printf '%s' "$out" | jq -r .head_sha)" 0123456789abcdef0123456789abcdef01234567
+}
+
+@test "the review loop's next round waits again after comments" {
+  export GH_PR_VIEW_STATES=OPEN
+  prev="$(run_node_body review-round)"
+  loop_prev="$(jq -cn --argjson round "$prev" \
+    '{"review-round": $round, "review-gate": {decision: "comments", text: "2 comments sent in release 3"}}')"
+  rc=0; out="$(run_node_body review-round "LOOP_PREV=$loop_prev")" || rc=$?
+  equals "$rc" 0
+  equals "$(printf '%s' "$out" | jq -r .outcome)" waiting
 }
 
 # Every slice passes through review, so review-round runs on validate's
@@ -221,13 +233,8 @@ run_until_bash() {
   equals "$rc" 0
 }
 
-@test "the review loop runs another round after a send with comments" {
-  rc=0; run_until_bash review comments || rc=$?
-  equals "$rc" 1
-}
-
-@test "the review loop runs another round when no send arrived" {
-  rc=0; run_until_bash review none || rc=$?
+@test "the review loop runs another round while the gate waits" {
+  rc=0; run_until_bash review waiting || rc=$?
   equals "$rc" 1
 }
 

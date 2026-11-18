@@ -23,6 +23,7 @@ interface WorkflowNode {
   id: string;
   bash?: string;
   output_format?: unknown;
+  wait?: { form?: string };
   loop_group?: { nodes?: WorkflowNode[]; until_bash?: string };
 }
 
@@ -90,6 +91,17 @@ function asOutputFormat(schema: unknown, nodeId: string): OutputFormat {
     properties: properties as Record<string, PropertySchema>,
     required: required as string[],
   };
+}
+
+/**
+ * The fields an answered attention wait outputs, by form, as Archon's answer
+ * operation builds them. Other forms are refused rather than guessed.
+ */
+function waitProperties(node: WorkflowNode): string[] {
+  const form = node.wait?.form ?? "message";
+  if (form === "select") return ["decision", "text"];
+  if (form === "message") return ["text"];
+  unusable(`node '${node.id}' waits with form '${form}', which this helper cannot check`);
 }
 
 function jsonTypeOf(value: unknown): string {
@@ -198,7 +210,12 @@ switch (command) {
     console.log(untilBody(node));
     break;
   case "properties":
-    console.log(Object.keys(asOutputFormat(node.output_format, node.id).properties).join("\n"));
+    console.log(
+      (node.wait
+        ? waitProperties(node)
+        : Object.keys(asOutputFormat(node.output_format, node.id).properties)
+      ).join("\n"),
+    );
     break;
   case "check-output":
     await checkOutput(node);

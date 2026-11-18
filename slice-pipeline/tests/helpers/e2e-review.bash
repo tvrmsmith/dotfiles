@@ -6,7 +6,7 @@
 #
 # Needs Orca running, and a tuicr built from Trevor's fork branch `groupdiff`:
 # upstream tuicr drops a released session on quit and reports no head_sha in
-# `review list`, and review-round needs both.
+# `review list`, and review-watch needs both.
 
 # Waits for the review tab of bead $1's pull request on GitHub repository $2,
 # then approves it with an empty send. Sets REVIEW_TAB_TITLE, REVIEW_HANDLE
@@ -14,11 +14,11 @@
 # title) for the caller to export. Both waits share one deadline,
 # SLICE_E2E_REVIEW_TIMEOUT_SECONDS from the call (default 16200, 4.5 hours,
 # since build and validate both run before review opens a tab). Gives up early
-# once process $3, the workflow run, exits, since a run that failed before
-# review never opens a tab. Returns 1 with the reason on stderr when it
-# cannot send.
+# once process $3, the workflow run, exits with the latest run in checkout $4
+# anywhere but paused, since a run that failed before review never opens a
+# tab. Returns 1 with the reason on stderr when it cannot send.
 send_empty_review() {
-	local bead="$1" repo="$2" run_pid="$3" deadline tab slug
+	local bead="$1" repo="$2" run_pid="$3" checkout="$4" deadline tab slug
 	local tool
 	for tool in orca tuicr; do
 		command -v "$tool" >/dev/null || {
@@ -35,7 +35,7 @@ send_empty_review() {
 		 | select((.title // "") | test("^review \($bead) #[0-9]+$"))
 		 | {title, handle: ([.panes | .. | objects | select(.type == "terminal") | .handle] | first)}]
 		| first // empty')"; do
-		review_wait_ok "$run_pid" "$deadline" "no review tab for $bead" || return 1
+		review_wait_ok "$run_pid" "$checkout" "$deadline" "no review tab for $bead" || return 1
 	done
 	REVIEW_TAB_TITLE="$(jq -r .title <<<"$tab")"
 	REVIEW_HANDLE="$(jq -r '.handle // empty' <<<"$tab")"
@@ -48,7 +48,7 @@ send_empty_review() {
 	# A send before tuicr has persisted the session has nothing to release.
 	slug="gh:$repo/pr/$REVIEW_PR"
 	until tuicr review list --repo "$repo" 2>/dev/null | jq -e --arg slug "$slug" 'any(.[]; .slug == $slug)' >/dev/null 2>&1; do
-		review_wait_ok "$run_pid" "$deadline" "no tuicr session $slug" || return 1
+		review_wait_ok "$run_pid" "$checkout" "$deadline" "no tuicr session $slug" || return 1
 	done
 
 	orca terminal send --terminal "$REVIEW_HANDLE" --text ':send' --enter >/dev/null || {
@@ -57,11 +57,17 @@ send_empty_review() {
 	}
 }
 
-# Sleeps one poll interval, or returns 1 with $3 on stderr once run $1 has
-# exited or deadline $2 has passed.
+# Prints the status of the latest Archon run in checkout $1.
+latest_run_status() {
+	(cd "$1" && archon workflow runs --json --limit 1 2>/dev/null) | jq -r '.runs[0].status // empty'
+}
+
+# Sleeps one poll interval, or returns 1 with $4 on stderr once process $1
+# has exited with checkout $2's latest run anywhere but paused, or deadline
+# $3 has passed. A run paused at review's gate has no process left.
 review_wait_ok() {
-	local run_pid="$1" deadline="$2" waiting_for="$3"
-	kill -0 "$run_pid" 2>/dev/null || {
+	local run_pid="$1" checkout="$2" deadline="$3" waiting_for="$4"
+	kill -0 "$run_pid" 2>/dev/null || [ "$(latest_run_status "$checkout")" = paused ] || {
 		echo "# $waiting_for, and the run has already exited" >&2
 		return 1
 	}
@@ -72,16 +78,44 @@ review_wait_ok() {
 	sleep 10
 }
 
-# Stops process $1 and every process under it. Killing the run alone would
-# leave its review-round polling for hours behind it. The tree is listed
-# before anything is killed, so no orphan escapes to launchd first.
+# Stops process $1 and every process under it, then cancels checkout $2's
+# latest run, which a run paused at review's gate needs, having no process.
+# The tree is listed before anything is killed, so no orphan escapes to
+# launchd first.
 stop_run() {
-	local pids="$1" frontier="$1"
+	local pids="$1" frontier="$1" run
 	while frontier="$(pgrep -P "$frontier" | paste -sd, -)" && [ -n "$frontier" ]; do
 		pids="$pids,$frontier"
 	done
 	# shellcheck disable=SC2086 # a deliberate word-split list of pids.
 	kill ${pids//,/ } 2>/dev/null
+	run="$( (cd "$2" && archon workflow runs --json --limit 1 2>/dev/null) | jq -r '.runs[0].id // empty')"
+	[ -z "$run" ] || (cd "$2" && archon workflow cancel "$run" >/dev/null 2>&1) ||
+		echo "# cannot cancel run $run; cancel it with archon workflow cancel" >&2
+}
+
+# Waits for run $2 in checkout $1 to end, polling its status every 10
+# seconds for up to SLICE_E2E_MERGE_TIMEOUT_SECONDS (default 10800, over
+# merge's own 2-hour queue deadline). Returns 0 once it completes, or 1 with
+# the reason on stderr once it fails, is cancelled, or outlasts the wait.
+await_run_end() {
+	local checkout="$1" run="$2" status deadline
+	deadline=$((SECONDS + ${SLICE_E2E_MERGE_TIMEOUT_SECONDS:-10800}))
+	while :; do
+		status="$( (cd "$checkout" && archon workflow get "$run" --json 2>/dev/null) | jq -r '.status // empty')"
+		case "$status" in
+			completed) return 0 ;;
+			failed | cancelled)
+				echo "# run $run ended $status" >&2
+				return 1
+				;;
+		esac
+		[ "$SECONDS" -lt "$deadline" ] || {
+			echo "# run $run is still ${status:-unreadable} after ${SLICE_E2E_MERGE_TIMEOUT_SECONDS:-10800}s" >&2
+			return 1
+		}
+		sleep 10
+	done
 }
 
 # Closes the review tab whose pane is $1, if send_empty_review found one.

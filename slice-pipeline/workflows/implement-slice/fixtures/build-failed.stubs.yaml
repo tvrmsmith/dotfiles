@@ -38,9 +38,8 @@ validate:
 review-round:
   outcome: undelivered
   approved: false
-  cursor: ""
   head_sha: ""
-  comments: 0
+  question: ""
   reason: "the slice was not delivered, so review was skipped"
 merge:
   merged: false

@@ -1,15 +1,16 @@
 # Wiring of the go signal only. A real run never reaches merge this way: a
-# round that ends with outcome none fails the loop's until_bash, so review
-# runs another round instead of completing. `archon workflow test` never runs
-# until_bash, so this fixture can hand merge an unapproved verdict, and all it
-# pins is that merge reads review's verdict: `--approved false` reaches the
-# merge body, merge merges nothing, and release hands the bead back.
+# round that ends waiting fails the loop's until_bash, so review runs another
+# round once the gate is answered. `archon workflow test` runs one iteration
+# and never runs until_bash, so this fixture can answer the gate with
+# comments and hand merge an unapproved verdict, and all it pins is that
+# merge reads review's verdict: `--approved false` reaches the merge body,
+# merge merges nothing, and release hands the bead back.
 #
 # `close` is left unstubbed, so reaching it fails this fixture with a
 # missing-stub error: an unapproved slice must never close its bead.
 fixture:
   expect: completed
-  reached: [claim, build, verify, validate, review-round, review, merge, release]
+  reached: [claim, build, verify, validate, review-round, review-gate, review, merge, release]
   resolved-text-contains:
     merge: "--approved false"
   inputs:
@@ -40,12 +41,14 @@ validate:
   record_posted: true
   reason: ""
 review-round:
-  outcome: none
+  outcome: waiting
   approved: false
-  cursor: "1:/state/sessions/a.json"
   head_sha: ""
-  comments: 0
-  reason: "no send arrived within the wait"
+  question: ""
+  reason: ""
+review-gate:
+  decision: comments
+  text: "2 comments sent in release 1"
 merge:
   merged: false
   strategy: ""

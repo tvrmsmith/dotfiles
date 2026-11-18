@@ -3,7 +3,8 @@ description: |
   Build one vertical slice from its bead, land its commit on the branch, drive
   it through the repository's validator (no-mistakes, or imr pr ship where
   repos.json says so) to a pull request with a findings record, open
-  a review tab on that pull request and wait for an engineer's empty send,
+  a review tab on that pull request and wait at a native gate for an
+  engineer's empty send,
   merge the head they approved, and close the bead once the forge confirms the
   merge. The slice's spec lives in the bead's `design` field, the wave's
   agreed seams in its `notes` field. Verify reads the branch, not a model's
@@ -141,12 +142,20 @@ nodes:
   # skips it, because a skipped review would skip merge, the returns node,
   # behind it. On an undelivered slice review-round short-circuits with no
   # external call and reports outcome undelivered, which ends the loop at once.
-  # A delivered slice gets a review tab in the target's main checkout, and each
-  # round waits up to 8 hours for the engineer to send from it. Only an empty
-  # send on the pull request's current head ends the loop approved; a send with
-  # comments, or no send in time, runs another round from the cursor the last
-  # one reached. The group carries no timeout of its own, since the engine
-  # applies a loop group's timeout to until_bash alone.
+  # A delivered slice gets a review tab in the target's main checkout, running
+  # tuicr beside `slice-wave review-watch`. Each iteration's review-round
+  # opens the tab if it is gone and returns at once; review-gate is a native
+  # Archon wait the watcher answers from the engineer's send: `comments` for a
+  # send with comments, which runs another iteration, or `approved` with the
+  # head for an empty send on the pull request's current head. The watcher
+  # resumes the run itself, detached, so closing the tab cannot stop the
+  # merge. Anyone can answer the gate by hand instead (`archon workflow
+  # answer`); an approval with empty text approves the head the question
+  # showed. The next iteration's review-round turns an approval into outcome
+  # approved, which skips the gate and ends the loop, so the group's output is
+  # review-round's and merge reads it unchanged. The group carries no timeout
+  # of its own, since the engine applies a loop group's timeout to until_bash
+  # alone, and a wait has none.
   #
   # A review that fails, whether 20 rounds pass with no approval, a round
   # fails, or the pull request is closed or merged outside the pipeline, fails
@@ -156,10 +165,9 @@ nodes:
   # there would hand a slice with an open, reviewed pull request back to the
   # frontier for a second worker to build again.
   #
-  # review-round's timeout sits above the script's own 8-hour wait, so a round
-  # still waiting reports outcome none before this kills it. On the first
-  # iteration $LOOP_PREV renders as '', which review-round reads as no cursor
-  # yet.
+  # On the first iteration every $LOOP_PREV renders as '', which review-round
+  # reads as no answer yet. review-round's timeout covers a few gh and orca
+  # calls.
   - id: review
     depends_on: [validate]
     loop_group:
@@ -167,18 +175,30 @@ nodes:
       max_iterations: 20
       nodes:
         - id: review-round
-          timeout: 29400000
-          bash: slice-wave review-round --bead "$INPUTS_BEAD" --delivered $validate.output.delivered --pr $validate.output.pr_number --repo $validate.output.repo --since $LOOP_PREV.review-round.output.cursor
+          timeout: 300000
+          bash: slice-wave review-round --bead "$INPUTS_BEAD" --delivered $validate.output.delivered --pr $validate.output.pr_number --repo $validate.output.repo --run "$WORKFLOW_ID" --answer $LOOP_PREV.review-gate.output.decision --answer-text $LOOP_PREV.review-gate.output.text --shown-head $LOOP_PREV.review-round.output.head_sha
           output_format:
             type: object
             properties:
               outcome: {type: string}
               approved: {type: boolean}
-              cursor: {type: string}
               head_sha: {type: string}
-              comments: {type: integer}
+              question: {type: string}
               reason: {type: string}
-            required: [outcome, approved, cursor, head_sha, comments, reason]
+            required: [outcome, approved, head_sha, question, reason]
+        - id: review-gate
+          depends_on: [review-round]
+          when: "$review-round.output.outcome == 'waiting'"
+          wait:
+            attention: $review-round.output.question
+            form: select
+            options:
+              - id: approved
+                label: Approve
+                does: Merges the head named in the text, or the head the question showed when the text is empty.
+              - id: comments
+                label: Comments sent
+                does: Runs another review round once the comments are addressed.
 
   # The returns node: no `when:`, since a skipped returns node persists no
   # authored outcome, and the script's own --approved false short-circuit

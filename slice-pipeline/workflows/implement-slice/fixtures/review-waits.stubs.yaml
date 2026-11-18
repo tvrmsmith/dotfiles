@@ -1,0 +1,40 @@
+# A delivered round that has not been answered pauses the run at review-gate,
+# the native wait the review tab's watcher answers. Nothing after the gate
+# runs: merge, close and release are left unstubbed, so reaching any of them
+# fails this fixture with a missing-stub error.
+fixture:
+  expect: paused
+  reached: [claim, build, verify, validate, review-round]
+  inputs:
+    bead: demo-slice-1
+    beads_dir: /tmp/beads
+
+claim:
+  bead: demo-slice-1
+  beads_dir: /tmp/beads
+  branch: slice/demo-slice-1
+build: "the slice is built and committed"
+verify:
+  verified: true
+  committed: true
+  tests_touched: true
+  branch: slice/demo-slice-1
+  sha: 1f0c6a4e2b7d9c3a5e8f10b2d4c6a8e0f2b4d6c8
+  reason: ""
+  waivers: []
+  waivers_error: ""
+validate:
+  delivered: true
+  outcome: checks-passed
+  pr_number: 42
+  pr_url: https://github.com/owner/repo/pull/42
+  repo: owner/repo
+  fix_rounds: 1
+  record_posted: true
+  reason: ""
+review-round:
+  outcome: waiting
+  approved: false
+  head_sha: 1f0c6a4e2b7d9c3a5e8f10b2d4c6a8e0f2b4d6c8
+  question: "Review owner/repo#42 at 1f0c6a4e2b7d9c3a5e8f10b2d4c6a8e0f2b4d6c8."
+  reason: ""
