@@ -1,6 +1,7 @@
 ---
 name: acli
-description: Atlassian CLI (acli) command reference for Jira operations. Triggers on: acli, acli jira, atlassian cli.
+description: >-
+  Atlassian CLI (acli) command reference for Jira operations. Triggers on: acli, acli jira, atlassian cli.
 ---
 
 # Atlassian CLI (acli) Reference

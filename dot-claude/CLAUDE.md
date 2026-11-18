@@ -46,7 +46,7 @@
 
 ## Code Navigation
 
-- Language servers run for TypeScript/JavaScript, Ruby, and C#. In those files, answer symbol questions with the LSP tool, which reads the compiler's symbol table: `goToDefinition`, `findReferences`, `goToImplementation`, `hover` for a type, `workspaceSymbol` to locate a name, `incomingCalls`/`outgoingCalls` to trace a call chain.
+- Language servers run for TypeScript/JavaScript and C#. In those files, answer symbol questions with the LSP tool, which reads the compiler's symbol table: `goToDefinition`, `findReferences`, `goToImplementation`, `hover` for a type, `workspaceSymbol` to locate a name, `incomingCalls`/`outgoingCalls` to trace a call chain.
 - Grep is for text that is not a symbol: string literals, config keys, comments, log messages, and any language with no server running.
 
 ## Engineering Standards
@@ -58,3 +58,7 @@
 - **Boy Scout rule, bounded**: clean mechanical, source-level things on lines the task already changes. In other files, clean only fallout, the mess your change caused: the function whose last caller you deleted, the doc naming what you renamed. Cleanup keeps behavior identical and stays smaller than the task diff. File what you notice but leave unfixed, one issue each in the repo's issue tracker: a real bug, or a cleanup that broke the bound. Cosmetic nits get neither a fix nor an issue. Before the PR, check the diff. Every hunk is the task, a touched-line cleanup, or fallout.
 - **Design phase**: ALWAYS load the `mattpocock-skills:codebase-design` skill before placing a seam, designing or changing a module interface, or restructuring code, and use its vocabulary.
 - **Cross-boundary contract approval**: any contract crossing a service or independent-deploy boundary (service↔service, frontend↔BFF, Kafka/event schemas, APIs consumed outside the owning service) needs my approval before implementation. Load the `contract-approval` skill and follow it.
+
+## Docs
+
+- When an enumerated list in documentation goes stale, prefer to name the concept and removing the list over correcting the list itself unless that list is critical to communicate the concept.

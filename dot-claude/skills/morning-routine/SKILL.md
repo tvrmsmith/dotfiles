@@ -1,6 +1,7 @@
 ---
 name: morning-routine
-description: Use when starting the workday, beginning a morning routine, or wanting to catch up on overnight activity. Triggers on: good morning, morning routine, start my day, catch up, what did I miss.
+description: >-
+  Use when starting the workday, beginning a morning routine, or wanting to catch up on overnight activity. Triggers on: good morning, morning routine, start my day, catch up, what did I miss.
 ---
 
 # Morning Routine

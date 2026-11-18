@@ -1,6 +1,7 @@
 ---
 name: daily-standup
-description: Use when preparing a daily standup report, summarizing yesterday's work, or reviewing what was accomplished. Triggers on: standup, stand-up, daily report, what did I do yesterday, EOD summary, daily sync.
+description: >-
+  Use when preparing a daily standup report, summarizing yesterday's work, or reviewing what was accomplished. Triggers on: standup, stand-up, daily report, what did I do yesterday, EOD summary, daily sync.
 ---
 
 # Daily Standup Report
