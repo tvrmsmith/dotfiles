@@ -1,6 +1,6 @@
 ---
 name: finish-worktree
-description: Finish development on a worktree end-to-end — take committed work from validation through a merged PR, then hand the beads issue back to the user to close.
+description: Finish development on a worktree end-to-end — take committed work from validation through a merged PR, then close the beads issue.
 disable-model-invocation: true
 ---
 
@@ -104,21 +104,18 @@ Either path converges here: **wait for the user to prompt you to continue.**
 Merge only once they do, however the repo merges (merge queue, `gh pr merge`, or
 the user merging it themselves).
 
-## 4. Hand the beads issue back
+## 4. Close the beads issue
 
-**Never close the issue yourself** — closing is the user's call, even after the
-PR merges. Do not run `bd close`.
+**The merge closes the issue.** Once the PR is `MERGED`
+(`gh pr view <#> --json state`), run `bd close <id>` with the PR and merge sha
+in `--reason`. A merged PR leaves nothing behind. Work still open after merge
+means the PR was incomplete. Report it to the user as a defect of that PR, and
+close the issue anyway.
 
-Once the PR is `MERGED` (`gh pr view <#> --json state`), leave the issue
-`in_progress`, report its state and the merged PR, and tell the user it is ready
-for them to close. Close it only if they explicitly tell you to in that turn.
-
-Still persist any updates you *did* make (`bd dolt push` if that is how the repo
-syncs).
+Persist the close (`bd dolt push` if that is how the repo syncs).
 
 ## Final report
 
-Summarize the outcome in one compact block: PR merged (link), beads issue id +
-its (still open) status and that it awaits the user's close, any stage that was
-skipped, capped, or needs follow-up, and any low-severity findings dropped by
-the stage 1 severity cap.
+Summarize the outcome in one compact block: PR merged (link), beads issue id
+closed, any stage that was skipped, capped, or needs follow-up, and any
+low-severity findings dropped by the stage 1 severity cap.
