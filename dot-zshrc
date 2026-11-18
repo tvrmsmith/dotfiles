@@ -40,12 +40,6 @@ if command -v mise &>/dev/null; then
   eval "$(mise activate zsh)" # this sets up interactive sessions
 fi
 
-if [ -d "$CONSOLO_DOCKER_DEV_DIR/.helpers" ]; then
-  source $CONSOLO_DOCKER_DEV_DIR/.helpers/compose.sh
-  source $CONSOLO_DOCKER_DEV_DIR/.helpers/git.sh
-  source $CONSOLO_DOCKER_DEV_DIR/.helpers/system.sh
-fi
-
 if command -v just &>/dev/null; then
   source <(just --completions bash)
 fi
@@ -165,10 +159,6 @@ print("\n".join(lines))
   [[ -r $style ]] || style=dark
   printf '%s\n' "$md" | TERM=dumb command glow -s "$style" -
 }
-
-# Manual ADC refresh. Claude Code also runs this itself via the gcpAuthRefresh
-# setting in dot-claude/settings.json when it hits an expired-credential error.
-alias gauth="gcloud auth application-default login"
 
 alias logdy='logdy --no-analytics --port=8090'
 

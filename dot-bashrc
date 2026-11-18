@@ -15,13 +15,8 @@ fi
 # shellcheck source=.config/nvim-Lazyman/.nvimsbind
 [ -f ~/.config/nvim-Lazyman/.nvimsbind ] && source ~/.config/nvim-Lazyman/.nvimsbind
 
-# Consolo dev helpers — work-machine path; missing on sandboxes and any other
-# host. Mirrors the guard in dot-zshrc.
-if [ -d "$CONSOLO_DOCKER_DEV_DIR/.helpers" ]; then
-  source "$CONSOLO_DOCKER_DEV_DIR/.helpers/compose.sh"
-  source "$CONSOLO_DOCKER_DEV_DIR/.helpers/git.sh"
-  source "$CONSOLO_DOCKER_DEV_DIR/.helpers/system.sh"
-fi
+# Machine-local config, untracked here; mirrors ~/.zshrc.local in dot-zshrc.
+[ -f "$HOME/.bashrc.local" ] && source "$HOME/.bashrc.local"
 
 if command -v just &>/dev/null; then
   source <(just --completions bash)

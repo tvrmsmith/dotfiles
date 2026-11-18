@@ -77,7 +77,6 @@
     "init": "user-invocable-only",
     "claude-api": "name-only",
     "update-config": "user-invocable-only",
-    "jira-next-item": "user-invocable-only",
     "prd": "user-invocable-only",
     "ralph": "user-invocable-only",
     "beads": "user-invocable-only",
@@ -140,6 +139,16 @@
           {
             "type": "command",
             "command": "$HOME/.claude/hooks/lavish-poll-guard.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/work-push-guard.sh",
             "timeout": 10
           }
         ]
