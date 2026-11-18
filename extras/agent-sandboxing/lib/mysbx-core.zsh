@@ -49,7 +49,7 @@ _mysbx_resolve_real_sbx() {
 
 # --- Preset registry --------------------------------------------------------
 _MYSBX_KITS_TOOLING="$_AGENT_SBX_ROOT/kits/tooling"
-_MYSBX_KITS_CLAUDE_PATCH="$_AGENT_SBX_ROOT/kits/claude-code-patch"
+_MYSBX_KITS_CLAUDE_UPDATE="$_AGENT_SBX_ROOT/kits/claude-code-update"
 _MYSBX_KITS_PERSONAL="$_AGENT_SBX_ROOT/kits/personal"
 _MYSBX_KITS_ATLASSIAN="$_AGENT_SBX_ROOT/kits/atlassian"
 _MYSBX_KITS_OMP="$_AGENT_SBX_ROOT/kits/omp"
@@ -83,7 +83,7 @@ _mysbx_preset_kits() {
   local -a kits=()
   case "$preset" in
     cc|ruby-cc)
-      kits=("$_MYSBX_KITS_TOOLING" "$_MYSBX_KITS_CLAUDE_PATCH" "$_MYSBX_KITS_PERSONAL")
+      kits=("$_MYSBX_KITS_TOOLING" "$_MYSBX_KITS_CLAUDE_UPDATE" "$_MYSBX_KITS_PERSONAL")
       _mysbx_is_personal || kits+=("$_MYSBX_KITS_ATLASSIAN")
       ;;
     omp)
@@ -400,7 +400,7 @@ _mysbx_omp_clean() {
 # Ported from dsbx-update (20-dsbx.zsh:412-431). Prefixes are now mysbx-*.
 _mysbx_update() {
   local -a prefixes=(mysbx-cc mysbx-ruby-cc mysbx-omp)
-  local -a kits=("$_MYSBX_KITS_TOOLING" "$_MYSBX_KITS_CLAUDE_PATCH" "$_MYSBX_KITS_PERSONAL")
+  local -a kits=("$_MYSBX_KITS_TOOLING" "$_MYSBX_KITS_CLAUDE_UPDATE" "$_MYSBX_KITS_PERSONAL")
   _mysbx_is_personal || kits+=("$_MYSBX_KITS_ATLASSIAN")
   local found=0 rc=0 prefix name kit
   # Worktree source participates in the create-time name; reproduce it so

@@ -1,0 +1,14 @@
+schemaVersion: "2"
+kind: mixin
+name: claude-code-update
+displayName: Claude Code Update
+description: Updates Claude Code at sandbox startup
+
+commands:
+  startup:
+    - command: ["bash", "-c", "claude update 2>/dev/null"]
+      description: Update Claude Code
+
+environment:
+  variables:
+    DISABLE_AUTOUPDATER: "1"

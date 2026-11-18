@@ -272,14 +272,14 @@ Verified from Claude Code v2.1.150 binary source (function `checkEnabledPlugins`
 
 ### Commands count toward skill budget
 
-Plugin **commands** (`.md` files in a plugin's `commands/` directory) are unified with skills — both appear in the system prompt skill listing and consume budget identically. When auditing, count commands alongside skills. The `skillOverrides` setting applies to both (with the binary patch below).
+Plugin **commands** (`.md` files in a plugin's `commands/` directory) are unified with skills — both appear in the system prompt skill listing and consume budget identically. When auditing, count commands alongside skills. The `skillOverrides` setting applies to both, for user-level ones only (see below).
 
 ## Known Limitations
 
 ### Plugin skill overrides are ignored by Claude Code
 
-Claude Code hardcodes `source==="plugin"` to return `"on"`, bypassing `skillOverrides` in `settings.json`. This means `user-invocable-only` and `off` overrides set during Phase 4 **only take effect for user-level skills** — plugin-scoped skills and commands (e.g. `pr-review-toolkit:review-pr`, `hookify:configure`) will remain active regardless of the override.
+Claude Code short-circuits plugin skills past `skillOverrides` in `settings.json`. This means `user-invocable-only` and `off` overrides set during Phase 4 **only take effect for user-level skills** — plugin-scoped skills and commands (e.g. `pr-review-toolkit:review-pr`, `hookify:configure`) will remain active regardless of the override.
 
-**Workaround (macOS only):** A binary patch script is included at `references/claude-code-patch.sh`. It replaces the hardcoded check so `skillOverrides` applies to all skill sources. Safe to re-run (detects if already patched), creates a `.bak` backup, and re-signs with original entitlements. Re-run after each Claude Code update.
+**Workaround:** none in-binary. Claude Code ships as a Bun bytecode build, so editing the embedded JavaScript source has no runtime effect. To keep a plugin's skills out of context, disable the whole plugin in `enabledPlugins`.
 
 **Preferred fix:** File a feature request with Anthropic to support `skillOverrides` for plugin skills natively.

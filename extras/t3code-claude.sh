@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# t3code Claude binary wrapper — applies the skillOverrides patch, then execs claude.
+# t3code Claude binary wrapper — routes t3code's Claude sessions through claude-launcher.
 # Set as t3code Settings -> Claude -> "Binary path".
 #
 # Vertex backend is NOT set here: ~/.claude/settings.json's `env` block configures it,
@@ -9,9 +9,4 @@
 # t3code appends --dangerously-skip-permissions itself, so this wrapper does not.
 set -euo pipefail
 
-# Apply binary patch (idempotent; early-exits when already patched). Re-runs each launch
-# so it self-heals after a Claude Code update changes the version binary.
-"$HOME/dev/personal/dotfiles/extras/claude-code-patch.sh" >/dev/null 2>&1 || true
-
-# Hand off to the real launcher with t3code's args.
-exec "$HOME/.local/bin/claude" "$@"
+exec "$HOME/.local/bin/claude-launcher" "$@"
