@@ -270,15 +270,15 @@ clcwf() { (export CLAUDE_CODE_DISABLE_WORKFLOWS=0; claude-launcher --dangerously
 unalias gh 2>/dev/null
 
 # bun completions
-[ -s "/Users/trevor.smith/.bun/_bun" ] && source "/Users/trevor.smith/.bun/_bun"
+[ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
 
 # bun
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
-source /Users/trevor.smith/dev/wellsky/consolo.docker-dev/.helpers/compose.sh
-source /Users/trevor.smith/dev/wellsky/consolo.docker-dev/.helpers/git.sh
-source /Users/trevor.smith/dev/wellsky/consolo.docker-dev/.helpers/system.sh
+# Machine-local config, untracked: work-only functions and values that
+# must stay out of this public repo. Mirrors ~/.zshenv.local.
+[ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"
 
 # Last line on purpose. mise, bun and anything sourced above prepend to PATH,
 # which buries ~/.local/bin and the shims that have to win. Defined in .zshenv.
