@@ -7,7 +7,6 @@ description: |
   Use when: an effort is too big for one session and has no map yet.
   NOT for: resolving a ticket on an existing map (use wayfinder-ticket).
 
-interactive: true
 model: large
 
 inputs:
@@ -104,6 +103,7 @@ nodes:
         2. Only once all ids exist, wire the blocking edges.
 
       Report the map's id and title, and each ticket by NAME, never a bare id.
+      Set has_research to true only when research_tickets is non-empty.
     output_format:
       type: object
       properties:
@@ -112,7 +112,8 @@ nodes:
         research_tickets:
           type: array
           items: {type: string}
-      required: [map_id, map_title, research_tickets]
+        has_research: {type: boolean}
+      required: [map_id, map_title, research_tickets, has_research]
 
   # Deterministic proof the map exists before we spend on research subagents.
   - id: verify-map
@@ -124,7 +125,7 @@ nodes:
   # ── Step 5: fire the research subagents (AFK tickets only) ──────────────
   - id: research-fanout
     depends_on: [verify-map]
-    when: "$write-map.output.research_tickets != []"
+    when: "$write-map.output.has_research == true"
     skills: [research]
     prompt: |
       Map: $write-map.output.map_title ($write-map.output.map_id)
