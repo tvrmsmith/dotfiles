@@ -63,6 +63,16 @@ reason_of() { printf '%s' "$1" | jq -r '.hookSpecificOutput.permissionDecisionRe
   equals "$(decision_of "$(run_hook 'git push ado main' "$WORK")")" "ask"
 }
 
+@test "a host listed in the machine-local trusted-hosts file passes" {
+  export WORK_PUSH_GUARD_TRUSTED_HOSTS_FILE="$SCRATCH/trusted-hosts"
+  printf '# company workstation tunnel\nws-box\n' > "$WORK_PUSH_GUARD_TRUSTED_HOSTS_FILE"
+  git -C "$WORK" remote add ws ws-box:dev/git/some-repo
+  git -C "$WORK" remote add other other-box:dev/git/some-repo
+  is_empty "$(run_hook 'git push ws main' "$WORK")"
+  is_empty "$(run_hook 'git push ssh://ws-box/dev/git/some-repo main' "$WORK")"
+  equals "$(decision_of "$(run_hook 'git push other main' "$WORK")")" "ask"
+}
+
 @test "gh pr create and merge are judged by --repo, a PR URL, or the origin remote" {
   equals "$(decision_of "$(run_hook 'gh pr create -R tvrmsmith/dotfiles --fill' "$WORK")")" "deny"
   is_empty "$(run_hook 'gh pr create --repo mediwareinc/some-repo --fill' "$PERSONAL")"
