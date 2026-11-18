@@ -18,7 +18,11 @@
 #   gh pr      -R/--repo, else the owner in a PR URL argument, else origin.
 #   gh repo create  the owner/name argument; a bare name lands on the user
 #              account, which is not an allowed org.
-# Anything it cannot resolve, and any non-GitHub host, gets "ask", not a guess.
+# Anything it cannot resolve, and any non-GitHub host, gets "ask", not a guess,
+# unless that host is listed in the machine-local trusted-hosts file: one host
+# (or SSH alias) per line, # comments allowed. It lives outside this repo
+# because the hosts are work values. WORK_PUSH_GUARD_TRUSTED_HOSTS_FILE
+# overrides the path.
 #
 # Known gap: it sees only the agent's Bash tool calls. A push made inside a
 # subprocess (no-mistakes, slice-pipeline, an orca worker's own session outside
@@ -28,6 +32,7 @@
 set -euo pipefail
 
 ALLOWED_ORGS="bonafide-wsky careport clearcare healthify mediwareinc"
+TRUSTED_HOSTS_FILE="${WORK_PUSH_GUARD_TRUSTED_HOSTS_FILE:-$HOME/.claude/work-push-guard.trusted-hosts}"
 POLICY_FILES="${WORK_PUSH_GUARD_POLICY_FILES:-/Library/Application Support/ClaudeCode/managed-settings.json:/etc/claude-code/managed-settings.json}"
 
 enforced=0
@@ -57,6 +62,11 @@ deny() {
 
 allowed() { case " $ALLOWED_ORGS " in *" $1 "*) return 0 ;; esac; return 1; }
 
+trusted_host() {
+  [ -f "$TRUSTED_HOSTS_FILE" ] || return 1
+  sed -e 's/#.*//' -e 's/[[:space:]]//g' "$TRUSTED_HOSTS_FILE" | grep -qxF -- "$1"
+}
+
 # Prints "<host> <owner>" for a git or GitHub URL, nothing if it is not one.
 host_owner() {
   printf '%s\n' "$1" | sed -nE \
@@ -70,6 +80,7 @@ judge_url() {
   ho=$(host_owner "$1")
   [ -n "$ho" ] || emit ask "Could not tell who owns $2 ($1). Push only to WellSky GitHub orgs."
   host=${ho% *} owner=${ho#* }
+  trusted_host "$host" && return 0
   case "$host" in
     *github*) ;;
     *) emit ask "$2 is on $host, not GitHub. Agents push only to WellSky GitHub orgs; confirm this is allowed." ;;
