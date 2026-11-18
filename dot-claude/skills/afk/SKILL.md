@@ -3,7 +3,6 @@ name: afk
 description: Unattended mode for every session on this machine. `/afk 2h` or `/afk back at 4pm` to arm (8h default), `/afk back` to clear.
 disable-model-invocation: true
 ---
-
 # AFK
 
 Trevor has walked away. Nobody will answer a question, approve a plan, or touch the 1Password
@@ -17,9 +16,8 @@ run: tell Trevor AFK is not armed, and stop.
 
 ## 1Password is unattended
 
-Every prompt it raises hangs, so `git push`, `gh`, the SSH agent, and the `GITHUB_TOKEN` plugin
-are off the table. Commit locally and park each push, PR, and review. Anything that does hang, or
-fails a network call twice, gets interrupted and parked rather than retried.
+ `git push`, write operations with `gh`, and the SSH agent require 1Password approval and will timeout. Commit locally and attempt to push, anything that does hang, or  
+fails a network call twice, gets interrupted and parked rather than retried. You won't be prompted when creating/editing PRs, though you will for merging.
 
 ## Still his call
 

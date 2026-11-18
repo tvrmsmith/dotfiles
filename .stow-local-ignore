@@ -3,6 +3,7 @@
 
 # Repository metadata and documentation
 ^/CLAUDE\.md$
+^/CLAUDE\.local\.md$
 ^/AGENTS\.md$
 ^/README\.md$
 ^/README$

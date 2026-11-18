@@ -1,6 +1,7 @@
 ---
 name: git-ssh-fix
-description: Use when pushing to tvrmsmith/* repositories fails with "Permission denied", or when setting up remotes for personal GitHub repos. Triggers on: permission denied, git push failed, tvrmsmith, github-personal, SSH key error.
+description: >-
+  Use when pushing to tvrmsmith/* repositories fails with "Permission denied", or when setting up remotes for personal GitHub repos. Triggers on: permission denied, git push failed, tvrmsmith, github-personal, SSH key error.
 ---
 
 # Git SSH Fix for Personal Repos
