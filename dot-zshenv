@@ -40,12 +40,9 @@ hoist_shim_path() {
 # is now a symlink into this repo, shared with the personal machine, which must
 # not use Vertex. Per-repo .claude/settings.local.json still overrides the
 # project: a settings `env` block outranks a shell export.
-# pi/omp set their own GOOGLE_CLOUD_PROJECT/LOCATION inline (see _OMP_VERTEX in
-# .zshrc).
 # NOTE: do NOT export GOOGLE_APPLICATION_CREDENTIALS to the default ADC path —
 # google-auth-library finds that path automatically, and setting it makes
 # `gcloud auth application-default login` prompt for confirmation every run.
-export OMP_MODEL="anthropic-vertex/claude-opus-4-7"
 export ENABLE_LSP_TOOL=1
 # Archon runs from source, so without this it spawns the Claude Code bundled in
 # its agent SDK, which lags the installed one and rejects newer models outright.
@@ -88,15 +85,6 @@ export JIRA_API_TOKEN="op://Employee/JIRA CLI Token/credential"
 _ONEP_SSH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 [ -S "$_ONEP_SSH_SOCK" ] && export SSH_AUTH_SOCK="$_ONEP_SSH_SOCK"
 unset _ONEP_SSH_SOCK
-
-# OMP's "bash" tool isn't /bin/bash — it's brush-core, an in-process Rust shell
-# that doesn't honor BASH_ENV. The native shell does honor PI_SHELL_PREFIX,
-# which prepends to every tool command (see pi-utils/procmgr.ts:getShellPrefix
-# and pi-coding-agent/src/exec/bash-executor.ts). We use it to source our
-# wrapper file, which scope-guards on OMPCODE=1 and registers a `bunx` wrapper
-# that strips CI for `bunx sherif` (sherif --fix refuses to run when CI is set,
-# and OMP injects CI=1 unconditionally via NON_INTERACTIVE_ENV).
-export PI_SHELL_PREFIX="source $HOME/.omp/bash-env.sh;"
 
 # no-mistakes is a local build with unreleased work; `update` would clobber it
 # and kill the daemon. Drop this once the work ships upstream.

@@ -5,7 +5,7 @@ teardown() { _mysbx_test_teardown; }
 run_core() { zsh -c "source '$MYSBX_CORE'; _mysbx_load_config; $1"; }
 
 @test "is_preset recognizes presets, rejects real agents" {
-  run run_core '_mysbx_is_preset cc && _mysbx_is_preset ruby-cc && _mysbx_is_preset omp && echo ok'
+  run run_core '_mysbx_is_preset cc && _mysbx_is_preset ruby-cc && echo ok'
   [ "$output" = ok ]
   run run_core '_mysbx_is_preset claude'
   [ "$status" -ne 0 ]
@@ -14,13 +14,11 @@ run_core() { zsh -c "source '$MYSBX_CORE'; _mysbx_load_config; $1"; }
 @test "preset_agent maps presets to real agents" {
   [ "$(run_core '_mysbx_preset_agent cc')" = claude ]
   [ "$(run_core '_mysbx_preset_agent ruby-cc')" = claude ]
-  [ "$(run_core '_mysbx_preset_agent omp')" = omp ]
 }
 
 @test "preset_template only set for ruby-cc" {
   [ "$(run_core '_mysbx_preset_template cc')" = "" ]
   [ "$(run_core '_mysbx_preset_template ruby-cc')" = "claude-sandbox-ruby-2.6.10:latest" ]
-  [ "$(run_core '_mysbx_preset_template omp')" = "" ]
 }
 
 @test "preset_kits omits atlassian under DEV_PERSONAL" {

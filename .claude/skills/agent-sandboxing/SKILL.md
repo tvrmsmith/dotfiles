@@ -1,6 +1,6 @@
 ---
 name: agent-sandboxing
-description: Use when working with agent sandboxes in this dotfiles repo (`mysbx`, `mysbx-*`, `nono-*` aliases, files under `extras/agent-sandboxing/`), invoking sandbox helpers from an agent's bash tool, or rebuilding sandbox images. Triggers on: mysbx, mysbx-omp, mysbx-cc, mysbx-build, sbx, nono, sandbox, omp-sandbox, claude-sandbox.
+description: Use when working with agent sandboxes in this dotfiles repo (`mysbx`, `mysbx-*`, `nono-*` aliases, files under `extras/agent-sandboxing/`), invoking sandbox helpers from an agent's bash tool, or rebuilding sandbox images. Triggers on: mysbx, mysbx-cc, mysbx-build, sbx, nono, sandbox, claude-sandbox.
 ---
 
 # Agent Sandboxing (this repo)
@@ -14,7 +14,7 @@ Two stacks. Edit the source files directly — don't duplicate aliases elsewhere
 
 Shared helpers: `extras/agent-sandboxing/00-shared.zsh`. Sourced via `extras/agent-sandboxing/init.zsh` from `.zshrc`.
 
-Kits: `extras/agent-sandboxing/kits/` — personal (static configs + install.sh), atlassian (proxy-managed creds), omp (agent kit).
+Kits: `extras/agent-sandboxing/kits/` — personal (static configs + install.sh), atlassian (proxy-managed creds).
 
 ## `sbx` runs in an embedded containerd
 
@@ -28,7 +28,7 @@ Host `docker ps`/`exec`/`logs` won't see sandbox containers.
 **Always pass `--print` / `-p`** to `mysbx-*` interactive commands:
 
 ```bash
-mysbx-omp -p "explain X"
+mysbx-cc -p "explain X"
 ```
 
 Without it, `sbx run` grabs `/dev/tty` and EPIPEs the parent's renderer on exit, wedging the host terminal.
@@ -38,13 +38,13 @@ Without it, `sbx run` grabs `/dev/tty` and EPIPEs the parent's renderer on exit,
 `mysbx-*` functions are sourced only by the interactive rc. The `mysbx` executable is on PATH and safe to call directly from a bash tool. For non-interactive use, either call the executable or source the init file:
 
 ```bash
-zsh -c 'source ~/dev/personal/dotfiles/extras/agent-sandboxing/init.zsh && mysbx-build omp-sandbox'
+zsh -c 'source ~/dev/personal/dotfiles/extras/agent-sandboxing/init.zsh && mysbx-build claude-sandbox-ruby-2-6-10'
 ```
 
 Or simply call the executable:
 
 ```bash
-mysbx build omp-sandbox
+mysbx build claude-sandbox-ruby-2-6-10
 ```
 
 ## Rebuilding sandbox images
@@ -55,18 +55,17 @@ mysbx build omp-sandbox
 2. Runs `docker compose -f extras/agent-sandboxing/templates/docker-compose.yml build "$@"`
 3. `docker save | sbx template load` per built image
 
-Args = compose service names (`claude-sandbox-mise`, `claude-sandbox-ruby-2-6-10`, `omp-sandbox`); omit to build all.
+Args = compose service names (`claude-sandbox-mise`, `claude-sandbox-ruby-2-6-10`); omit to build all.
 
-**Build order matters:** `claude-sandbox-ruby-2-6-10` depends on `claude-sandbox-mise:latest`. Build mise first: `mysbx build claude-sandbox-mise && mysbx build claude-sandbox-ruby-2-6-10 omp-sandbox`.
+**Build order matters:** `claude-sandbox-ruby-2-6-10` depends on `claude-sandbox-mise:latest`. Build mise first: `mysbx build claude-sandbox-mise && mysbx build claude-sandbox-ruby-2-6-10`.
 
 When invoking from a bash tool:
 
 - **Slow.** Cold build ~5 min (ruby-2.6.10 compiles from source). Set `timeout` ≥ 1800.
 - **Output exceeds 50KB and gets truncated.** Success markers: `Image <name> Built` and `Loading <name> into sbx... Load complete.`
-- **`omp-sandbox` needs `~/dev/personal/omp-extension-anthropic-vertex`** (declared as `additional_contexts`). Build fails if missing.
 - **Expected non-fatal noise:** dotfiles `install.sh` can't clone SSH-only nvim submodules (`Host key verification failed`); trailing `compose config --images` env warnings (`GIT_USER_NAME ... is not set`) are post-build and harmless.
 
-`sbx template load` only updates the template — existing sandboxes keep the old image. Use `mysbx check` to spot stale ones; use the interactive `mysbx-cc --recreate` or `mysbx-omp --recreate` to refresh (the executable `mysbx create` does not support `--recreate`).
+`sbx template load` only updates the template — existing sandboxes keep the old image. Use `mysbx check` to spot stale ones; use the interactive `mysbx-cc --recreate` to refresh (the executable `mysbx create` does not support `--recreate`).
 
 ## Helper bind mounts (gcloud ADC, Claude plugins)
 
@@ -75,7 +74,7 @@ Mounted read-only into every `mysbx` sandbox at create time, at the same path in
 | Host path           | Why                                                       |
 | ------------------- | --------------------------------------------------------- |
 | `~/.config/gcloud`  | gcloud SDK / Application Default Credentials              |
-| `~/.claude/plugins` | Claude plugin registry + cache (omp and cc both consume) |
+| `~/.claude/plugins` | Claude plugin registry + cache                            |
 
 The personal kit's `install.sh` (runs via kit `commands.startup` — `startup` runs after `files/` are copied and workspaces mounted; `install` runs before both) symlinks canonical lookup paths to the mounts:
 

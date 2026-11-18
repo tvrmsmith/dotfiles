@@ -7,7 +7,7 @@ setup() {
 teardown() { _mysbx_test_teardown; }
 
 @test "interactive functions are defined after sourcing" {
-  run zsh -c "$SRC functions mysbx-cc >/dev/null && functions mysbx-omp >/dev/null && echo ok"
+  run zsh -c "$SRC functions mysbx-cc >/dev/null && echo ok"
   [ "$output" = ok ]
 }
 

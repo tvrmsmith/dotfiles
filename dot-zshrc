@@ -204,29 +204,6 @@ alias unwedge='printf "\e[?2004l\e[?2031l\e[<u\e[>4;0m\e[?25h"; stty sane'
 # after boot is never captured. Kickstart re-grabs it.
 alias kanata-restart='sudo launchctl kickstart -k system/com.kanata.daemon'
 
-# Superset spoofs TERM_PROGRAM=kitty so claude-code parses CSI-u, but xterm.js
-# can't render Kitty graphics APC, so OMP's image-protocol writes leak as
-# gibberish during every spinner redraw. Disable OMP image protocol + OSC
-# notifications when the parent PTY is a Superset terminal.
-if [ -n "$SUPERSET_TERMINAL_ID" ]; then
-  export PI_FORCE_IMAGE_PROTOCOL=off
-  export PI_NOTIFICATIONS=off
-fi
-
-# Vertex env prefix shared by pi/omp and nono-omp-* (self-contained; not from global env)
-_OMP_VERTEX="GOOGLE_CLOUD_PROJECT=consolo-dev-vertex-wsky GOOGLE_CLOUD_LOCATION=global"
-alias pi="$_OMP_VERTEX command pi --model $OMP_MODEL"
-omp() {
-  case "$1" in
-    agents|commit|config|grep|grievances|jupyter|plugin|read|search|setup|shell|ssh|stats|update|--help|-h|--version)
-      env ${=_OMP_VERTEX} command omp "$@"
-      ;;
-    *)
-      env ${=_OMP_VERTEX} command omp --model $OMP_MODEL "$@"
-      ;;
-  esac
-}
-
 # claude-launcher is an executable at dot-local/bin/claude-launcher
 # (~/.local/bin/claude-launcher, on PATH) so PATH-scanning tools (e.g. Superset
 # custom terminal agents) can discover it. It HONORS permission prompts. Everything reaches Claude Code through it:
@@ -254,7 +231,7 @@ clc-sec() { clc --settings '{"enabledPlugins":{"security-screener@wellsky-plugin
 export CLAUDE_CODE_DISABLE_WORKFLOWS=1
 clcwf() { (export CLAUDE_CODE_DISABLE_WORKFLOWS=0; claude-launcher --dangerously-skip-permissions "$@"); }
 
-# Agent sandboxing (nono, sbx); relies on $_OMP_VERTEX defined above
+# Agent sandboxing (nono, sbx)
 [ -f "$DEV_PERSONAL/dotfiles/extras/agent-sandboxing/init.zsh" ] && \
   source "$DEV_PERSONAL/dotfiles/extras/agent-sandboxing/init.zsh"
 

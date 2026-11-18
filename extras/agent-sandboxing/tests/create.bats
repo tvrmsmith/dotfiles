@@ -21,13 +21,6 @@ teardown() { _mysbx_test_teardown; }
   ! grep -qx -- '--kit' <<<"$argv"
 }
 
-@test "create with preset omp expands to omp agent" {
-  ( cd "$TMP" && zsh "$MYSBX" create omp . )
-  local argv; argv="$(sbx_argv)"
-  grep -qx omp <<<"$argv"
-  grep -qx -- '--kit' <<<"$argv"
-}
-
 @test "create ruby-cc passes template -t" {
   ( cd "$TMP" && zsh "$MYSBX" create ruby-cc . )
   local argv; argv="$(sbx_argv)"

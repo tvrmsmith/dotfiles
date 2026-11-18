@@ -39,10 +39,6 @@ if [ -d "$HOST_HOME/.claude/plugins" ]; then
   done
 fi
 
-# 3. omp fork (dangling if no host build — launcher shim handles fallback)
-mkdir -p "$HOME/.cache"
-ln -sfn "$HOST_HOME/.cache/mysbx/omp-fork" "$HOME/.omp-fork"
-
 # Copy dot-prefixed entries from source dir into $HOME, translating
 # the "dot-" prefix to "." (e.g. dot-gitconfig → .gitconfig).
 # Directories are rsync'd recursively; files are cp'd.
@@ -59,7 +55,7 @@ _copy_dotfiles() {
   done
 }
 
-# 4. Install host dotfiles (first run only — guarded for startup idempotency)
+# 3. Install host dotfiles (first run only — guarded for startup idempotency)
 DOTFILES_MOUNT="$DEV_PERSONAL/dotfiles"
 if [ -d "$DOTFILES_MOUNT" ]; then
   if [ ! -f "$HOME/.dotfiles-installed" ]; then
@@ -107,7 +103,7 @@ if [ -d "$DOTFILES_MOUNT" ]; then
   fi
 fi
 
-# 5. SSH known_hosts merge (kit places known_hosts.pinned at ~/. ssh/)
+# 4. SSH known_hosts merge (kit places known_hosts.pinned at ~/. ssh/)
 if [ -f "$HOME/.ssh/known_hosts.pinned" ]; then
   install -d -m 700 "$HOME/.ssh"
   cat "$HOME/.ssh/known_hosts.pinned" >> "$HOME/.ssh/known_hosts"
@@ -115,7 +111,7 @@ if [ -f "$HOME/.ssh/known_hosts.pinned" ]; then
   chmod 644 "$HOME/.ssh/known_hosts"
 fi
 
-# 6. Claude session state persistence
+# 5. Claude session state persistence
 # Discover sandbox state dir from bind mounts — the host-side
 # $XDG_STATE_HOME/mysbx/sandboxes/<name>/ is mounted RW at its host path.
 MYSBX_STATE=""

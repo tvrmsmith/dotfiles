@@ -13,12 +13,6 @@ teardown() { _mysbx_test_teardown; }
   grep -q 'compose' "$STUB_DOCKER_LOG"
 }
 
-@test "omp-clean verb handled locally" {
-  run zsh -c "cd '$TMP' && '$MYSBX' omp-clean"
-  [ "$status" -eq 0 ]
-  ! grep -qx omp-clean "$STUB_SBX_LOG"
-}
-
 @test "secrets-sync verb syncs without forwarding" {
   ( cd "$TMP" && zsh "$MYSBX" secrets-sync mybox )
   grep -qx github "$STUB_SBX_LOG"
