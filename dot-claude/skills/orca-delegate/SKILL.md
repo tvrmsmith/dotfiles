@@ -44,7 +44,7 @@ When neither applies, or the signals disagree, ask the human.
 
 Print one block: target repo, tracker, title, slug, branch (`<slug>`), the body, and the skill
 slot for the brief. Recommend `/implement-with-subagents` for the slot, since it ends at a commit
-on a feature branch handed off to `no-mistakes`. The human may swap it for a plain brief, `/tdd`,
+on a feature branch handed off to the repo's ship flow. The human may swap it for a plain brief, `/tdd`,
 or another skill.
 
 **Wait for explicit approval.** Filing a GitHub or Jira issue publishes it, so nothing gets

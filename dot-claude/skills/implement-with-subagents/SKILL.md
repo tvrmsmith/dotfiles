@@ -1,6 +1,6 @@
 ---
 name: implement-with-subagents
-description: Orchestrate one vertical slice across subagents, attended or `--unattended`. Parent plans and delegates, workers do TDD on a controllable model, then hand off to no-mistakes.
+description: Orchestrate one vertical slice across subagents, attended or `--unattended`. Parent plans and delegates, workers do TDD on a controllable model, then hand off to the repo's ship flow.
 disable-model-invocation: true
 ---
 # Implement With Subagents
@@ -123,7 +123,7 @@ Every assignment green, parent runs the project-wide checks the workers deferred
 
 ## 6. Commit
 
-Commit on a **feature branch** (create one if on the default branch, since no-mistakes validates committed history on a non-default branch).
+Commit on a **feature branch** (create one if on the default branch, since the ship flow validates committed history on a non-default branch).
 
 Done when the whole slice is one commit on a feature branch.
 
@@ -133,9 +133,9 @@ Record one metrics line per run, including a run an abort row ended, and record 
 
 ## 8. Stop and hand off
 
-Stop at the commit. Review, lint, push, PR and CI belong to `no-mistakes`.
+Stop at the commit. Review, lint, push, PR and CI belong to the repo's **ship flow**: the PR pipeline its `CLAUDE.md` or `CLAUDE.local.md` names, or `no-mistakes` where it names none.
 
-**Attended.** Report in one line that the work is ready, naming the branch, and stop there. The user drives `no-mistakes` themselves; it has gates only they should answer.
+**Attended.** Report in one line that the work is ready, naming the branch, and stop there. The user drives the ship flow themselves; it has gates only they should answer.
 
 **Unattended.** Report one field per line, so the workflow node can parse what it needs to drive `no-mistakes` next:
 
@@ -152,5 +152,5 @@ Stop at the commit. Review, lint, push, PR and CI belong to `no-mistakes`.
 Testing bias is caught in three places, so per-assignment test auditing is redundant:
 
 1. **guarded expected-value injection**, §4.
-2. **comprehensive-code-review Tests aspect**, downstream via no-mistakes (catches tautological / impl-coupled / weak-assertion tests).
+2. **comprehensive-code-review Tests aspect**, downstream in the ship flow's review (catches tautological / impl-coupled / weak-assertion tests).
 3. **mutation-proxy metric**, §7.

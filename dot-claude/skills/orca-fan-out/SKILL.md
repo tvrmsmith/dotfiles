@@ -77,7 +77,7 @@ asks for, then spawn.
 
 Recommend, in the same breath, the `/<skill> <args>` slot in step 6 — `/implement-with-subagents`
 on every worktree row, since it ends where fan-out wants a worker to end, at a commit on a
-feature branch handed off to `no-mistakes`. A tab row commits nothing, so it defaults to a plain
+feature branch handed off to the repo's ship flow. A tab row commits nothing, so it defaults to a plain
 brief. The human can override any row to a plain brief, `/tdd`, or another skill.
 
 ## 6. Write the brief

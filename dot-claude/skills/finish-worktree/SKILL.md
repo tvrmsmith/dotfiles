@@ -27,25 +27,28 @@ Resolve each:
   the branch name (e.g. `feature/proj-123-*` → `proj-123`); else check claimed
   items (`bd list --status in_progress`). If still ambiguous, ask the user and
   wait — a wrong id closes the wrong issue at stage 4.
-- **PR** — likely none yet (no-mistakes creates it). If a PR already exists for
+- **PR** — likely none yet (the stage 1 pipeline creates it). If a PR already exists for
   the branch (`gh pr view --json number,url`), note it and reuse it downstream.
 
-## 1. no-mistakes gate
+## 1. Ship-flow gate
 
-Validate the committed changes by invoking the **`no-mistakes` skill**, which
-owns the pipeline contract — the CLI, the gate loop, `ask-user` escalation, and
-recovery. Follow it as written, with the overrides below layered on top.
+Validate the committed changes through the repo's **ship flow**: the PR pipeline
+its `CLAUDE.md` or `CLAUDE.local.md` names. Use the **`no-mistakes` skill** when
+the repo names none, or when the branch already has a no-mistakes run. The skill
+that owns the pipeline holds its contract (CLI, gates, escalation, recovery).
+Follow it as written, with the overrides below layered on top.
 
-Its `--intent` is the work's intent: the goal and any notable decisions or
+Its intent is the work's intent: the goal and any notable decisions or
 tradeoffs from this session, **not** the full beads body.
 
 Overrides for this flow:
 
-- Run attended, without `--yes` — this flow has a human review pause at stage 3,
-  and `--yes` would auto-resolve the `ask-user` findings meant for the user.
-- **Stop at `checks-passed`.** The no-mistakes skill would hand the PR to the
-  user to merge there; here that outcome is a handoff to stage 2 instead. Do not
-  ask the user to merge yet.
+- Run attended, without `--yes` or other auto-approval flags. This flow has a
+  human review pause at stage 3, and auto-approval would resolve the findings
+  meant for the user.
+- **Stop at green CI, before merge.** For no-mistakes that is `checks-passed`.
+  A pipeline that merges or enqueues by itself once green stops short of that
+  step. Here that outcome is a handoff to stage 2. Do not ask the user to merge yet.
 - **Severity cap.** Count the review-step gate rounds you resolve. Rounds 1–3 act
   on every finding. From round 4 on, act only on `warning` and above; accept
   anything below warning as-is so the run advances, and carry those skipped
@@ -53,10 +56,9 @@ Overrides for this flow:
   the fallout from fixing them, so past that a nit costs more in churn commits
   and regression risk than it is worth.
 
-**Handoff:** the target outcome is `checks-passed` (validated, CI green, not yet
-merged — merging happens after stage 3). Proceed to stage 2 reusing the PR (URL is
-in the `help` line). A `failed`/`cancelled` outcome or an `error:` is a stage
-failure — report and stop.
+**Handoff:** the target outcome is validated, PR open, CI green, not yet
+merged (merging happens after stage 3). Proceed to stage 2 reusing the PR. A
+failed or cancelled run, or an error, is a stage failure. Report and stop.
 
 ## 2. pr-review-loop
 
