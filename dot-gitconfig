@@ -7,17 +7,14 @@
 	# approval — the agent binds a remembered approval to the requesting
 	# process, so an agent's short-lived `git commit` never reuses one, and the
 	# no-mistakes daemon could not sign at all. Signing now uses a local key
-	# file (see user.signingkey). See dotfiles-udc.
+	# file (see user.signingkey in .gitconfig-personal). See dotfiles-udc.
 	allowedSignersFile = ~/.ssh/allowed_signers
+# Work commits go unsigned: they land through squash-merged PRs, and GitHub
+# signs the squash commit itself, discarding any branch signature.
+# .gitconfig-personal turns signing back on for personal repos.
 [commit]
-	gpgsign = true
+	gpgsign = false
 [user]
-	# Path to the private key, not the literal public key: ssh-keygen signs from
-	# the file with no agent involved. git DOES expand a leading ~ here (unlike
-	# gpg.ssh.program above), so this stays portable across machines. The key is
-	# generated per machine and never committed — this repo is public, and
-	# ~/.ssh/allowed_signers carries the public half.
-	signingkey = ~/.ssh/git-sign-work
 	name = Trevor Smith
 	email = trevor.smith@wellsky.com
 [alias]
@@ -88,20 +85,16 @@
 [include]
 	path = ~/.gitconfig.local
 
-# Fetch GitHub over HTTPS with the shim's read-only token, push over SSH. A
-# credential git can reach while fetching then cannot write, and a fetch never
-# asks the 1Password SSH agent for approval. pushInsteadOf is matched against
-# the URL as written, before insteadOf, so mapping a prefix to itself keeps
-# pushes on SSH. A per-repo `pushurl` would be rewritten by insteadOf, so don't
-# set one to an SSH URL.
+# Fetch GitHub over HTTPS with the shim's read-only token. A fetch then never
+# asks the 1Password SSH agent for approval. Pushes ride HTTPS too, with gh's
+# credential, unless ~/.gitconfig.ssh-push moves them to SSH: install.sh links
+# it only on a machine with 1Password's SSH agent to sign them. A per-repo
+# `pushurl` would be rewritten by insteadOf, so don't set one to an SSH URL.
 [url "https://github.com/"]
 	insteadOf = git@github.com:
 	insteadOf = git@github-personal:
-[url "git@github.com:"]
-	pushInsteadOf = git@github.com:
-	pushInsteadOf = https://github.com/
-[url "git@github-personal:"]
-	pushInsteadOf = git@github-personal:
+[include]
+	path = ~/.gitconfig.ssh-push
 # The empty helper clears the system osxkeychain helper, which holds a GitHub
 # credential and would otherwise answer first. The shim, not the real gh, so
 # git gets the read tier; by absolute path because GUI apps and daemons run
