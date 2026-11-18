@@ -75,7 +75,7 @@ _mysbx_preset_template() {
 }
 
 # Echo kit dir paths (one per line) for a preset. atlassian appended only
-# off-personal (matches the old dsbx-cc behavior).
+# off-personal.
 _mysbx_preset_kits() {
   local preset="$1"
   local -a kits=()
@@ -180,9 +180,8 @@ _mysbx_sync_secrets() {
 # Build sandbox name from prefix, cwd, and any extra workspaces passed in.
 # Pure function: callers that participate in a git worktree must pass the
 # worktree source repo as an extra workspace (see _mysbx_augmented_create,
-# _mysbx_launch, _mysbx_update, _mysbx_check). (Ported from _dsbx_name,
-# 20-dsbx.zsh:270-281, with the internal worktree self-detect lifted to the
-# callers so the worktree suffix is applied exactly once.)
+# _mysbx_launch, _mysbx_update, _mysbx_check), so the worktree suffix is
+# applied exactly once.
 _mysbx_name() {
   local prefix="$1"; shift
   local name="${prefix}-$(basename "$(pwd)")"
@@ -314,7 +313,6 @@ _mysbx_augmented_create() {
 # --- Custom verbs -----------------------------------------------------------
 _MYSBX_TEMPLATES_DIR="$_AGENT_SBX_ROOT/templates"
 
-# Ported from dsbx-build (20-dsbx.zsh:112-125).
 _mysbx_build() {
   setopt local_options pipe_fail
   docker compose -f "$_MYSBX_TEMPLATES_DIR/docker-compose.yml" build "$@" || return 1
@@ -327,7 +325,6 @@ _mysbx_build() {
   done
 }
 
-# Ported from dsbx-update (20-dsbx.zsh:412-431). Prefixes are now mysbx-*.
 _mysbx_update() {
   local -a prefixes=(mysbx-cc mysbx-ruby-cc)
   local -a kits=("$_MYSBX_KITS_TOOLING" "$_MYSBX_KITS_CLAUDE_UPDATE" "$_MYSBX_KITS_PERSONAL")
@@ -353,7 +350,6 @@ _mysbx_update() {
   return $rc
 }
 
-# Ported from dsbx-check (20-dsbx.zsh:438-475). Prefixes/recreate hint mysbx-*.
 _mysbx_check() {
   local -a entries=(
     'mysbx-ruby-cc:claude-sandbox-ruby-2.6.10:latest'

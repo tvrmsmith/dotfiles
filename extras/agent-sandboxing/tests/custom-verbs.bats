@@ -6,7 +6,7 @@ setup() {
 teardown() { _mysbx_test_teardown; }
 
 @test "build verb is handled locally, not forwarded to sbx as 'build'" {
-  ( cd "$TMP" && zsh "$MYSBX" build claude-sandbox-mise )
+  ( cd "$TMP" && zsh "$MYSBX" build claude-sandbox-ruby-2-6-10 )
   # real sbx never receives a literal 'build' verb
   ! grep -qx build "$STUB_SBX_LOG"
   # docker compose build was invoked
