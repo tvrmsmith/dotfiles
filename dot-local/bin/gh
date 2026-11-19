@@ -382,7 +382,14 @@ dir_owner() {
 # a sandbox that copies dot-local/bin the two directories are the same.
 keyring="$(dirname "$self")/gh-keyring"
 keychain_token() {
-	"$keyring" get "${2:-gh-readonly}" "$1" 2>/dev/null
+	# A token never holds whitespace. A lone "\r" once landed in the keyring (a
+	# hidden prompt read in a terminal that sent CR), and `[ -n "$token" ]` let it
+	# through as an Authorization header gh rejected. Strip it, and treat what is
+	# left being empty as no token, so the caller falls through to the prompt.
+	local token
+	token="$("$keyring" get "${2:-gh-readonly}" "$1" 2>/dev/null | tr -d '[:space:]')" || return 1
+	[ -n "$token" ] || return 1
+	printf '%s\n' "$token"
 }
 
 # Report the routing decision and exit without running anything. Lets the bats

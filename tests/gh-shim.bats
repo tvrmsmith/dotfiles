@@ -345,6 +345,29 @@ tier() { routes "$@" | awk '{print $1}'; }
 # GH_SHIM_EXPLAIN stops before the keychain, so the token choice needs the real
 # path: a stub `security` holding one owner's token, and a stub `gh` that
 # reports whichever token it was handed.
+@test "a keyring token that is only whitespace counts as no token" {
+  # A lone CR in the keyring was passed to gh as the Authorization header.
+  TMP="$(mktemp -d)"
+  BIN="$TMP/bin"
+  mkdir -p "$BIN"
+  printf '#!/bin/bash\nprintf "\\r"; exit 0\n' > "$BIN/security"
+  printf '#!/bin/bash\necho "token=$GH_TOKEN"\n' > "$BIN/gh"
+  printf '#!/bin/bash\necho FELL_THROUGH\n' > "$BIN/op"
+  chmod +x "$BIN"/*
+
+  export HOME="$TMP/home"
+  mkdir -p "$HOME/dev/personal/gh-shim-blank" && cd "$HOME/dev/personal/gh-shim-blank"
+  git init -q .
+  git remote add origin git@github.com:tvrmsmith/thing.git
+
+  out="$(PATH="$BIN:$PATH" XDG_CONFIG_HOME="$TMP/config" XDG_STATE_HOME="$TMP/state" bash "$SHIM" pr list 2>&1)"
+  contains "$out" "FELL_THROUGH"
+  lacks "$out" "token="
+
+  cd "$TMP"
+  rm -rf "$TMP"
+}
+
 @test "a read for an owner with no token borrows one instead of prompting" {
   # The no-mistakes daemon polls an upstream repo owned by nobody we hold a
   # token for. Escalating that read fired a 1Password approval every few
