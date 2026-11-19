@@ -45,6 +45,22 @@ reason_of() { printf '%s' "$1" | jq -r '.hookSpecificOutput.permissionDecisionRe
   is_empty "$(run_hook "cd $WORK && git push" "$PERSONAL")"
 }
 
+@test "a ~ path in cd or git -C resolves against HOME" {
+  export HOME="$SCRATCH"
+  is_empty "$(run_hook 'cd ~/work && git push origin' "$PERSONAL")"
+  is_empty "$(run_hook 'git -C ~/work push origin' "$PERSONAL")"
+  equals "$(decision_of "$(run_hook 'cd ~/personal && git push origin' "$WORK")")" "deny"
+}
+
+@test "a bare push whose upstream branch is gone falls back to origin" {
+  # The remote branch was deleted (a squash merge): git prints the literal '@{push}' and fails.
+  git -C "$WORK" commit -q --allow-empty -m x
+  branch=$(git -C "$WORK" branch --show-current)
+  git -C "$WORK" config branch."$branch".remote origin
+  git -C "$WORK" config branch."$branch".merge refs/heads/"$branch"
+  is_empty "$(run_hook 'git push' "$WORK")"
+}
+
 @test "a push inside a compound command is still caught" {
   equals "$(decision_of "$(run_hook 'git add -A && git commit -m x; git push' "$PERSONAL")")" "deny"
 }
