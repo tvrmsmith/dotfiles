@@ -1,0 +1,101 @@
+name: dispatch-wave
+description: |
+  Dispatch one wave of slices under a parent bead: list its ready, unclaimed
+  direct children, run implement-slice for each in its own worktree, and once
+  every slice has finished, start the next wave by itself when this one built
+  anything. The chain ends on a wave that finds nothing new. `wave-status
+  <run-id>` reads the whole chain back from Archon's run records.
+
+  Use when: a parent bead has several ready children whose specs live in
+  their beads. Start it from the target repository's checkout, with
+  beads_dir naming the tracker.
+  NOT for: one slice (run implement-slice), or a target that is not a git
+  repository Archon can cut worktrees in.
+
+# The wave only reads the tracker and starts runs, so it runs in the checkout
+# it was launched from. Every slice gets its own worktree from the fan-out.
+worktree:
+  enabled: false
+
+# The wave never writes to that checkout, so it takes no path lock. With the
+# lock, `next` would race its own wave: the wave it starts finds this one
+# still active on the path and cancels itself, unless this run completes
+# before that one boots. A second dispatch of the same parent is then held
+# off by bd's claim instead (see the README for the gap that leaves).
+mutates_checkout: false
+
+inputs:
+  parent:
+    required: true
+    description: The bead whose direct children make up the wave.
+  beads_dir:
+    required: true
+    description: >-
+      Absolute path to the canonical beads directory, handed on to every
+      slice. Required for the same reason implement-slice requires it.
+  max_slices:
+    default: "0"
+    description: >-
+      Most slices one wave dispatches; the rest go to later waves. 0 means
+      no cap.
+  tried:
+    default: "[]"
+    description: >-
+      JSON array of beads earlier waves in this chain already dispatched. Set
+      by the previous wave; a fresh dispatch leaves it empty.
+  previous:
+    default: ""
+    description: >-
+      Run id of the wave that started this one. Set by the previous wave;
+      wave-status follows it to read the chain.
+
+nodes:
+  # Direct children only, ready and unassigned per bd, minus what this chain
+  # already tried, capped at max_slices. A claimed bead is never dispatched:
+  # bd's claim is the lock, and `tried` keeps a bead a slice released from
+  # coming back in a later wave of the same chain.
+  - id: ready
+    runtime: bun
+    script: ready
+    timeout: 120000
+    output_format:
+      type: object
+      properties:
+        beads: {type: array}
+        tried: {type: array}
+      required: [beads, tried]
+
+  # One implement-slice per bead, all at once: a wave's size is capped by
+  # max_slices in `ready`, not here. The default all_done join keeps one
+  # failed slice from touching its siblings; implement-slice itself decides
+  # where its bead lands. A child paused at its review gate holds this node,
+  # so the next wave starts only once every slice of this one has finished.
+  - id: slices
+    depends_on: [ready]
+    workflow: implement-slice
+    isolation: worktree
+    with:
+      beads_dir: $INPUTS.beads_dir
+    fan_out:
+      items: $ready.output.beads
+      as: bead
+      max_parallel: all
+
+  # Starts the next wave detached when this one dispatched anything, carrying
+  # the chain's tried list and this run's id. Default trigger rule: a fan-out
+  # that could start no child at all fails, and the chain stops there rather
+  # than retrying the same beads forever.
+  - id: next
+    depends_on: [ready, slices]
+    runtime: bun
+    script: next
+    timeout: 120000
+    with:
+      wave: $ready.output.beads
+      chain: $ready.output.tried
+    output_format:
+      type: object
+      properties:
+        next_run: {type: string}
+        reason: {type: string}
+      required: [next_run, reason]

@@ -1,0 +1,364 @@
+{
+  "runs": [
+    {
+      "id": "d92de4b0da5125ffc4d58dab4df9de60",
+      "workflow_name": "dispatch-wave",
+      "status": "completed",
+      "parent_run_id": null,
+      "working_path": "/private/tmp/wave-smoke.dHhe/repo",
+      "started_at": "2026-11-19T19:38:33.000Z",
+      "metadata": {
+        "inputs": {
+          "parent": "wv-2nc",
+          "beads_dir": "/tmp/wave-smoke.dHhe/tracker2/.beads",
+          "max_slices": "0",
+          "tried": "[\"wv-2nc.1\",\"wv-2nc.2\",\"wv-2nc.3\"]",
+          "previous": "31ff052e5e4f68137f6a58d399333dbf"
+        },
+        "child_index": null
+      },
+      "nodes": [
+        {
+          "nodeId": "ready",
+          "state": "completed",
+          "output": "{\"beads\":[],\"tried\":[\"wv-2nc.1\",\"wv-2nc.2\",\"wv-2nc.3\"]}"
+        },
+        {
+          "nodeId": "slices",
+          "state": "completed",
+          "output": "[]"
+        },
+        {
+          "nodeId": "next",
+          "state": "completed",
+          "output": "{\"next_run\":\"\",\"reason\":\"this wave found no new ready child, so the chain ends\"}"
+        }
+      ]
+    },
+    {
+      "id": "a71cef5f-6e6a-43d9-b5f3-4c9b915c16eb",
+      "workflow_name": "implement-slice",
+      "status": "completed",
+      "parent_run_id": "31ff052e5e4f68137f6a58d399333dbf",
+      "working_path": "/home/user/.archon/workspaces/wave-smoke.dHhe/origin/worktrees/archon/task-31ff052e-slices-ed08b2e0-child-0",
+      "started_at": "2026-11-19T19:38:21.000Z",
+      "metadata": {
+        "inputs": {
+          "bead": "wv-2nc.3",
+          "beads_dir": "/tmp/wave-smoke.dHhe/tracker2/.beads"
+        },
+        "child_index": 0
+      },
+      "nodes": [
+        {
+          "nodeId": "claim",
+          "state": "completed",
+          "output": ""
+        },
+        {
+          "nodeId": "build",
+          "state": "completed",
+          "output": "{\"ok\":true}"
+        },
+        {
+          "nodeId": "close",
+          "state": "completed",
+          "output": ""
+        },
+        {
+          "nodeId": "release",
+          "state": "skipped",
+          "output": null
+        }
+      ]
+    },
+    {
+      "id": "31ff052e5e4f68137f6a58d399333dbf",
+      "workflow_name": "dispatch-wave",
+      "status": "completed",
+      "parent_run_id": null,
+      "working_path": "/private/tmp/wave-smoke.dHhe/repo",
+      "started_at": "2026-11-19T19:38:16.000Z",
+      "metadata": {
+        "inputs": {
+          "parent": "wv-2nc",
+          "beads_dir": "/tmp/wave-smoke.dHhe/tracker2/.beads",
+          "max_slices": "0",
+          "tried": "[\"wv-2nc.1\",\"wv-2nc.2\"]",
+          "previous": "3fce6a9c3e8fffa03f9f278054f5e060"
+        },
+        "child_index": null
+      },
+      "nodes": [
+        {
+          "nodeId": "ready",
+          "state": "completed",
+          "output": "{\"beads\":[\"wv-2nc.3\"],\"tried\":[\"wv-2nc.1\",\"wv-2nc.2\",\"wv-2nc.3\"]}"
+        },
+        {
+          "nodeId": "slices",
+          "state": "completed",
+          "output": "[\"\"]"
+        },
+        {
+          "nodeId": "next",
+          "state": "completed",
+          "output": "{\"next_run\":\"d92de4b0da5125ffc4d58dab4df9de60\",\"reason\":\"this wave dispatched 1, so the next wave looks for more\"}"
+        }
+      ]
+    },
+    {
+      "id": "0a51a869-2804-491e-87d0-a3d9e6f3f595",
+      "workflow_name": "implement-slice",
+      "status": "completed",
+      "parent_run_id": "3fce6a9c3e8fffa03f9f278054f5e060",
+      "working_path": "/home/user/.archon/workspaces/wave-smoke.dHhe/origin/worktrees/archon/task-3fce6a9c-slices-ed08b2e0-child-1",
+      "started_at": "2026-11-19T19:38:00.000Z",
+      "metadata": {
+        "inputs": {
+          "bead": "wv-2nc.2",
+          "beads_dir": "/tmp/wave-smoke.dHhe/tracker2/.beads"
+        },
+        "child_index": 1
+      },
+      "nodes": [
+        {
+          "nodeId": "claim",
+          "state": "completed",
+          "output": ""
+        },
+        {
+          "nodeId": "build",
+          "state": "completed",
+          "output": "{\"ok\":false}"
+        },
+        {
+          "nodeId": "close",
+          "state": "skipped",
+          "output": null
+        },
+        {
+          "nodeId": "release",
+          "state": "completed",
+          "output": ""
+        }
+      ]
+    },
+    {
+      "id": "109417bb-839c-4538-8698-979806aca3bb",
+      "workflow_name": "implement-slice",
+      "status": "completed",
+      "parent_run_id": "3fce6a9c3e8fffa03f9f278054f5e060",
+      "working_path": "/home/user/.archon/workspaces/wave-smoke.dHhe/origin/worktrees/archon/task-3fce6a9c-slices-ed08b2e0-child-0",
+      "started_at": "2026-11-19T19:38:00.000Z",
+      "metadata": {
+        "inputs": {
+          "bead": "wv-2nc.1",
+          "beads_dir": "/tmp/wave-smoke.dHhe/tracker2/.beads"
+        },
+        "child_index": 0
+      },
+      "nodes": [
+        {
+          "nodeId": "claim",
+          "state": "completed",
+          "output": ""
+        },
+        {
+          "nodeId": "build",
+          "state": "completed",
+          "output": "{\"ok\":true}"
+        },
+        {
+          "nodeId": "close",
+          "state": "completed",
+          "output": ""
+        },
+        {
+          "nodeId": "release",
+          "state": "skipped",
+          "output": null
+        }
+      ]
+    },
+    {
+      "id": "3fce6a9c3e8fffa03f9f278054f5e060",
+      "workflow_name": "dispatch-wave",
+      "status": "completed",
+      "parent_run_id": null,
+      "working_path": "/private/tmp/wave-smoke.dHhe/repo",
+      "started_at": "2026-11-19T19:37:55.000Z",
+      "metadata": {
+        "inputs": {
+          "parent": "wv-2nc",
+          "beads_dir": "/tmp/wave-smoke.dHhe/tracker2/.beads",
+          "max_slices": "0",
+          "tried": "[]",
+          "previous": ""
+        },
+        "child_index": null
+      },
+      "nodes": [
+        {
+          "nodeId": "ready",
+          "state": "completed",
+          "output": "{\"beads\":[\"wv-2nc.1\",\"wv-2nc.2\"],\"tried\":[\"wv-2nc.1\",\"wv-2nc.2\"]}"
+        },
+        {
+          "nodeId": "slices",
+          "state": "completed",
+          "output": "[\"\",\"\"]"
+        },
+        {
+          "nodeId": "next",
+          "state": "completed",
+          "output": "{\"next_run\":\"31ff052e5e4f68137f6a58d399333dbf\",\"reason\":\"this wave dispatched 2, so the next wave looks for more\"}"
+        }
+      ]
+    },
+    {
+      "id": "720be438953c9d7346cc2982c3091c53",
+      "workflow_name": "dispatch-wave",
+      "status": "completed",
+      "parent_run_id": null,
+      "working_path": "/private/tmp/wave-smoke.dHhe/repo",
+      "started_at": "2026-11-19T19:37:08.000Z",
+      "metadata": {
+        "inputs": {
+          "parent": "sm-cmj",
+          "beads_dir": "/tmp/wave-smoke.dHhe/tracker/.beads",
+          "max_slices": "0",
+          "tried": "[\"sm-cmj.1\",\"sm-cmj.2\"]",
+          "previous": "6f74d0273b54ecb3bcd1915f48e4ecd4"
+        },
+        "child_index": null
+      },
+      "nodes": [
+        {
+          "nodeId": "ready",
+          "state": "completed",
+          "output": "{\"beads\":[],\"tried\":[\"sm-cmj.1\",\"sm-cmj.2\"]}"
+        },
+        {
+          "nodeId": "slices",
+          "state": "completed",
+          "output": "[]"
+        },
+        {
+          "nodeId": "next",
+          "state": "completed",
+          "output": "{\"next_run\":\"\",\"reason\":\"this wave found no new ready child, so the chain ends\"}"
+        }
+      ]
+    },
+    {
+      "id": "0ab925ee-8d8c-457f-bf07-37916816fa8d",
+      "workflow_name": "implement-slice",
+      "status": "failed",
+      "parent_run_id": "6f74d0273b54ecb3bcd1915f48e4ecd4",
+      "working_path": "/home/user/.archon/workspaces/wave-smoke.dHhe/origin/worktrees/archon/task-6f74d027-slices-ed08b2e0-child-0",
+      "started_at": "2026-11-19T19:36:56.000Z",
+      "metadata": {
+        "inputs": {
+          "bead": "sm-cmj.1",
+          "beads_dir": "/tmp/wave-smoke.dHhe/tracker/.beads"
+        },
+        "child_index": 0
+      },
+      "nodes": [
+        {
+          "nodeId": "claim",
+          "state": "completed",
+          "output": ""
+        },
+        {
+          "nodeId": "build",
+          "state": "completed",
+          "output": "{\"ok\":true}"
+        },
+        {
+          "nodeId": "close",
+          "state": "failed",
+          "output": null
+        },
+        {
+          "nodeId": "release",
+          "state": "skipped",
+          "output": null
+        }
+      ]
+    },
+    {
+      "id": "3e9a7019-2b6f-4436-9ec4-ef7530a94b6f",
+      "workflow_name": "implement-slice",
+      "status": "completed",
+      "parent_run_id": "6f74d0273b54ecb3bcd1915f48e4ecd4",
+      "working_path": "/home/user/.archon/workspaces/wave-smoke.dHhe/origin/worktrees/archon/task-6f74d027-slices-ed08b2e0-child-1",
+      "started_at": "2026-11-19T19:36:56.000Z",
+      "metadata": {
+        "inputs": {
+          "bead": "sm-cmj.2",
+          "beads_dir": "/tmp/wave-smoke.dHhe/tracker/.beads"
+        },
+        "child_index": 1
+      },
+      "nodes": [
+        {
+          "nodeId": "claim",
+          "state": "completed",
+          "output": ""
+        },
+        {
+          "nodeId": "build",
+          "state": "completed",
+          "output": "{\"ok\":false}"
+        },
+        {
+          "nodeId": "close",
+          "state": "skipped",
+          "output": null
+        },
+        {
+          "nodeId": "release",
+          "state": "completed",
+          "output": ""
+        }
+      ]
+    },
+    {
+      "id": "6f74d0273b54ecb3bcd1915f48e4ecd4",
+      "workflow_name": "dispatch-wave",
+      "status": "completed",
+      "parent_run_id": null,
+      "working_path": "/private/tmp/wave-smoke.dHhe/repo",
+      "started_at": "2026-11-19T19:36:52.000Z",
+      "metadata": {
+        "inputs": {
+          "parent": "sm-cmj",
+          "beads_dir": "/tmp/wave-smoke.dHhe/tracker/.beads",
+          "max_slices": "0",
+          "tried": "[]",
+          "previous": ""
+        },
+        "child_index": null
+      },
+      "nodes": [
+        {
+          "nodeId": "ready",
+          "state": "completed",
+          "output": "{\"beads\":[\"sm-cmj.1\",\"sm-cmj.2\"],\"tried\":[\"sm-cmj.1\",\"sm-cmj.2\"]}"
+        },
+        {
+          "nodeId": "slices",
+          "state": "completed",
+          "output": "[{\"archon_failed\":true,\"error\":\"DAG workflow 'implement-slice' completed with failures: 'close' (exec_failed): Bash node 'close' failed [exit 1]: cannot close sm-cmj.1: 1 open child issue(s); close children first or use --force to override\",\"status\":\"failed\"},\"\"]"
+        },
+        {
+          "nodeId": "next",
+          "state": "completed",
+          "output": "{\"next_run\":\"720be438953c9d7346cc2982c3091c53\",\"reason\":\"this wave dispatched 2, so the next wave looks for more\"}"
+        }
+      ]
+    }
+  ]
+}

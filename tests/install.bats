@@ -153,6 +153,24 @@ teardown() { _install_test_teardown; }
   [ "$FAKE_HOME/.local/bin/slice-wave" -ef "$FAKE_REPO/slice-pipeline/bin/slice-wave" ]
 }
 
+@test "link_slice_pipeline links both scripts onto PATH and both workflows into Archon's global pack" {
+  mkdir -p "$FAKE_REPO/slice-pipeline/bin" \
+    "$FAKE_REPO/slice-pipeline/workflows/implement-slice" \
+    "$FAKE_REPO/slice-pipeline/workflows/dispatch-wave"
+  printf '#!/bin/sh\n' > "$FAKE_REPO/slice-pipeline/bin/slice-wave"
+  printf '#!/bin/sh\n' > "$FAKE_REPO/slice-pipeline/bin/wave-status"
+
+  run env HOME="$FAKE_HOME" PATH="$PATH" bash -c \
+    "source '$INSTALL_SH' && SCRIPT_DIR='$FAKE_REPO' && link_slice_pipeline"
+  [ "$status" -eq 0 ]
+  for bin in slice-wave wave-status; do
+    [ "$FAKE_HOME/.local/bin/$bin" -ef "$FAKE_REPO/slice-pipeline/bin/$bin" ]
+  done
+  for workflow in implement-slice dispatch-wave; do
+    [ "$FAKE_HOME/.archon/workflows/slice-pipeline/$workflow" -ef "$FAKE_REPO/slice-pipeline/workflows/$workflow" ]
+  done
+}
+
 @test "an absolute symlink to the repo's own file is respelled relative, not a conflict" {
   # Hand-made links (ln -s with an absolute path) point at the right file but
   # stow only owns links spelled relative to the package, so it aborted the

@@ -1,0 +1,19 @@
+# One slice run fails outright. The fan-out's all_done join still completes
+# the node with a failure marker in that slot, so its sibling's result stands
+# and `next` still runs: the chain carries on past one failed slice.
+fixture:
+  expect: completed
+  reached: [ready, slices, next]
+  inputs:
+    parent: demo
+    beads_dir: /tmp/beads
+
+ready:
+  beads: [demo.1, demo.2]
+  tried: [demo.1, demo.2]
+slices:
+  - {archon_failed: true, error: "review failed", status: failed}
+  - {merged: true, strategy: squash, pr_number: 3, pr_url: "https://github.com/owner/repo/pull/3", reason: ""}
+next:
+  next_run: next-wave-run
+  reason: this wave dispatched 2, so the next wave looks for more

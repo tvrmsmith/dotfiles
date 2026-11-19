@@ -315,7 +315,8 @@ setup_dotfiles() {
 # consumers both look in machine-wide locations rather than in whatever repo is
 # the current directory:
 #
-#   ~/.local/bin/slice-wave    the workflow shells out to a bare name
+#   ~/.local/bin/              slice-wave, which the workflow shells out to by
+#                              bare name, and wave-status, run by hand
 #   ~/.archon/workflows/...    Archon's global discovery scope
 #
 # The global scope is the point. Archon also reads .archon/workflows/ from the
@@ -331,7 +332,9 @@ link_slice_pipeline() {
 	[ -d "$src" ] || return 0
 
 	mkdir -p "$HOME/.local/bin" "$HOME/.archon/workflows/slice-pipeline"
-	ln -sfn "$src/bin/slice-wave" "$HOME/.local/bin/slice-wave"
+	for bin in slice-wave wave-status; do
+		ln -sfn "$src/bin/$bin" "$HOME/.local/bin/$bin"
+	done
 	# Directory symlinks go here rather than through stow: stow 2.4.1 --dotfiles
 	# descends into one and aborts the whole install (the same trap documented
 	# for dot-agents/skills in .stow-local-ignore).
@@ -339,8 +342,10 @@ link_slice_pipeline() {
 	# Running the workflow works through this link. `archon workflow test` does
 	# not, because fixture discovery alone refuses to follow a symlink; the
 	# suite in slice-pipeline/tests copies the tree instead.
-	ln -sfn "$src/workflows/implement-slice" \
-		"$HOME/.archon/workflows/slice-pipeline/implement-slice"
+	for workflow in implement-slice dispatch-wave; do
+		ln -sfn "$src/workflows/$workflow" \
+			"$HOME/.archon/workflows/slice-pipeline/$workflow"
+	done
 }
 
 # bd reads .beads/PRIME.md and prints it INSTEAD of its generated prime output,
