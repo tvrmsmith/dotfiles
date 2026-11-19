@@ -192,13 +192,19 @@ is_read() {
 # commands are worth reaching for that token at all; anything it misses still
 # prompts, and anything it wrongly lets through still cannot merge.
 #
+# `pr ready` and `pr draft` stay off too, though the token holds the PR
+# permission they look like they need. GitHub refuses their GraphQL mutations
+# (markPullRequestReadyForReview, convertPullRequestToDraft) to a fine-grained
+# token without `Contents: write` ("Resource not accessible by personal access
+# token", cli/cli discussion 6924), and Contents at read is the no-merge gate.
+# So they take the write tier rather than widening this token.
+#
 # `pr review` stays off deliberately. It cannot merge either, but approving is
 # how a branch-protection rule gets satisfied, and an agent should not clear that
 # bar for its own PR. See dotfiles-jwp.
 is_pr_write() {
 	case "$1 ${2:-}" in
-		"pr create" | "pr comment" | "pr edit" | "pr ready" | "pr draft" \
-			| "pr close" | "pr reopen") return 0 ;;
+		"pr create" | "pr comment" | "pr edit" | "pr close" | "pr reopen") return 0 ;;
 	esac
 
 	[ "${1:-}" = api ] || return 1

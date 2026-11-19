@@ -121,10 +121,17 @@ tier() { routes "$@" | awk '{print $1}'; }
 # the first and not the second opens PRs and cannot merge by any route.
 @test "the PR lifecycle routes to the pr-write token" {
   for args in "pr create --fill" "pr comment 12 -b x" "pr edit 12 --title t" \
-              "pr ready 12" "pr draft 12" "pr close 12" "pr reopen 12"; do
+              "pr close 12" "pr reopen 12"; do
     # shellcheck disable=SC2086
     contains "$(routes $args)" pr-write
   done
+}
+
+# GitHub refuses the ready/draft GraphQL mutations to a fine-grained token
+# without `Contents: write`, so the pr-write token cannot run them.
+@test "marking a PR ready or draft routes to write" {
+  equals "$(tier pr ready 12)" write
+  equals "$(tier pr draft 12)" write
 }
 
 @test "merging is never a pr-write, in any spelling" {
