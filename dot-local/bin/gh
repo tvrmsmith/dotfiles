@@ -571,4 +571,14 @@ fi
 # No entry for this owner, so fall back to the plugin. It may well pick the
 # wrong account, but failing outright would be worse on a machine where the map
 # was never written.
+#
+# The fallback needs a TTY, so from an agent shell it dies with "interactive IO
+# not available" and no hint why. Name the missing setup first. The first line
+# keeps the "could not read the write token" prefix the retry band arms on.
+owner="$(gh_owner "$@" 2>/dev/null || true)"
+echo "gh: could not read the write token for ${owner:-this owner}: no entry in $write_map" >&2
+echo "    add one line: <owner> <op-account> op://<vault>/<item-id>/<field-id>" >&2
+if [ ! -f "${XDG_CONFIG_HOME:-$HOME/.config}/op/plugins/gh.json" ]; then
+	echo "    or, from a real terminal, run once: op plugin init gh" >&2
+fi
 exec env PATH="$stripped" op plugin run -- gh "$@"

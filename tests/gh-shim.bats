@@ -608,6 +608,16 @@ run_shim() {
   rm -rf "$TMP"
 }
 
+@test "an owner with no write-tokens entry is told what setup is missing" {
+  write_fixture
+  printf '#!/bin/bash\necho "PLUGIN RAN"\n' > "$BIN/op"
+  run_shim pr merge 12 -R other/repo >/dev/null
+  equals "$(sed -n 4p "$TMP/stderr")" "gh: could not read the write token for other: no entry in $TMP/config/gh-shim/write-tokens"
+  contains "$(sed -n 5p "$TMP/stderr")" "op://<vault>/<item-id>/<field-id>"
+  contains "$(sed -n 6p "$TMP/stderr")" "op plugin init gh"
+  rm -rf "$TMP"
+}
+
 @test "a multi-line argument stays on one shell-quoted gh line" {
   write_fixture
   run_shim issue comment 5 --body $'line one\nline two' -R mine/repo >/dev/null
