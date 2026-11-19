@@ -2,7 +2,7 @@
 //
 // wave-status <run-id> [--json]
 //
-// Prints where a dispatch-wave chain is: one row per bead across every wave,
+// Prints where a implement-in-waves chain is: one row per bead across every wave,
 // with the slice run that holds it, that run's worktree, and its state. Any
 // wave's run id works, or a unique prefix of one.
 //
@@ -75,10 +75,10 @@ try {
   fail("archon workflow runs printed something other than its JSON listing");
 }
 
-const waves = runs.filter((run) => run.workflow_name === "dispatch-wave");
+const waves = runs.filter((run) => run.workflow_name === "implement-in-waves");
 const matches = waves.filter((run) => run.id === wanted || run.id.startsWith(wanted));
-if (matches.length === 0) fail(`no dispatch-wave run ${wanted} among the last ${RUN_WINDOW} runs`);
-if (matches.length > 1) fail(`${wanted} names ${matches.length} dispatch-wave runs; give more of the id`);
+if (matches.length === 0) fail(`no implement-in-waves run ${wanted} among the last ${RUN_WINDOW} runs`);
+if (matches.length > 1) fail(`${wanted} names ${matches.length} implement-in-waves runs; give more of the id`);
 
 const previousOf = (run: Run) => String(run.metadata?.inputs?.previous ?? "");
 const byId = new Map(waves.map((run) => [run.id, run]));

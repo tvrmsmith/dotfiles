@@ -156,7 +156,7 @@ teardown() { _install_test_teardown; }
 @test "link_slice_pipeline links both scripts onto PATH and both workflows into Archon's global pack" {
   mkdir -p "$FAKE_REPO/slice-pipeline/bin" \
     "$FAKE_REPO/slice-pipeline/workflows/implement-slice" \
-    "$FAKE_REPO/slice-pipeline/workflows/dispatch-wave"
+    "$FAKE_REPO/slice-pipeline/workflows/implement-in-waves"
   printf '#!/bin/sh\n' > "$FAKE_REPO/slice-pipeline/bin/slice-wave"
   printf '#!/bin/sh\n' > "$FAKE_REPO/slice-pipeline/bin/wave-status"
 
@@ -166,7 +166,7 @@ teardown() { _install_test_teardown; }
   for bin in slice-wave wave-status; do
     [ "$FAKE_HOME/.local/bin/$bin" -ef "$FAKE_REPO/slice-pipeline/bin/$bin" ]
   done
-  for workflow in implement-slice dispatch-wave; do
+  for workflow in implement-slice implement-in-waves; do
     [ "$FAKE_HOME/.archon/workflows/slice-pipeline/$workflow" -ef "$FAKE_REPO/slice-pipeline/workflows/$workflow" ]
   done
 }

@@ -1,4 +1,4 @@
-// Drives dispatch-wave's two scripts and wave-status as the engine and a
+// Drives implement-in-waves's two scripts and wave-status as the engine and a
 // person run them, with `bd` and `archon` replaced by stubs on PATH. Each stub
 // appends its argv to a log and prints what the test told it to.
 
@@ -8,8 +8,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "..");
-const READY = join(ROOT, "workflows/dispatch-wave/scripts/ready.ts");
-const NEXT = join(ROOT, "workflows/dispatch-wave/scripts/next.ts");
+const READY = join(ROOT, "workflows/implement-in-waves/scripts/ready.ts");
+const NEXT = join(ROOT, "workflows/implement-in-waves/scripts/next.ts");
 const WAVE_STATUS = join(ROOT, "bin/wave-status");
 // Recorded from the live smoke: `archon workflow runs --all --json --verbose`,
 // trimmed to the smoke's runs and to the fields wave-status reads, with the
@@ -66,7 +66,7 @@ function run(cmd: string[], env: Record<string, string>) {
 }
 
 beforeEach(() => {
-  bin = realpathSync(mkdtempSync(join(tmpdir(), "dispatch-wave-test.")));
+  bin = realpathSync(mkdtempSync(join(tmpdir(), "implement-in-waves-test.")));
   stub("bd");
   stub("archon");
 });
@@ -165,7 +165,7 @@ describe("next", () => {
     expect(r.code).toBe(0);
     expect(r.json().next_run).toBe("wave-2-run");
     const [, argv] = calls("archon")[0].split("\t");
-    expect(argv).toContain("workflow run dispatch-wave --detach --json --cwd ");
+    expect(argv).toContain("workflow run implement-in-waves --detach --json --cwd ");
     expect(argv).toContain(`--cwd ${bin}`);
     expect(argv).toContain(
       '--input parent=p --input beads_dir=/tracker/.beads --input max_slices=2 --input tried=["p.1","p.2"] --input previous=wave-1-run',
@@ -187,12 +187,12 @@ describe("next", () => {
 
 // The fixtures stub both scripts away and the tests above hand-set their
 // inputs, so both stay green if the workflow and a script drift apart. This
-// reads what dispatch-wave.yaml declares about each script node and holds the
+// reads what implement-in-waves.yaml declares about each script node and holds the
 // real script to it: every INPUTS_* name the script reads is a workflow input
 // or one of the node's `with:` names, and its real output carries exactly the
 // declared required fields.
-describe("dispatch-wave.yaml wiring", () => {
-  const workflow = Bun.YAML.parse(readFileSync(join(ROOT, "workflows/dispatch-wave/dispatch-wave.yaml"), "utf8")) as any;
+describe("implement-in-waves.yaml wiring", () => {
+  const workflow = Bun.YAML.parse(readFileSync(join(ROOT, "workflows/implement-in-waves/implement-in-waves.yaml"), "utf8")) as any;
   const node = (id: string) => workflow.nodes.find((n: any) => n.id === id);
   const envName = (name: string) => `INPUTS_${name.toUpperCase()}`;
 
@@ -329,7 +329,7 @@ describe("wave-status", () => {
   });
 
   test.each([
-    ["an unknown run", ["nope"], "no dispatch-wave run nope"],
+    ["an unknown run", ["nope"], "no implement-in-waves run nope"],
     ["no run id", [], "usage"],
     ["two run ids", [WAVE_1, WAVE_3], "usage"],
   ])("refuses %s", (_name, args, message) => {
@@ -343,7 +343,7 @@ describe("wave-status", () => {
     runs.find((r) => r.id === WAVE_3)!.id = "3fce6a9cffff";
     const r = status(runs, "3fce6a9c");
     expect(r.code).toBe(2);
-    expect(r.stderr).toContain("names 2 dispatch-wave runs");
+    expect(r.stderr).toContain("names 2 implement-in-waves runs");
   });
 
   test("fails when Archon cannot list runs", () => {

@@ -9,7 +9,7 @@
 // from.
 
 function refuse(reason: string): never {
-  console.error(`dispatch-wave next: ${reason}`);
+  console.error(`implement-in-waves next: ${reason}`);
   process.exit(1);
 }
 
@@ -32,7 +32,7 @@ if (wave.length === 0) {
   const launch = Bun.spawnSync(
     [
       ...(cli as string[]),
-      "workflow", "run", "dispatch-wave", "--detach", "--json", "--cwd", process.cwd(),
+      "workflow", "run", "implement-in-waves", "--detach", "--json", "--cwd", process.cwd(),
       ...input("parent", process.env.INPUTS_PARENT ?? ""),
       ...input("beads_dir", process.env.INPUTS_BEADS_DIR ?? ""),
       ...input("max_slices", process.env.INPUTS_MAX_SLICES || "0"),

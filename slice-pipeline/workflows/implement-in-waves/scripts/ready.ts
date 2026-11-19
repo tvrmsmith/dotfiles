@@ -7,7 +7,7 @@
 // `archon:script`, so `bun test` can run it with a stub `bd` on PATH.
 
 function refuse(reason: string): never {
-  console.error(`dispatch-wave ready: ${reason}`);
+  console.error(`implement-in-waves ready: ${reason}`);
   process.exit(1);
 }
 
