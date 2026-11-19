@@ -41,6 +41,7 @@ Every run is one sample in an A/B experiment on how many implementers a slice ge
 | §1 or §4, the slice itself doesn't fit | File a bead recording the overflow and the suggested split, leave the tree uncommitted, and end the run by emitting the §8 report with `status: aborted` and `reason` naming the overflow. Covers both §1's slice-level fit check and a §4 re-split that still overflows. |
 | §2 default, seam list | Proceed on the §1 seam list unchanged. |
 | §2 gate fired | Run the red-team reviewer (step 2) and revise, then proceed on the revised design. Record every assumption in the §8 report rather than presenting it. |
+| §2, a cycle shows a seam is in the wrong place | Move it, agreed or not. Where the gate fired, red-team the new placement. Record the move and its reason for §8's `seams`. |
 | §3, model selection | One flat default, `sonnet`, for every implementer in either arm. `--model=<id>` replaces that default for the whole run. |
 | §4, a worker escalates that the contract is wrong | Re-derive the expected values from the spec, revise the contract, redispatch once. On a second escalation for the same assignment, file a bead recording the disagreement, leave the tree uncommitted, and end the run by emitting the §8 report with `status: aborted` and `reason` naming the disagreement. |
 | §5, a fan-in check the parent cannot get green | Triage and dispatch as §5 says. Where triage runs out, file a bead naming the failing check, leave the tree uncommitted, and end the run by emitting the §8 report with `status: aborted` and `reason` naming the check. |
@@ -52,9 +53,11 @@ Every run is one sample in an A/B experiment on how many implementers a slice ge
 
 **Load `codebase-design` before anything else.** Its vocabulary and seam rules govern this section and §2: the interface is the test surface, and one adapter means a hypothetical seam. Placing a seam where no test can live is the failure this catches.
 
+**Start from the agreed seams**: the Testing Decisions of the slice's spec, on the slice bead or on the parent spec its `## Parent` names, plus any wave design appended to the bead's `notes`. They are guidance, never a contract. Derive the seams they leave open, and move one when the code shows it belongs elsewhere. Each seam carries its **source**: agreed, moved (with the reason) or derived.
+
 Parent reads the slice and the relevant code, then produces:
 
-- The **seams** to test at, public boundaries only.
+- The **seams** to test at, public boundaries only, each with its source.
 - The **assignments** each seam yields.
 - An **order**, so each assignment's cycles teach the next.
 - A **parallel tag** per assignment, under split only; single's one worker runs them in order. **Parallel when truth is independent:** one assignment can proceed beside another exactly when its expected values come from outside the sibling work, the spec, an agreed contract, a worked example. An assignment whose correctness can only be judged against what another worker is producing is sequential. Disjoint files is not the test; parallel workers need disjoint **import graphs**, or a sibling's half-written code reds their run. A suite's shared step-definition file is one such graph: assignments landing in the same suite either run sequentially or each take their own step file.
@@ -63,7 +66,7 @@ Parent reads the slice and the relevant code, then produces:
 
 **A suite carrying no scenarios yet** keeps the repo's existing test idiom, and §4 runs plain cycles. Where the slice looks like a good place to adopt them, recommend it via `AskUserQuestion` and wait (unattended: *Unattended mode*): on yes, the layout, runner wiring and shared step file become their own assignment, ordered first and sequential, since every later assignment reads the conventions it establishes. Once that lands the suite carries its own signal and later slices detect it.
 
-Done when every seam has its assignments, and every assignment an order position, under split a parallel/sequential tag, a fit check, and, where the suite carries scenarios, its scenarios.
+Done when every seam has its source and its assignments, and every assignment an order position, under split a parallel/sequential tag, a fit check, and, where the suite carries scenarios, its scenarios.
 
 ## 2. Agree the design
 
@@ -86,7 +89,7 @@ The design carries:
 - **Flow**. Entry point through the hops, as a diagram, marked **illustrative and non-binding**: interior structure belongs to the refactor step, and a worker stays free to deviate from it.
 - **Assumptions**. Every place the spec was silent and the parent chose.
 
-**Resolution gradient:** the first seam in full detail, later seams coarse. A seam a later cycle teaches you is in the wrong place re-enters this gate; a seam never moves silently.
+**Resolution gradient:** the first seam in full detail, later seams coarse. A seam a later cycle teaches you is in the wrong place re-enters this gate (unattended: *Unattended mode*); a seam never moves silently.
 
 Done, on the **Default** path, when the seam list is confirmed, or, unattended, when the parent proceeds on the §1 seam list unchanged. Done, when the gate fired, when the first seam has a confirmed signature, owning module, failure semantics and one-way/reversible tag, and every later seam has at least the coarse version of those. Unattended, the step 2 red-team stands in for the confirmation, and every assumption goes into the §8 report; attended, every assumption is either approved or replaced.
 
@@ -125,6 +128,8 @@ Every assignment green, parent runs the project-wide checks the workers deferred
 
 Commit on a **feature branch** (create one if on the default branch, since the ship flow validates committed history on a non-default branch).
 
+Unattended, the commit body carries the §8 `seams` and `assumptions` lines: the report itself reaches no reviewer, and the commit travels with the diff they read.
+
 Done when the whole slice is one commit on a feature branch.
 
 ## 7. Metrics
@@ -144,6 +149,7 @@ Stop at the commit. Review, lint, push, PR and CI belong to the repo's **ship fl
 - `branch`, the feature branch name.
 - `sha`, the §6 commit.
 - `gate defaults taken`, one line each, naming the gate and the default.
+- `seams`, one line each: the seam, its §1 source, and for a moved seam the reason.
 - `assumptions`, every §2 assumption the parent recorded rather than presented.
 - `beads filed`, one id and title each.
 
