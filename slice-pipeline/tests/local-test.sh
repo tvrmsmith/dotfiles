@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Targeted local validation for the slice pipeline: the bats suites that
-# drive `bin/slice-wave`, the bun suite that drives dispatch-wave's scripts and
+# drive `bin/slice-wave`, the bun suite that drives implement-in-waves's scripts and
 # `bin/wave-status`, and the declared fixtures for both workflows. Every path below is relative to slice-pipeline/, so this runner
 # moves with the subproject rather than with the repo hosting it.
 #
@@ -29,7 +29,7 @@ esac
 mkdir -p "$OUT" || exit 1
 
 SUITES="tests/slice-wave.bats tests/validate.bats tests/review-round.bats tests/review-watch.bats tests/merge-and-close.bats tests/implement-slice-wiring.bats tests/e2e-cleanup.bats tests/e2e-sandbox.bats"
-WORKFLOWS="implement-slice dispatch-wave"
+WORKFLOWS="implement-slice implement-in-waves"
 COV_SOURCE="bin/slice-wave"
 
 WORK="$(mktemp -d)"
@@ -48,7 +48,7 @@ bats_rc=$?
 unset BASH_ENV SLICE_COV_BASENAME SLICE_COV_OUT
 
 # --- bun suite --------------------------------------------------------------
-bun test --reporter=junit --reporter-outfile="$OUT/bun-report.xml" tests/dispatch-wave.test.ts
+bun test --reporter=junit --reporter-outfile="$OUT/bun-report.xml" tests/implement-in-waves.test.ts
 bun_rc=$?
 
 # --- workflow fixtures ------------------------------------------------------

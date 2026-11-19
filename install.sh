@@ -342,7 +342,7 @@ link_slice_pipeline() {
 	# Running the workflow works through this link. `archon workflow test` does
 	# not, because fixture discovery alone refuses to follow a symlink; the
 	# suite in slice-pipeline/tests copies the tree instead.
-	for workflow in implement-slice dispatch-wave; do
+	for workflow in implement-slice implement-in-waves; do
 		ln -sfn "$src/workflows/$workflow" \
 			"$HOME/.archon/workflows/slice-pipeline/$workflow"
 	done

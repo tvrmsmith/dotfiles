@@ -2,7 +2,7 @@
   "runs": [
     {
       "id": "d92de4b0da5125ffc4d58dab4df9de60",
-      "workflow_name": "dispatch-wave",
+      "workflow_name": "implement-in-waves",
       "status": "completed",
       "parent_run_id": null,
       "working_path": "/private/tmp/wave-smoke.dHhe/repo",
@@ -74,7 +74,7 @@
     },
     {
       "id": "31ff052e5e4f68137f6a58d399333dbf",
-      "workflow_name": "dispatch-wave",
+      "workflow_name": "implement-in-waves",
       "status": "completed",
       "parent_run_id": null,
       "working_path": "/private/tmp/wave-smoke.dHhe/repo",
@@ -183,7 +183,7 @@
     },
     {
       "id": "3fce6a9c3e8fffa03f9f278054f5e060",
-      "workflow_name": "dispatch-wave",
+      "workflow_name": "implement-in-waves",
       "status": "completed",
       "parent_run_id": null,
       "working_path": "/private/tmp/wave-smoke.dHhe/repo",
@@ -218,7 +218,7 @@
     },
     {
       "id": "720be438953c9d7346cc2982c3091c53",
-      "workflow_name": "dispatch-wave",
+      "workflow_name": "implement-in-waves",
       "status": "completed",
       "parent_run_id": null,
       "working_path": "/private/tmp/wave-smoke.dHhe/repo",
@@ -327,7 +327,7 @@
     },
     {
       "id": "6f74d0273b54ecb3bcd1915f48e4ecd4",
-      "workflow_name": "dispatch-wave",
+      "workflow_name": "implement-in-waves",
       "status": "completed",
       "parent_run_id": null,
       "working_path": "/private/tmp/wave-smoke.dHhe/repo",

@@ -10,7 +10,7 @@ just this one.
 bin/slice-wave                     every non-trivial rule, driven by bats
 bin/wave-status                    where a wave chain stands, read from Archon
 workflows/implement-slice/         one slice: the workflow and its offline fixtures
-workflows/dispatch-wave/           one wave of slices, its scripts and fixtures
+workflows/implement-in-waves/      a parent's children, wave by wave
 tests/                             the suites, their helpers, and the runner
 ```
 
@@ -105,11 +105,11 @@ lists each one spent on the slice's commits, read from the waiver log rather
 than the model's report. A non-empty `waivers_error` means the log was
 unreadable and the list is not to be trusted.
 
-## Dispatch a wave
+## Implement a parent bead in waves
 
 ```sh
 cd <target repo checkout>
-archon workflow run dispatch-wave --detach \
+archon workflow run implement-in-waves --detach \
   --input parent=<id> \
   --input beads_dir=<tracker>/.beads
 ```
@@ -170,7 +170,7 @@ NO_MISTAKES_COVERAGE_DIR=$(mktemp -d) tests/local-test.sh
 ```
 
 Runs the bats suites under a line-coverage probe, the bun suite for
-dispatch-wave's scripts and `wave-status` (bd and archon stubbed on PATH, and
+implement-in-waves' scripts and `wave-status` (bd and archon stubbed on PATH, and
 `wave-status` read against run listings recorded from a live wave), replays
 both workflows' fixtures through `archon workflow test`, and fails if any
 function in `bin/slice-wave` went unentered. Needs `bats`, `archon`, `bun`, and `jq`.

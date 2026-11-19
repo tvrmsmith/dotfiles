@@ -1,9 +1,9 @@
-name: dispatch-wave
+name: implement-in-waves
 description: |
-  Dispatch one wave of slices under a parent bead: list its ready, unclaimed
-  direct children, run implement-slice for each in its own worktree, and once
-  every slice has finished, start the next wave by itself when this one built
-  anything. The chain ends on a wave that finds nothing new. `wave-status
+  Implement a parent bead's children in waves. Each run is one wave: list the
+  parent's ready, unclaimed direct children, run implement-slice for each in
+  its own worktree, and once every slice has finished, start the next wave by
+  itself when this one built anything. The chain ends on a wave that finds nothing new. `wave-status
   <run-id>` reads the whole chain back from Archon's run records.
 
   Use when: a parent bead has several ready children whose specs live in
