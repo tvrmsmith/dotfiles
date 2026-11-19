@@ -1,15 +1,16 @@
-# Metrics
+# Recording a run
 
-## The experiment
+After §6, or whenever the run ends without a commit. Skip steps 1 and 2 on an aborted run.
 
-`iws-ab-v1` asks one question: does giving a slice **one implementer** instead of **one per assignment** cost quality? Single drops the handoffs, the redispatches and most fan-in failures, so it is the flow to adopt unless split earns that overhead back. The test is therefore *is single no worse*, not *which is better*. `ab.sh` assigns the arm by hashing the slice id (SKILL.md, *Arms*), so neither the parent nor the user picks it.
+1. Run the mutation proxy below.
+2. Close each real survivor with a test, amending the §6 commit so the slice stays one commit.
+   - First confirm the tree matches the §6 commit. If the mutation worker left changes, restore the tracked files to that commit and delete the files it created.
+   - The parent writes each test's expected value from the worker's survivor line; an implementer writes the test around it. Each new test passes on the unchanged commit.
+   - When a new test fails there, the parent judges the cause. A wrong expected value it rewrites and redispatches; a real bug goes to an implementer to fix in the code, landing in the amended commit. A survivor still open after one redispatch goes to the user (unattended: SKILL.md *Unattended mode*).
+   - An equivalent mutant needs no test; say so in `--note`.
 
-## Recording a run
-
-After §6, or when an *Unattended mode* row aborts the run:
-
-1. Run the mutation proxy below. Skip it on an aborted run.
-2. Append the row:
+   Done when every real survivor has a new test that fails with its mutant reapplied, or is named open in `--note`, and the slice's tests pass on the amended commit.
+3. Append the row, passing the amended sha:
 
    ```sh
    ~/.claude/skills/implement-with-subagents/ab.sh finish --run <run> --status ready \
@@ -17,33 +18,14 @@ After §6, or when an *Unattended mode* row aborts the run:
      --models '{"<assignment>":"<model>"}' [--forced] [--fit-fallback] [--note <text>]
    ```
 
-   - `killed`: the mutation proxy's catch count.
-   - `redos`: implementer redispatches, the §4 contract escalations plus the §5 triage dispatches.
+   - `killed`: the proxy's catch count as the worker measured it, before step 2 closed any survivor.
+   - `redos`: implementer redispatches, the §4 contract escalations plus the §5 triage dispatches. Single's fit-fallback dispatches (flagged by `--fit-fallback`), split's §4 re-split dispatches, and step 2's survivor-closing dispatches are not redos.
+   - `models`: one key per assignment; a single-arm run repeats the one implementer's model under every key.
    - `fanin-failures`: the §5 count.
    - An aborted run passes `--status aborted` and drops `--branch`, `--sha` and `--killed`.
 
-The script supplies everything else from the start row and the session transcripts: arm, wall-clock, token usage across the parent and every subagent since `assign`, and the coding-standards arm the session ran under. Rows land in `~/.claude/implement-with-subagents/metrics.jsonl`. Pass on anything `finish` prints in your final report: a warning that it found no transcripts, or the notice that the stopping point is reached.
+The script supplies everything else from the start row and the session transcripts: arm, wall-clock, token usage across the parent and every subagent since `assign`, and the coding-standards arm the session ran under. `notices` (SKILL.md §8) defines what to report from `ab.sh` output.
 
 ## Mutation proxy
 
-One mutation worker (Agent, `general-purpose`) takes **5 mutants**, one at a time: it writes one plausible-wrong implementation somewhere in the slice, runs the slice's tests, records whether they caught it, then reverts it before the next. It returns the catch count out of 5 and a line per survivor. Its prompt names the slice and its tests, never the arm or how many implementers built it.
-
-Pass that count as `--killed`, as measured. Then close each real survivor with a test, amending the §6 commit so the slice stays one commit, and pass the amended sha. An equivalent mutant needs no test; say so in `--note`.
-
-## Escaped defects
-
-`ab.sh report` derives these after handoff: the error and warning findings in the first review and test rounds of the first no-mistakes run on the slice's branch after `finish`. A repo whose ship flow is not no-mistakes reports null.
-
-## Stopping rule
-
-Decide when `finish` announces the stopping point: both arms hold enough ready slices, 20 each unless `IWS_AB_STOP_AT` says otherwise. A rerun slice counts once, as its newest run. Read results with `ab.sh report`:
-
-- Adopt single as the only flow unless split's mean kill rate beats single's by more than **0.10**, or split's mean escaped findings per slice are lower by more than **0.5**. Either margin keeps split.
-- Tokens and wall-clock break ties between arms; they never outweigh a quality margin. Compare wall-clock on unattended runs, since attended time includes waiting on the user. Effective tokens weight cache reads at a tenth, roughly their price.
-- Where one repo dominates one arm, read its per-repo split before deciding.
-
-Then delete the losing arm and this experiment from the skill.
-
-## Earlier rows
-
-Rows without an `experiment` field predate it. Their arm `guarded` was the split shape, their tokens self-reported, and `ab.sh report` ignores them.
+One mutation worker (Agent, `general-purpose`) takes **5 mutants**, one at a time: it writes one plausible-wrong implementation somewhere in the slice, runs the slice's tests, records whether they caught it, then reverts it before the next. It returns the catch count out of 5 and a line per survivor, each carrying enough to reapply the mutant (file, location and the exact change as a diff), and returns only once the tree matches the §6 commit. The worker's prompt names the slice and its tests, never the arm or how many implementers built it.
