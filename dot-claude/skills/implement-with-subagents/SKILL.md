@@ -1,6 +1,6 @@
 ---
 name: implement-with-subagents
-description: Orchestrate one vertical slice across subagents, attended or `--unattended`. Parent plans and delegates, workers do TDD on a controllable model, then hand off to the repo's ship flow.
+description: Orchestrate one vertical slice across subagents, attended or `--unattended`. Parent plans, delegates and injects expected values; workers do TDD on a controllable model, then hand off to the repo's ship flow.
 disable-model-invocation: true
 ---
 # Implement With Subagents
@@ -9,7 +9,7 @@ Runs Matt Pocock's `implement` recipe with the actual work in **subagents**, bec
 
 ## Input
 
-One **slice**, given as a bead id, a path, or a description. Flags: `--solo`, `--unattended`, and unattended-only `--model=<id>` and `--parallel-safe`. §3 owns model choice.
+One **slice**, given as a bead id, a path, or a description. Flags: `--unattended`, and unattended-only `--model=<id>` and `--parallel-safe`. §3 owns model choice.
 
 ## Vocabulary
 
@@ -17,18 +17,22 @@ Each word sits at one level. Keep it there.
 
 - **slice**. One vertical slice, arriving already sliced from planning. The skill's input, never something this skill produces.
 - **seam**. A public boundary inside the slice: the *location* where an interface lives. §1 finds them, §2 agrees them. A seam is placed, never built, owned or run green.
-- **assignment**. A body of code that meets a seam's interface, and the unit one worker owns. A seam yields **one assignment per participant**, however many that is; several participants at one seam is the parallel case (§1).
+- **assignment**. A body of code that meets a seam's interface, and the unit that gets its own contract, expected values and tests. Under **split** it is also the unit one worker owns. A seam yields **one assignment per participant**, however many that is; several participants at one seam is the parallel case (§1).
 - **scenario**. One behaviour of one assignment, as Gherkin at that assignment's seam and in that suite's language, where the suite expresses its tests that way. §1 derives them from the ticket's slice-wide acceptance criteria. Many scenarios per assignment.
 - **cycle**. One failing test plus the minimum code to green it. One scenario is one cycle's red test. Many cycles per assignment: the first trivially small, each one after building on what the last taught.
 
-## Modes
+## Arms
 
-- **guarded** (default). Anti-bias arm: the parent injects the expected values (mechanism in §4).
-- `--solo`. One worker takes the whole slice, every assignment, and derives its own expected values. §1's parallel tags don't apply and §3 picks one model for the slice. Cheaper/faster when bias isn't a concern, and doubles as the **metrics baseline** for comparing against guarded.
+Every run is one sample in an A/B experiment on how many implementers a slice gets; `METRICS.md` owns its design and stopping rule. Both arms share everything else, the parent-written expected values above all. They differ only in §1's parallel tags, §3's model pick and §4's dispatch.
+
+- **split**. One implementer per assignment.
+- **single**. One implementer for the whole slice, working every assignment in §1's order.
+
+**Assign the arm first, before §1.** Run `~/.claude/skills/implement-with-subagents/ab.sh assign <slice-id>`, adding `--unattended` when unattended. The slice id is the bead id or path; pass `""` for a free-text slice. It prints `run` and `arm`: keep both for §7, and run the printed arm for the whole slice, however the slice looks. The hash is the randomisation, so a hunch about which arm suits the slice is exactly the selection bias it exists to remove. Where the user explicitly directs the other arm, follow them and pass `--forced` at §7.
 
 ## Unattended mode
 
-`--unattended` runs the whole skill with nobody in the room, so a workflow node can drive it. One rule governs it: **never call `AskUserQuestion` and never wait for a reply**. Every gate has a stated default here; take it, and name the ones you took in the §8 report. Orthogonal to guarded/`--solo`, which still picks the bias arm. Without the flag, every gate behaves exactly as its section says.
+`--unattended` runs the whole skill with nobody in the room, so a workflow node can drive it. One rule governs it: **never call `AskUserQuestion` and never wait for a reply**. Every gate has a stated default here; take it, and name the ones you took in the §8 report. Orthogonal to the arm. Without the flag, every gate behaves exactly as its section says.
 
 | Gate | Unattended default |
 | --- | --- |
@@ -37,12 +41,12 @@ Each word sits at one level. Keep it there.
 | §1 or §4, the slice itself doesn't fit | File a bead recording the overflow and the suggested split, leave the tree uncommitted, and end the run by emitting the §8 report with `status: aborted` and `reason` naming the overflow. Covers both §1's slice-level fit check and a §4 re-split that still overflows. |
 | §2 default, seam list | Proceed on the §1 seam list unchanged. |
 | §2 gate fired | Run the red-team reviewer (step 2) and revise, then proceed on the revised design. Record every assumption in the §8 report rather than presenting it. |
-| §3, model selection | One flat default across every assignment: `sonnet` under guarded, `opus` for the one worker under `--solo`. `--model=<id>` replaces that default for the whole run. |
+| §3, model selection | One flat default, `sonnet`, for every implementer in either arm. `--model=<id>` replaces that default for the whole run. |
 | §4, a worker escalates that the contract is wrong | Re-derive the expected values from the spec, revise the contract, redispatch once. On a second escalation for the same assignment, file a bead recording the disagreement, leave the tree uncommitted, and end the run by emitting the §8 report with `status: aborted` and `reason` naming the disagreement. |
 | §5, a fan-in check the parent cannot get green | Triage and dispatch as §5 says. Where triage runs out, file a bead naming the failing check, leave the tree uncommitted, and end the run by emitting the §8 report with `status: aborted` and `reason` naming the check. |
 | §8, hand off | The workflow node drives `no-mistakes`. The parent never invokes it. |
 
-**Parallel tags.** Unattended, every assignment is **sequential** unless the caller passes `--parallel-safe`, a run-level boolean asserting one thing only: every assignment in the slice has an import graph disjoint from its siblings (§1 gives why the import graph is the test). The parent cannot establish disjointness from a ticket alone. With the flag set, the parent still applies §1's truth-independence test per assignment and tags **sequential** any assignment whose expected values come from a sibling's work. Sequential costs wall-clock and nothing else.
+**Parallel tags** (split only). Unattended, every assignment is **sequential** unless the caller passes `--parallel-safe`, a run-level boolean asserting one thing only: every assignment in the slice has an import graph disjoint from its siblings (§1 gives why the import graph is the test). The parent cannot establish disjointness from a ticket alone. With the flag set, the parent still applies §1's truth-independence test per assignment and tags **sequential** any assignment whose expected values come from a sibling's work. Sequential costs wall-clock and nothing else.
 
 ## 1. Seams and assignments
 
@@ -53,13 +57,13 @@ Parent reads the slice and the relevant code, then produces:
 - The **seams** to test at, public boundaries only.
 - The **assignments** each seam yields.
 - An **order**, so each assignment's cycles teach the next.
-- A **parallel tag** per assignment. **Parallel when truth is independent:** one assignment can proceed beside another exactly when its expected values come from outside the sibling work, the spec, an agreed contract, a worked example. An assignment whose correctness can only be judged against what another worker is producing is sequential. Disjoint files is not the test; parallel workers need disjoint **import graphs**, or a sibling's half-written code reds their run. A suite's shared step-definition file is one such graph: assignments landing in the same suite either run sequentially or each take their own step file.
+- A **parallel tag** per assignment, under split only; single's one worker runs them in order. **Parallel when truth is independent:** one assignment can proceed beside another exactly when its expected values come from outside the sibling work, the spec, an agreed contract, a worked example. An assignment whose correctness can only be judged against what another worker is producing is sequential. Disjoint files is not the test; parallel workers need disjoint **import graphs**, or a sibling's half-written code reds their run. A suite's shared step-definition file is one such graph: assignments landing in the same suite either run sequentially or each take their own step file.
 - A **fit check** per assignment: it must comfortably fit one worker context window. An assignment that doesn't fit splits, adding a seam if the split needs one. A *slice* that doesn't fit goes back to planning to be split there (unattended: *Unattended mode*).
 - The **scenarios** per assignment, where the suite expresses its tests as scenarios. One glob for `**/*.feature` settles it, per suite, and hands §4 the file it matches against. Derived from the ticket's behavioural acceptance criteria, which are slice-wide and mechanism-free by construction: here each is realised at the seam that can observe it. A criterion spanning several assignments splits across the ones that can, plus a `@contract` scenario at each boundary it crosses, cited against the `contract-approval` record. A `@contract` scenario pins semantics the contract artifact cannot express: idempotent replay, retry thresholds, state transitions, ordering, emission obligations. One needing a mock response the artifact does not yet describe extends the artifact in the same slice. Where the union still leaves the composition itself unobserved, say so and raise it: that gap is the one thing earning a cross-service test, and it is the parent's call, not a worker's (unattended: *Unattended mode*).
 
 **A suite carrying no scenarios yet** keeps the repo's existing test idiom, and §4 runs plain cycles. Where the slice looks like a good place to adopt them, recommend it via `AskUserQuestion` and wait (unattended: *Unattended mode*): on yes, the layout, runner wiring and shared step file become their own assignment, ordered first and sequential, since every later assignment reads the conventions it establishes. Once that lands the suite carries its own signal and later slices detect it.
 
-Done when every seam has its assignments, and every assignment an order position, a parallel/sequential tag, a fit check, and, where the suite carries scenarios, its scenarios.
+Done when every seam has its assignments, and every assignment an order position, under split a parallel/sequential tag, a fit check, and, where the suite carries scenarios, its scenarios.
 
 ## 2. Agree the design
 
@@ -92,20 +96,16 @@ Starts only once §2 is done. The approved design is what you judge difficulty a
 
 Judge the difficulty of the work and **recommend** an implementer model via `AskUserQuestion`, offering alternatives + Other, with your reasoning. Wait for the pick (unattended: *Unattended mode*).
 
-Under **guarded**, recommend per assignment. Implementers lean cheaper, since they only make an existing expectation green, and assignments may run on different models. Attended, re-recommend for one that turns out far harder or easier; unattended, the flat default holds for every assignment.
-
-Under `--solo`, recommend once for the slice, a tier up: that worker designs the contract and derives its own expected values.
+Implementers lean cheaper, since they only make an existing expectation green. Under **split**, recommend per assignment; assignments may run on different models, and attended, re-recommend for one that turns out far harder or easier. Under **single**, recommend one model for the slice, judged by its hardest assignment. Unattended, the flat default holds for every implementer.
 
 ## 4. TDD loop, per assignment
 
 The parent is the **loop driver**: it invokes the `tdd` skill itself to carry the red-green rules and anti-patterns, and carries adaptive state between assignments. Testing bias is handled by the **Bias guard** layers below.
 
-**guarded**, per assignment:
+**Both arms.** Per assignment, the parent writes the contract and expected values, the assignment's **scenario text** among them: it *is* an expected value, so a worker authoring its own would spend the bias guard. Every implementer is an Agent (`general-purpose`, chosen model), told to **load `tdd` itself** (same reason as §2 step 2). It works in **cycles**, preserving every assertion and injected expected value as given. If it judges a contract wrong, it stops and escalates to the parent (unattended: *Unattended mode*).
 
-- Parent writes the contract and expected values, the assignment's **scenario text** among them: it *is* an expected value, so a worker authoring its own would spend the anti-bias arm.
-- Dispatch one implementer worker (Agent, `general-purpose`, chosen model) given only: the assignment, the contract + expected values, and an instruction to **load `tdd` itself** (same reason as §2 step 2). It works in **cycles**, preserving every assertion and injected expected value as given. If it judges the contract wrong, it stops and escalates to the parent (unattended: *Unattended mode*).
-
-`--solo`. One worker, dispatched once with the whole slice and its confirmed seams, writing every contract, test and implementation itself; no parent expected-value injection.
+- **split**. One implementer per assignment, given only that assignment and its contract + expected values.
+- **single**. One implementer, dispatched once with every assignment and its contract + expected values, in §1's order. It finishes one assignment green before starting the next.
 
 **When the §2 gate fired:** the signature and failure semantics of the assignment's seam are part of the contract the worker must hold. The flow diagram is not.
 
@@ -113,13 +113,13 @@ The parent is the **loop driver**: it invokes the `tdd` skill itself to carry th
 
 **In-loop verification:** each cycle runs the worker's own test file, nothing wider. Project-wide typecheck and the full suite wait for §5. A wide check run under parallel workers reports a sibling's unfinished code as your own failure.
 
-**Fit overflow:** a worker whose assignment turns out not to fit returns "doesn't fit" with a split suggestion instead of pushing through; parent splits it per §1. A re-split that still overflows goes back to planning (unattended: *Unattended mode*).
+**Fit overflow:** a worker whose work turns out not to fit returns "doesn't fit" with a split suggestion instead of pushing through. Under split, the parent splits the assignment per §1. Under single, the parent keeps what is green and dispatches the remaining assignments split-style, then passes `--fit-fallback` at §7; the run still counts as single. A re-split that still overflows goes back to planning (unattended: *Unattended mode*).
 
 An assignment is done when its tests are green; the loop is done when every assignment is done.
 
 ## 5. Fan-in check
 
-Every assignment green, parent runs the project-wide checks the workers deferred: full typecheck, full test suite, and contract conformance where the repo can bring a provider up locally. Failures here are integration failures between assignments, the parent's to triage and dispatch, since no single worker can see them. Done when the tree is green.
+Every assignment green, parent runs the project-wide checks the workers deferred: full typecheck, full test suite, and contract conformance where the repo can bring a provider up locally. Failures here are integration failures between assignments, the parent's to triage and dispatch, since no single worker can see them. Count each check that fails on its first run, for §7's `--fanin-failures`. Done when the tree is green.
 
 ## 6. Commit
 
@@ -129,7 +129,7 @@ Done when the whole slice is one commit on a feature branch.
 
 ## 7. Metrics
 
-Record one metrics line per run, including a run an abort row ended, and record it before the §8 report. See `METRICS.md` for the schema and the mutation-proxy procedure.
+Every run ends with one `ab.sh finish` call, aborted runs included, before the §8 report. `METRICS.md` gives the call, the mutation-proxy procedure that comes before it, and the stopping rule.
 
 ## 8. Stop and hand off
 
@@ -151,6 +151,6 @@ Stop at the commit. Review, lint, push, PR and CI belong to the repo's **ship fl
 
 Testing bias is caught in three places, so per-assignment test auditing is redundant:
 
-1. **guarded expected-value injection**, §4.
+1. **parent expected-value injection**, §4, in both arms.
 2. **comprehensive-code-review Tests aspect**, downstream in the ship flow's review (catches tautological / impl-coupled / weak-assertion tests).
 3. **mutation-proxy metric**, §7.
