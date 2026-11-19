@@ -1,0 +1,20 @@
+# Two ready children: each gets one implement-slice child, and `next` runs
+# once both have finished, handed this wave's beads and the chain's tried
+# list. The two slice results stand in for implement-slice's merge output.
+fixture:
+  expect: completed
+  reached: [ready, slices, next]
+  inputs:
+    parent: demo
+    beads_dir: /tmp/beads
+    tried: '["demo.1"]'
+
+ready:
+  beads: [demo.2, demo.3]
+  tried: [demo.1, demo.2, demo.3]
+slices:
+  - {merged: true, strategy: squash, pr_number: 2, pr_url: "https://github.com/owner/repo/pull/2", reason: ""}
+  - {merged: false, strategy: "", pr_number: 0, pr_url: "", reason: "the slice was not delivered, so nothing was merged"}
+next:
+  next_run: next-wave-run
+  reason: this wave dispatched 2, so the next wave looks for more

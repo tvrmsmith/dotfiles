@@ -8,7 +8,9 @@ just this one.
 
 ```
 bin/slice-wave                     every non-trivial rule, driven by bats
-workflows/implement-slice/         the workflow and its offline fixtures
+bin/wave-status                    where a wave chain stands, read from Archon
+workflows/implement-slice/         one slice: the workflow and its offline fixtures
+workflows/dispatch-wave/           one wave of slices, its scripts and fixtures
 tests/                             the suites, their helpers, and the runner
 ```
 
@@ -103,15 +105,75 @@ lists each one spent on the slice's commits, read from the waiver log rather
 than the model's report. A non-empty `waivers_error` means the log was
 unreadable and the list is not to be trusted.
 
+## Dispatch a wave
+
+```sh
+cd <target repo checkout>
+archon workflow run dispatch-wave --detach \
+  --input parent=<id> \
+  --input beads_dir=<tracker>/.beads
+```
+
+Start it from the target repository's checkout, since every slice cuts its
+worktree from that repository's `origin/<base>`. `beads_dir` names the
+tracker, which can live in another repository. The wave lists the parent's
+direct children that `bd ready --unassigned` reports. It never takes a
+grandchild or a claimed bead. Then it runs one implement-slice for each child,
+all at once, each in its own worktree. `--input max_slices=N` caps a wave at N
+slices and leaves the rest for later waves. The default of 0 means no cap.
+
+A wave ends once every one of its slices has finished, and a slice waiting in
+review counts as unfinished. So the next wave starts only when every slice of
+this wave has merged or handed its bead back. If the wave dispatched anything,
+its `next` node starts the following wave detached, passing on the list of
+beads the chain has tried. A later wave never retries a bead an earlier wave
+released, so a slice that failed is not rebuilt in a loop. The chain ends on
+a wave that finds nothing new. One failed slice leaves its siblings and the
+chain running. Its bead lands where implement-slice puts it: a build or
+validate failure hands it back, and a failed review keeps it claimed.
+
+```sh
+wave-status <any wave's run id, or a unique prefix> [--json]
+```
+
+This prints one row per bead across the whole chain: the wave, the bead, the
+slice run holding it, that run's state, and its worktree. The last line says
+whether the chain is still going, and if so, which run to cancel to stop it.
+A slice's state is one of `running`, `awaiting review`, `merged`,
+`released`, `kept claimed`, `not claimed` (its claim failed), `starting` or
+`not started` (the wave picked the bead but no run exists yet, or never
+will), or `cancelled` or `failed`, with `, still claimed` when the run had
+claimed the bead. `wave-status` stores nothing. It reads the most recent 1000
+runs from `archon workflow runs` and follows each wave's `previous` input back
+and forward. `--json` prints the same rows for a script to read.
+
+To stop, cancel the live wave: `archon workflow cancel <run>`. Archon cancels
+its running slices with it. There is no soft stop. A cancelled slice never
+reaches `release`, so `wave-status` shows its bead as `cancelled, still
+claimed`. Hand it back with `BEADS_DIR=<tracker>/.beads bd unclaim <id>`.
+
+The bead claim protects a bead only once a slice has claimed it. bd lets the
+same user claim a bead twice. Two dispatches of one parent started within
+seconds of each other, before the first wave's slices claim their beads, can
+build the same bead twice. Wait for the first wave's slices to show `running`
+before dispatching that parent again.
+
+On an `imr-ship` target, a slice whose ship halted hands its bead back with
+the halted ship still in its worktree. The chain will not dispatch that bead
+again, but a fresh dispatch of the same parent will, and a fresh ship over a
+halted one is what the ship rules forbid. Resume the halted ship first.
+
 ## Test it
 
 ```sh
 NO_MISTAKES_COVERAGE_DIR=$(mktemp -d) tests/local-test.sh
 ```
 
-Runs the bats suites under a line-coverage probe, replays the workflow
-fixtures through `archon workflow test`, and fails if any function in
-`bin/slice-wave` went unentered. Needs `bats`, `archon`, `bun`, and `jq`.
+Runs the bats suites under a line-coverage probe, the bun suite for
+dispatch-wave's scripts and `wave-status` (bd and archon stubbed on PATH, and
+`wave-status` read against run listings recorded from a live wave), replays
+both workflows' fixtures through `archon workflow test`, and fails if any
+function in `bin/slice-wave` went unentered. Needs `bats`, `archon`, `bun`, and `jq`.
 
 ```sh
 SLICE_E2E=1 SLICE_E2E_REPO=owner/name bats tests/e2e.bats
@@ -169,9 +231,9 @@ it the way the engine does, and holds the real output to the declared
 
 ## Install
 
-`../install.sh` links `bin/slice-wave` onto `PATH` and registers
-`workflows/implement-slice` in Archon's global scope, which is what makes the
-workflow resolve from repos other than this one. A new script here is not on
+`../install.sh` links `bin/slice-wave` and `bin/wave-status` onto `PATH` and
+registers both workflows in Archon's global scope, which is what makes them
+resolve from repos other than this one. A new script here is not on
 `PATH` until that runs from the main checkout.
 
 The tree is stow-ignored and holds its own test helpers, so

@@ -1,0 +1,201 @@
+#!/usr/bin/env bun
+//
+// wave-status <run-id> [--json]
+//
+// Prints where a dispatch-wave chain is: one row per bead across every wave,
+// with the slice run that holds it, that run's worktree, and its state. Any
+// wave's run id works, or a unique prefix of one.
+//
+// Everything comes from one read of Archon's run records; nothing is stored.
+// A wave names the wave before it in its `previous` input, and a slice is a
+// run whose parent_run_id is the wave. The read covers the most recent
+// RUN_WINDOW runs on the machine, so a chain older than that reads as cut off.
+//
+// Archon refuses `workflow runs` outside a git repository even with --all,
+// which ignores the project anyway, so the read runs from this script's own
+// checkout. That keeps wave-status working from any directory.
+
+import { realpathSync } from "node:fs";
+import { dirname } from "node:path";
+
+const RUN_WINDOW = 1000;
+// A run in one of these has not finished.
+const LIVE = new Set(["pending", "running", "paused"]);
+
+interface Node {
+  nodeId: string;
+  state: string;
+  output?: string;
+}
+
+interface Run {
+  id: string;
+  workflow_name: string;
+  status: string;
+  parent_run_id: string | null;
+  working_path: string | null;
+  started_at: string | null;
+  metadata?: { inputs?: Record<string, unknown>; child_index?: number };
+  nodes?: Node[];
+}
+
+interface Row {
+  wave: number;
+  wave_run: string;
+  bead: string;
+  run: string;
+  state: string;
+  worktree: string;
+}
+
+function fail(message: string): never {
+  console.error(`wave-status: ${message}`);
+  process.exit(2);
+}
+
+const args = process.argv.slice(2);
+const json = args.includes("--json");
+const positional = args.filter((arg) => arg !== "--json");
+if (positional.length !== 1 || positional[0].startsWith("-")) {
+  fail("usage: wave-status <run-id> [--json]");
+}
+const wanted = positional[0];
+
+const read = Bun.spawnSync(
+  ["archon", "workflow", "runs", "--all", "--json", "--verbose", "--limit", String(RUN_WINDOW)],
+  { stderr: "pipe", cwd: dirname(realpathSync(import.meta.path)) },
+);
+if (read.exitCode !== 0) {
+  fail(`archon workflow runs exited ${read.exitCode}: ${read.stderr.toString().trim()}`);
+}
+let runs: Run[];
+try {
+  runs = (JSON.parse(read.stdout.toString()) as { runs: Run[] }).runs;
+} catch {
+  fail("archon workflow runs printed something other than its JSON listing");
+}
+
+const waves = runs.filter((run) => run.workflow_name === "dispatch-wave");
+const matches = waves.filter((run) => run.id === wanted || run.id.startsWith(wanted));
+if (matches.length === 0) fail(`no dispatch-wave run ${wanted} among the last ${RUN_WINDOW} runs`);
+if (matches.length > 1) fail(`${wanted} names ${matches.length} dispatch-wave runs; give more of the id`);
+
+const previousOf = (run: Run) => String(run.metadata?.inputs?.previous ?? "");
+const byId = new Map(waves.map((run) => [run.id, run]));
+
+// Back to the first wave, then forward along the runs that name each wave as
+// their previous one.
+const chain: Run[] = [matches[0]];
+let cutOff = false;
+for (let prev = previousOf(chain[0]); prev !== ""; prev = previousOf(chain[0])) {
+  const earlier = byId.get(prev);
+  if (earlier === undefined || chain.includes(earlier)) {
+    cutOff = true;
+    break;
+  }
+  chain.unshift(earlier);
+}
+for (;;) {
+  const last = chain[chain.length - 1];
+  const later = waves
+    .filter((run) => previousOf(run) === last.id && !chain.includes(run))
+    .sort((a, b) => String(a.started_at).localeCompare(String(b.started_at)))[0];
+  if (later === undefined) break;
+  chain.push(later);
+}
+
+const node = (run: Run, id: string) => run.nodes?.find((n) => n.nodeId === id);
+const nodeState = (run: Run, id: string) => node(run, id)?.state;
+
+function nodeOutput(run: Run, id: string): Record<string, unknown> | null {
+  const output = node(run, id)?.output;
+  if (output === undefined || output === "") return null;
+  try {
+    return JSON.parse(output);
+  } catch {
+    return null;
+  }
+}
+
+// Where the slice, and so its bead, stands. Read from implement-slice's node
+// states: close only runs on a confirmed merge, release only on an unmerged
+// slice it claimed, and a failed review keeps the bead claimed for a resume.
+function sliceState(run: Run): string {
+  if (run.status === "paused") return "awaiting review";
+  if (LIVE.has(run.status)) return "running";
+  if (nodeState(run, "close") === "completed") return "merged";
+  if (nodeState(run, "release") === "completed") return "released";
+  if (nodeState(run, "review") === "failed") return "kept claimed";
+  if (nodeState(run, "claim") === "failed") return "not claimed";
+  // Cancelled or failed anywhere else: nothing handed the bead back once
+  // claim took it.
+  return nodeState(run, "claim") === "completed" ? `${run.status}, still claimed` : run.status;
+}
+
+const rows: Row[] = [];
+chain.forEach((wave, index) => {
+  const slices = runs
+    .filter((run) => run.parent_run_id === wave.id)
+    .sort((a, b) => (a.metadata?.child_index ?? 0) - (b.metadata?.child_index ?? 0));
+  for (const slice of slices) {
+    rows.push({
+      wave: index + 1,
+      wave_run: wave.id,
+      bead: String(slice.metadata?.inputs?.bead ?? ""),
+      run: slice.id,
+      state: sliceState(slice),
+      worktree: slice.working_path ?? "",
+    });
+  }
+  // A bead the wave picked that has no slice run yet is still being started,
+  // or, once the wave has ended, was refused before a run existed.
+  const picked = nodeOutput(wave, "ready")?.beads;
+  if (Array.isArray(picked)) {
+    for (const bead of picked) {
+      if (slices.some((slice) => slice.metadata?.inputs?.bead === bead)) continue;
+      const ended = !LIVE.has(wave.status);
+      rows.push({
+        wave: index + 1,
+        wave_run: wave.id,
+        bead: String(bead),
+        run: "",
+        state: ended ? "not started" : "starting",
+        worktree: "",
+      });
+    }
+  }
+});
+
+const last = chain[chain.length - 1];
+let chainState: string;
+if (LIVE.has(last.status)) {
+  chainState = `wave ${chain.length} is ${last.status}; stop the chain with: archon workflow cancel ${last.id}`;
+} else if (last.status === "completed" && nodeOutput(last, "next")?.next_run === "") {
+  chainState = `ended: wave ${chain.length} found no new ready child`;
+} else {
+  chainState = `stopped: wave ${chain.length} ${last.status}`;
+}
+
+if (json) {
+  console.log(JSON.stringify({
+    waves: chain.map((wave, index) => ({ wave: index + 1, run: wave.id, status: wave.status })),
+    rows,
+    chain: chainState,
+    cut_off: cutOff,
+  }));
+} else {
+  if (cutOff) console.log(`earlier waves are outside the last ${RUN_WINDOW} runs and are not shown`);
+  for (const [index, wave] of chain.entries()) {
+    console.log(`wave ${index + 1}  ${wave.id}  ${wave.status}`);
+  }
+  const table = [["WAVE", "BEAD", "RUN", "STATE", "WORKTREE"], ...rows.map((row) => [
+    String(row.wave), row.bead, row.run || "-", row.state, row.worktree || "-",
+  ])];
+  const widths = table[0].map((_, col) => Math.max(...table.map((line) => line[col].length)));
+  console.log("");
+  for (const line of table) {
+    console.log(line.map((cell, col) => (col === line.length - 1 ? cell : cell.padEnd(widths[col]))).join("  "));
+  }
+  console.log("");
+  console.log(`chain: ${chainState}`);
+}

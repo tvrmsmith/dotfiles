@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 #
 # Targeted local validation for the slice pipeline: the bats suites that
-# drive `bin/slice-wave` and the declared fixtures for the implement-slice
-# workflow. Every path below is relative to slice-pipeline/, so this runner
+# drive `bin/slice-wave`, the bun suite that drives dispatch-wave's scripts and
+# `bin/wave-status`, and the declared fixtures for both workflows. Every path below is relative to slice-pipeline/, so this runner
 # moves with the subproject rather than with the repo hosting it.
 #
 # Writes into $NO_MISTAKES_COVERAGE_DIR, which lives outside the worktree:
 #   report.xml            bats JUnit report
 #   archon-fixtures.xml   JUnit report for the workflow fixture run
+#   bun-report.xml        bun test JUnit report
 #   lcov.info             line coverage for bin/slice-wave
 set -uo pipefail
 
@@ -28,7 +29,7 @@ esac
 mkdir -p "$OUT" || exit 1
 
 SUITES="tests/slice-wave.bats tests/validate.bats tests/review-round.bats tests/review-watch.bats tests/merge-and-close.bats tests/implement-slice-wiring.bats tests/e2e-cleanup.bats tests/e2e-sandbox.bats"
-WORKFLOW_DIR="workflows/implement-slice"
+WORKFLOWS="implement-slice dispatch-wave"
 COV_SOURCE="bin/slice-wave"
 
 WORK="$(mktemp -d)"
@@ -46,6 +47,10 @@ bats_rc=$?
 
 unset BASH_ENV SLICE_COV_BASENAME SLICE_COV_OUT
 
+# --- bun suite --------------------------------------------------------------
+bun test --reporter=junit --reporter-outfile="$OUT/bun-report.xml" tests/dispatch-wave.test.ts
+bun_rc=$?
+
 # --- workflow fixtures ------------------------------------------------------
 # `archon workflow test` is the only seam for the YAML half of the change: it
 # replays fixtures/*.stubs.yaml offline, never contacting a provider.
@@ -55,7 +60,7 @@ unset BASH_ENV SLICE_COV_BASENAME SLICE_COV_OUT
 # and a path argument only filters what those already found, so a tree outside
 # all three is never discovered. Verified on Archon 0.10.1.
 #
-# Hence a throwaway ARCHON_HOME whose global scope holds this workflow. Two
+# Hence a throwaway ARCHON_HOME whose global scope holds these workflows. Two
 # details are load-bearing:
 #
 #   copy, not symlink  fixture discovery does not follow symlinks, even though
@@ -67,32 +72,46 @@ unset BASH_ENV SLICE_COV_BASENAME SLICE_COV_OUT
 #
 # Copying also means this checks the tree it ships with rather than whatever
 # version install.sh last linked onto the machine.
-fixture_log="$WORK/fixtures.log"
-if command -v archon >/dev/null 2>&1; then
-	fixture_home="$WORK/archon-home"
-	mkdir -p "$fixture_home/workflows/slice-pipeline"
-	cp -R "$ROOT/$WORKFLOW_DIR" "$fixture_home/workflows/slice-pipeline/"
-	ARCHON_HOME="$fixture_home" archon workflow test implement-slice >"$fixture_log" 2>&1
-	fixture_rc=$?
-else
-	fixture_rc=127
-	echo "archon is not on PATH, so the implement-slice fixtures did not run" >"$fixture_log"
-fi
-cat "$fixture_log"
+# One log and one exit code per workflow, so the report names the workflow
+# whose fixtures failed and the code archon really exited with.
+fixture_rc=0
+cases=""
+for workflow in $WORKFLOWS; do
+	log="$WORK/fixtures-$workflow.log"
+	if command -v archon >/dev/null 2>&1; then
+		fixture_home="$WORK/archon-home"
+		mkdir -p "$fixture_home/workflows/slice-pipeline"
+		cp -R "$ROOT/workflows/$workflow" "$fixture_home/workflows/slice-pipeline/"
+		ARCHON_HOME="$fixture_home" archon workflow test "$workflow" >"$log" 2>&1
+		rc=$?
+	else
+		rc=127
+		echo "archon is not on PATH, so the $workflow fixtures did not run" >"$log"
+	fi
+	cat "$log"
+	[ "$rc" -eq 0 ] || fixture_rc=$rc
+	cases="$cases $workflow:$rc"
+done
 
 {
 	printf '<?xml version="1.0" encoding="UTF-8"?>\n'
 	printf '<testsuites>\n'
-	printf '  <testsuite name="archon-fixtures" tests="1" failures="%s">\n' \
-		"$([ "$fixture_rc" -eq 0 ] && echo 0 || echo 1)"
-	printf '    <testcase classname="%s" name="declared fixtures replay">\n' "$WORKFLOW_DIR"
-	if [ "$fixture_rc" -ne 0 ]; then
-		printf '      <failure message="archon workflow test exited %s"><![CDATA[\n' "$fixture_rc"
-		# CDATA cannot nest, so split any literal terminator in the log.
-		sed 's/]]>/]]]]><![CDATA[>/g' "$fixture_log"
-		printf ']]></failure>\n'
-	fi
-	printf '    </testcase>\n  </testsuite>\n</testsuites>\n'
+	printf '  <testsuite name="archon-fixtures" tests="%s" failures="%s">\n' \
+		"$(echo $WORKFLOWS | wc -w | tr -d ' ')" \
+		"$(printf '%s\n' $cases | grep -vc ':0$')"
+	for case in $cases; do
+		workflow="${case%%:*}"
+		rc="${case##*:}"
+		printf '    <testcase classname="workflows/%s" name="declared fixtures replay">\n' "$workflow"
+		if [ "$rc" -ne 0 ]; then
+			printf '      <failure message="archon workflow test exited %s"><![CDATA[\n' "$rc"
+			# CDATA cannot nest, so split any literal terminator in the log.
+			sed 's/]]>/]]]]><![CDATA[>/g' "$WORK/fixtures-$workflow.log"
+			printf ']]></failure>\n'
+		fi
+		printf '    </testcase>\n'
+	done
+	printf '  </testsuite>\n</testsuites>\n'
 } >"$OUT/archon-fixtures.xml"
 
 # --- LCOV -------------------------------------------------------------------
@@ -168,7 +187,7 @@ if [ -n "$uncalled" ]; then
 fi
 
 fn_hit="$(awk -F: '/^FNH:/ { print $2 }' "$OUT/lcov.info")"
-printf 'local-test: bats rc=%s, fixtures rc=%s, %s lines and %s functions covered in %s\n' \
-	"$bats_rc" "$fixture_rc" "$covered" "$fn_hit" "$COV_SOURCE"
+printf 'local-test: bats rc=%s, bun rc=%s, fixtures rc=%s, %s lines and %s functions covered in %s\n' \
+	"$bats_rc" "$bun_rc" "$fixture_rc" "$covered" "$fn_hit" "$COV_SOURCE"
 
-[ "$bats_rc" -eq 0 ] && [ "$fixture_rc" -eq 0 ]
+[ "$bats_rc" -eq 0 ] && [ "$bun_rc" -eq 0 ] && [ "$fixture_rc" -eq 0 ]
