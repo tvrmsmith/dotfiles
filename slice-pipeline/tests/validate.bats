@@ -41,6 +41,14 @@ validate() {
   ( cd "$REPO" && "$HELPER" validate --bead demo-1 --beads-dir /tmp/beads-demo "$@" )
 }
 
+# Commits the slice with Seam and Assumption trailers, as an unattended
+# implement-with-subagents build writes them.
+commit_slice_with_decisions() {
+  git -C "$REPO" -c user.email=t@example.com -c user.name=Test commit --quiet --allow-empty \
+    -m "feat: demo slice" -m "Body text." \
+    -m "$(printf '%s\n' 'Seam: Store.save (planned)' 'Seam: Api.post (moved: the retry belongs at the HTTP edge)' 'Assumption: retries are idempotent' 'Co-Authored-By: Bot <bot@example.com>')"
+}
+
 @test "validate skips every tool and reports undelivered when verification did not pass" {
   rc=0; out="$(validate --verified false)" || rc=$?
   equals "$rc" 0
@@ -91,6 +99,15 @@ validate() {
   contains "$body" "Fix rounds: 1"
   contains "$body" "Checked the rm exit status, per review-2"
   contains "$body" "This no-mistakes version does not expose findings history, so this record lists only what it reports at the end of the run."
+  lacks "$body" "Build decisions"
+}
+
+@test "validate copies the slice commit's Seam and Assumption trailers into the findings record" {
+  commit_slice_with_decisions
+  validate --verified true >/dev/null
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "$(printf '### Build decisions\n\nSeams:\n- Store.save (planned)\n- Api.post (moved: the retry belongs at the HTTP edge)\n\nAssumptions:\n- retries are idempotent\n')"
+  lacks "$body" "Co-Authored-By"
 }
 
 @test "validate lists every ask-user finding verbatim and tallies every finding by step" {
@@ -567,6 +584,16 @@ write_repos_config() {
   equals "$(printf '%s\n' "$body" | head -1)" "<!-- slice-pipeline:findings-record -->"
   contains "$body" "Validator: imr pr ship --autofix-review"
   contains "$body" "Outcome: opened"
+}
+
+@test "validate copies the slice commit's trailers into an imr-ship findings record" {
+  write_repos_config '{"owner/repo":{"validator":"imr-ship"}}'
+  export GH_PR_LIST_JSON='[{"number":42,"url":"https://github.com/owner/repo/pull/42"}]'
+  commit_slice_with_decisions
+  validate --verified true >/dev/null
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "$(printf 'Seams:\n- Store.save (planned)\n')"
+  contains "$body" "$(printf 'Assumptions:\n- retries are idempotent\n')"
 }
 
 @test "validate reports a halted imr pr ship as undelivered and names the line it stopped on and how to resume" {

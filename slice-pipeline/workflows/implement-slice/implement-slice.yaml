@@ -55,10 +55,10 @@ nodes:
   # AskUserQuestion because Archon has no in-node human channel. The tool is
   # permitted by default, and a node that calls it has no way for an answer to
   # come back, so it hangs until a timeout. That denial is what makes the
-  # skill's unattended mode survivable. idle_timeout is raised to 90 minutes
-  # because this node's whole job is to sit behind subagents that each run for
-  # many minutes without the parent emitting a token; the 30-minute default
-  # would kill it mid-slice.
+  # skill's unattended mode survivable. Archon pauses idle_timeout while a
+  # tool call or background work is open, so the subagents this node waits on
+  # do not count against it; the 90 minutes bounds only a node gone silent
+  # with nothing open.
   - id: build
     depends_on: [claim]
     idle_timeout: 5400000
