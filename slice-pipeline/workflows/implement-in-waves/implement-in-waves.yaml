@@ -99,3 +99,21 @@ nodes:
         next_run: {type: string}
         reason: {type: string}
       required: [next_run, reason]
+
+  # Only on the chain's last wave, the one that found nothing new: closes the
+  # parent when every direct child is closed, and otherwise leaves it open and
+  # names the children still open, for wave-status to report. A composing
+  # workflow cannot do this, since it sees only the first wave of the chain.
+  - id: close-parent
+    depends_on: [next]
+    when: "$next.output.next_run == ''"
+    runtime: bun
+    script: close-parent
+    timeout: 120000
+    output_format:
+      type: object
+      properties:
+        closed: {type: boolean}
+        open: {type: array}
+        reason: {type: string}
+      required: [closed, open, reason]

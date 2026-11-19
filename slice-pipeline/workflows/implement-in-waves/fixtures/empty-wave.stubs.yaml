@@ -1,8 +1,8 @@
 # Nothing new is ready. The fan-out completes at once with no child and needs
-# no stub, and `next` still runs, which is where the chain ends.
+# no stub, `next` ends the chain, and close-parent runs to settle the parent.
 fixture:
   expect: completed
-  reached: [ready, slices, next]
+  reached: [ready, slices, next, close-parent]
   inputs:
     parent: demo
     beads_dir: /tmp/beads
@@ -13,3 +13,7 @@ ready:
 next:
   next_run: ""
   reason: this wave found no new ready child, so the chain ends
+close-parent:
+  closed: true
+  open: []
+  reason: "parent demo closed: all 1 children are closed"

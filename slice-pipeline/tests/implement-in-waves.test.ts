@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 const ROOT = resolve(import.meta.dir, "..");
 const READY = join(ROOT, "workflows/implement-in-waves/scripts/ready.ts");
 const NEXT = join(ROOT, "workflows/implement-in-waves/scripts/next.ts");
+const CLOSE_PARENT = join(ROOT, "workflows/implement-in-waves/scripts/close-parent.ts");
 const WAVE_STATUS = join(ROOT, "bin/wave-status");
 // Recorded from the live smoke: `archon workflow runs --all --json --verbose`,
 // trimmed to the smoke's runs and to the fields wave-status reads, with the
@@ -22,7 +23,8 @@ const MIDRUN = join(import.meta.dir, "fixtures/wave/runs-midrun.json");
 let bin: string;
 
 // A stub that logs `<BEADS_DIR>\t<argv>` and prints the file named by
-// <NAME>_OUT, exiting with <NAME>_EXIT.
+// <NAME>_OUT, exiting with <NAME>_EXIT. <NAME>_OUT_<subcommand> and
+// <NAME>_EXIT_<subcommand> (bd list, bd show, ...) win over those.
 function stub(name: string) {
   const path = join(bin, name);
   const upper = name.toUpperCase();
@@ -30,8 +32,10 @@ function stub(name: string) {
     path,
     `#!/bin/bash
 printf '%s\\t%s\\n' "\${BEADS_DIR:-}" "$*" >> "${bin}/${name}.log"
-[ -n "\${${upper}_OUT:-}" ] && cat "\${${upper}_OUT}"
-exit "\${${upper}_EXIT:-0}"
+out="${upper}_OUT_\${1:-}"; out="\${!out:-\${${upper}_OUT:-}}"
+code="${upper}_EXIT_\${1:-}"; code="\${!code:-\${${upper}_EXIT:-0}}"
+[ -n "$out" ] && cat "$out"
+exit "$code"
 `,
   );
   chmodSync(path, 0o755);
@@ -185,6 +189,64 @@ describe("next", () => {
   });
 });
 
+describe("close-parent", () => {
+  const inputs = { INPUTS_PARENT: "p", INPUTS_BEADS_DIR: "/tracker/.beads", WORKFLOW_ID: "last-wave" };
+  const bead = (id: string, status: string, parent = "p", assignee = "") => ({ id, status, parent, assignee });
+  const children = (...rows: object[]) => ({ BD_OUT_list: output("bd-list", JSON.stringify(rows)) });
+  const parentIs = (status: string) => ({ BD_OUT_show: output("bd-show", JSON.stringify([bead("p", status, "")])) });
+
+  test("closes the parent once every direct child is closed", () => {
+    const r = run(["bun", CLOSE_PARENT], { ...inputs, ...children(bead("p.1", "closed"), bead("p.2", "closed")), ...parentIs("open") });
+    expect(r.code).toBe(0);
+    expect(r.json()).toEqual({ closed: true, open: [], reason: "parent p closed: all 2 children are closed" });
+    expect(calls("bd")).toEqual([
+      "/tracker/.beads\tlist --parent p --all --json --limit 0",
+      "/tracker/.beads\tshow p --json",
+      "/tracker/.beads\tclose p --reason every child closed; closed by implement-in-waves run last-wave",
+    ]);
+  });
+
+  test("leaves the parent open and names every child still open", () => {
+    const r = run(["bun", CLOSE_PARENT], {
+      ...inputs,
+      ...children(bead("p.1", "closed"), bead("p.2", "open"), bead("p.3", "in_progress", "p", "someone")),
+    });
+    expect(r.code).toBe(0);
+    expect(r.json()).toEqual({
+      closed: false,
+      open: [{ id: "p.2", status: "open", assignee: "" }, { id: "p.3", status: "in_progress", assignee: "someone" }],
+      reason: "parent p left open: p.2 (open), p.3 (in_progress)",
+    });
+    expect(calls("bd").some((line) => line.includes("\tclose "))).toBe(false);
+  });
+
+  test("judges direct children only", () => {
+    const r = run(["bun", CLOSE_PARENT], {
+      ...inputs, ...children(bead("p.1", "closed"), bead("p.1.1", "open", "p.1")), ...parentIs("open"),
+    });
+    expect(r.json().closed).toBe(true);
+  });
+
+  test("does not close a parent already closed", () => {
+    const r = run(["bun", CLOSE_PARENT], { ...inputs, ...children(bead("p.1", "closed")), ...parentIs("closed") });
+    expect(r.json()).toEqual({ closed: true, open: [], reason: "parent p was already closed" });
+    expect(calls("bd").some((line) => line.includes("\tclose "))).toBe(false);
+  });
+
+  test("fails the node when bd refuses the close", () => {
+    const r = run(["bun", CLOSE_PARENT], { ...inputs, ...children(bead("p.1", "closed")), ...parentIs("open"), BD_EXIT_close: "1" });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("bd close p exited 1");
+  });
+
+  test("fails the node when bd cannot list the children, rather than closing blind", () => {
+    const r = run(["bun", CLOSE_PARENT], { ...inputs, BD_EXIT_list: "2" });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("bd list exited 2");
+    expect(calls("bd")).toHaveLength(1);
+  });
+});
+
 // The fixtures stub both scripts away and the tests above hand-set their
 // inputs, so both stay green if the workflow and a script drift apart. This
 // reads what implement-in-waves.yaml declares about each script node and holds the
@@ -196,7 +258,7 @@ describe("implement-in-waves.yaml wiring", () => {
   const node = (id: string) => workflow.nodes.find((n: any) => n.id === id);
   const envName = (name: string) => `INPUTS_${name.toUpperCase()}`;
 
-  test.each([["ready", READY], ["next", NEXT]])("every input %s reads is bound", (id, path) => {
+  test.each([["ready", READY], ["next", NEXT], ["close-parent", CLOSE_PARENT]])("every input %s reads is bound", (id, path) => {
     const bound = new Set([...Object.keys(workflow.inputs), ...Object.keys(node(id).with ?? {})].map(envName));
     const read = [...readFileSync(path, "utf8").matchAll(/INPUTS_[A-Z_]+/g)].map((m) => m[0]);
     expect(read.length).toBeGreaterThan(0);
@@ -224,6 +286,14 @@ describe("implement-in-waves.yaml wiring", () => {
       ARCHON_OUT: output("archon", '{"runId":"w2"}'),
     });
     expect(Object.keys(r.json()).sort()).toEqual([...node("next").output_format.required].sort());
+  });
+  test("close-parent's output is what close-parent declares, and it runs only when next ends the chain", () => {
+    const r = run(["bun", CLOSE_PARENT], {
+      INPUTS_PARENT: "p", INPUTS_BEADS_DIR: "/b",
+      BD_OUT_list: output("bd-list", JSON.stringify([child("p.1")])),
+    });
+    expect(Object.keys(r.json()).sort()).toEqual([...node("close-parent").output_format.required].sort());
+    expect(node("close-parent").when).toBe("$next.output.next_run == ''");
   });
 });
 
@@ -254,7 +324,7 @@ describe("wave-status", () => {
       expect(r.code).toBe(0);
       expect(r.json().waves.map((w: Run) => w.run)).toEqual([WAVE_1, WAVE_2, WAVE_3]);
       expect(rows(r)).toEqual(["1 wv-2nc.1 merged", "1 wv-2nc.2 released", "2 wv-2nc.3 merged"]);
-      expect(r.json().chain).toBe("ended: wave 3 found no new ready child");
+      expect(r.json().chain).toBe("ended: wave 3 found no new ready child; the parent was not checked");
     }
   });
 
@@ -281,7 +351,7 @@ describe("wave-status", () => {
     const r = run([WAVE_STATUS, WAVE_1], listing(recorded(FINAL)));
     expect(r.code).toBe(0);
     expect(r.stdout).toMatch(/^1 +wv-2nc\.2 +0a51a869-2804-491e-87d0-a3d9e6f3f595 +released +\/home\/user\//m);
-    expect(r.stdout).toContain("chain: ended: wave 3 found no new ready child");
+    expect(r.stdout).toContain("chain: ended: wave 3 found no new ready child; the parent was not checked");
   });
 
   test.each([
@@ -322,10 +392,22 @@ describe("wave-status", () => {
     expect(r.json().waves.map((w: Run) => w.run)).toEqual([WAVE_2, WAVE_3]);
   });
 
-  test("a chain whose last wave failed reads as stopped", () => {
+  test("a chain whose last wave failed before its next node reads as stopped", () => {
     const runs = recorded(FINAL);
-    runs.find((r) => r.id === WAVE_3)!.status = "failed";
+    const wave3 = runs.find((r) => r.id === WAVE_3)!;
+    wave3.status = "failed";
+    wave3.nodes = [{ nodeId: "ready", state: "failed" }, { nodeId: "slices", state: "skipped" }, { nodeId: "next", state: "skipped" }];
     expect(status(runs, WAVE_1).json().chain).toBe("stopped: wave 3 failed");
+  });
+
+  test("a chain whose parent failed to close says so", () => {
+    const runs = recorded(FINAL);
+    const wave3 = runs.find((r) => r.id === WAVE_3)!;
+    wave3.status = "failed";
+    wave3.nodes.push({ nodeId: "close-parent", state: "failed" });
+    expect(status(runs, WAVE_1).json().chain).toBe(
+      `ended: wave 3 found no new ready child; closing the parent failed; see archon workflow get ${WAVE_3}`,
+    );
   });
 
   test.each([
