@@ -31,7 +31,7 @@ NM_DB="${NM_STATE_DB:-$HOME/.no-mistakes/state.sqlite}"
 # skill-arm.sh hook. Recorded per run so the two experiments can be read apart.
 CS_ARMS="${XDG_STATE_HOME:-$HOME/.local/state}/coding-standards/arms.jsonl"
 SESSION="${CLAUDE_CODE_SESSION_ID:-}"
-# The stopping rule's sample size per arm; METRICS.md defers to this value.
+# The stopping rule's sample size per arm; EXPERIMENT.md defers to this value.
 STOP_AT="${IWS_AB_STOP_AT:-20}"
 
 # The rows the experiment counts: assigned, unforced, and only the newest row
@@ -187,7 +187,7 @@ stopping_notice() {
   if jq -Rs --arg e "$EXPERIMENT" --argjson n "$STOP_AT" "$COUNTED"'
       [split("\n")[] | fromjson?] | counted($e) | map(select(.status == "ready"))
       | group_by(.arm) | map(select(length >= $n)) | length == 2' "$METRICS" | grep -q true; then
-    echo "ab.sh: $EXPERIMENT stopping point reached: both arms hold $STOP_AT ready slices. Run ab.sh report and apply METRICS.md's stopping rule."
+    echo "ab.sh: $EXPERIMENT stopping point reached: both arms hold $STOP_AT ready slices. Run ab.sh report and apply the stopping rule in ~/.claude/skills/implement-with-subagents/EXPERIMENT.md."
   fi
 }
 
