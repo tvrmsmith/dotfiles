@@ -129,9 +129,9 @@ Every assignment green, parent runs the project-wide checks the workers deferred
 
 Commit on a **feature branch** (create one if on the default branch, since the ship flow validates committed history on a non-default branch).
 
-Unattended, the commit body carries the §8 `seams` and `assumptions` lines: the report itself reaches no reviewer, and the commit travels with the diff they read.
+Unattended, the commit message ends in git trailers: one `Seam:` per §8 `seams` line and one `Assumption:` per §8 `assumptions` entry, each on a single line. The report itself reaches no reviewer; slice-pipeline copies these trailers into the findings record on the pull request.
 
-Done when the whole slice is one commit on a feature branch, its body carrying the `seams` and `assumptions` lines when unattended.
+Done when the whole slice is one commit on a feature branch, its message ending in the `Seam:` and `Assumption:` trailers when unattended.
 
 ## 7. Metrics
 

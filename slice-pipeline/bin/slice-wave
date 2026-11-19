@@ -841,12 +841,27 @@ find_open_pr() {
 	esac
 }
 
+# Prints the findings-record section listing the build's decisions: the
+# Seam and Assumption trailers an unattended implement-with-subagents build
+# writes on the slice commit at HEAD. Prints nothing when it carries neither,
+# as an attended or hand-written slice does.
+build_decisions_section() {
+	local seams assumptions
+	seams="$(git log -1 --format='%(trailers:key=Seam,valueonly,unfold)' HEAD 2>/dev/null | sed '/^$/d')"
+	assumptions="$(git log -1 --format='%(trailers:key=Assumption,valueonly,unfold)' HEAD 2>/dev/null | sed '/^$/d')"
+	[ -n "$seams$assumptions" ] || return 0
+	printf '### Build decisions\n\n'
+	[ -z "$seams" ] || printf 'Seams:\n%s\n\n' "$(printf '%s\n' "$seams" | sed 's/^/- /')"
+	[ -z "$assumptions" ] || printf 'Assumptions:\n%s\n\n' "$(printf '%s\n' "$assumptions" | sed 's/^/- /')"
+}
+
 # Prints the markdown comment that records a drive on its pull request, from
 # the outcome $1, the fix count $2 and its `step: summary` lines $3, the
-# outstanding findings $4, the error or gate text $5, and the run's full TOON
-# $6, whose finding_history closes the record (see findings_history_section).
+# outstanding findings $4, the error or gate text $5, the run's full TOON
+# $6, whose finding_history follows (see findings_history_section), and the
+# build decisions section $7, which closes the record.
 findings_record() {
-	local outcome="$1" fix_rounds="$2" fixes="$3" findings="$4" problem="$5" toon="$6"
+	local outcome="$1" fix_rounds="$2" fixes="$3" findings="$4" problem="$5" toon="$6" decisions="$7"
 	printf '%s\n' '<!-- slice-pipeline:findings-record -->' '## slice-pipeline findings record' ''
 	printf 'Drive mode: yes\nOutcome: %s\nFix rounds: %s\n' "${outcome:-none reported}" "$fix_rounds"
 	[ -z "$fixes" ] || printf '%s\n' "$fixes" | sed 's/^/- /'
@@ -854,13 +869,15 @@ findings_record() {
 	[ -z "$problem" ] || printf '\nError: %s\n' "$problem"
 	printf '\n'
 	findings_history_section "$toon"
+	[ -z "$decisions" ] || printf '\n%s\n' "$decisions"
 }
 
 # Sets the caller's outcome, pr_number, pr_url, repo, fix_rounds,
 # record_posted and reason locals from one no-mistakes drive of bead $1's
-# committed slice, and posts the findings record on its pull request.
+# committed slice, and posts the findings record, with build decisions
+# section $3, on its pull request.
 validate_slice() {
-	local bead="$1" beads_dir="$2" intent toon problem="" fixes findings still_running=false
+	local bead="$1" beads_dir="$2" decisions="$3" intent toon problem="" fixes findings still_running=false
 	intent="$(bead_intent "$bead" "$beads_dir")" || {
 		add_reason "cannot read bead $bead with bd show, so no-mistakes never ran"
 		return
@@ -908,7 +925,7 @@ validate_slice() {
 		[ "$pr_number" -gt 0 ] || return
 	fi
 
-	if findings_record "$outcome" "$fix_rounds" "$fixes" "$findings" "$problem" "$toon" \
+	if findings_record "$outcome" "$fix_rounds" "$fixes" "$findings" "$problem" "$toon" "$decisions" \
 		| gh pr comment "$pr_url" --body-file - >/dev/null; then
 		record_posted=true
 	else
@@ -917,20 +934,21 @@ validate_slice() {
 }
 
 # Prints the findings record of an imr pr ship that ended with outcome $1,
-# and the line $2 it stopped on, if any.
+# the line $2 it stopped on, if any, and the build decisions section $3.
 ship_record() {
-	local outcome="$1" stop="$2"
+	local outcome="$1" stop="$2" decisions="$3"
 	printf '%s\n' '<!-- slice-pipeline:findings-record -->' '## slice-pipeline findings record' ''
 	printf 'Validator: imr pr ship --autofix-review\nOutcome: %s\n' "$outcome"
 	[ -z "$stop" ] || printf 'Stopped on: %s\n' "$stop"
 	printf '\n%s\n' 'imr pr ship writes its review findings, its decisions and anything it left unfiled into this pull request'"'"'s description.'
+	[ -z "$decisions" ] || printf '\n%s\n' "$decisions"
 }
 
 # Sets the caller's outcome, pr_number, pr_url, repo, record_posted and reason
 # locals from one `imr pr ship --autofix-review` of bead $1's committed slice,
-# and posts the findings record on its pull request. --autofix-review stops
-# the ship before ci, so review and merge stay the pipeline's, and outcome
-# reads opened once it exits 0.
+# and posts the findings record, with build decisions section $3, on its pull
+# request. --autofix-review stops the ship before ci, so review and merge stay
+# the pipeline's, and outcome reads opened once it exits 0.
 #
 # Any other exit is a halt or a failure, and outcome reads halted. The ship
 # waits there for a person: its gates take a decision the pipeline cannot
@@ -940,7 +958,7 @@ ship_record() {
 # leaves resumable, so validate still reports ahead of its node's 4 h
 # timeout. Not SIGINT: bash starts a background job with SIGINT ignored.
 ship_slice() {
-	local bead="$1" beads_dir="$2" intent log pid rc=0 stop limit="${SLICE_WAVE_DRIVE_LIMIT_SECONDS:-12600}"
+	local bead="$1" beads_dir="$2" decisions="$3" intent log pid rc=0 stop limit="${SLICE_WAVE_DRIVE_LIMIT_SECONDS:-12600}"
 	intent="$(bead_intent "$bead" "$beads_dir")" || {
 		add_reason "cannot read bead $bead with bd show, so imr pr ship never ran"
 		return
@@ -984,7 +1002,7 @@ ship_slice() {
 	find_open_pr "$repo"
 	[ "$pr_number" -gt 0 ] || return
 
-	if ship_record "$outcome" "$stop" | gh pr comment "$pr_url" --body-file - >/dev/null; then
+	if ship_record "$outcome" "$stop" "$decisions" | gh pr comment "$pr_url" --body-file - >/dev/null; then
 		record_posted=true
 	else
 		add_reason "cannot post the findings record on pull request $pr_url"
@@ -1015,15 +1033,17 @@ cmd_validate() {
 	}
 
 	local outcome="" pr_number=0 pr_url="" repo="" fix_rounds=0 record_posted=false reason=""
-	local validator="" validator_error=""
+	local validator="" validator_error="" decisions
+	# Read before the validator runs, while HEAD is still the slice commit.
+	decisions="$(build_decisions_section)"
 	case "$verified" in
 		true)
 			if ! cwd_validator; then
 				reason="$validator_error, so nothing was validated"
 			elif [ "$validator" = imr-ship ]; then
-				ship_slice "$bead" "$beads_dir"
+				ship_slice "$bead" "$beads_dir" "$decisions"
 			else
-				validate_slice "$bead" "$beads_dir"
+				validate_slice "$bead" "$beads_dir" "$decisions"
 			fi
 			;;
 		false) reason="verification did not pass, so validation was skipped" ;;
