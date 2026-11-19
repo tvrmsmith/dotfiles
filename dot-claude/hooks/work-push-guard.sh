@@ -88,6 +88,16 @@ judge_url() {
   allowed "$owner" || deny "$2 ($owner)"
 }
 
+# Resolves path $2 the way the shell would from directory $1: ~ is HOME.
+resolve_dir() {
+  case "$2" in
+    \~) printf '%s' "$HOME" ;;
+    \~/*) printf '%s/%s' "$HOME" "${2#\~/}" ;;
+    /*) printf '%s' "$2" ;;
+    *) printf '%s/%s' "$1" "$2" ;;
+  esac
+}
+
 origin_url() { git -C "$1" remote get-url --push origin 2>/dev/null || true; }
 
 check_git_push() { # $1 dir, rest: args after `push`
@@ -102,7 +112,9 @@ check_git_push() { # $1 dir, rest: args after `push`
     shift
   done
   if [ -z "$remote" ]; then
-    remote=$(git -C "$dir" rev-parse --abbrev-ref '@{push}' 2>/dev/null | cut -d/ -f1 || true)
+    # On failure (upstream gone) git still prints the literal '@{push}'.
+    remote=$(git -C "$dir" rev-parse --abbrev-ref '@{push}' 2>/dev/null) || remote=""
+    remote=${remote%%/*}
     [ -n "$remote" ] || remote=origin
   fi
   case "$remote" in
@@ -163,14 +175,13 @@ while IFS= read -r seg; do
   rest=("${w[@]:$((i + 1))}")
   case "$prog" in
     cd)
-      target=${rest[0]:-$HOME}
-      case "$target" in /*) dir=$target ;; *) dir="$dir/$target" ;; esac
+      dir=$(resolve_dir "$dir" "${rest[0]:-~}")
       ;;
     git)
       gdir=$dir
       while [ ${#rest[@]} -gt 0 ]; do
         case "${rest[0]}" in
-          -C) gdir=${rest[1]:-$gdir}; rest=("${rest[@]:2}") ;;
+          -C) gdir=$(resolve_dir "$gdir" "${rest[1]:-.}"); rest=("${rest[@]:2}") ;;
           -c) rest=("${rest[@]:2}") ;;
           -*) rest=("${rest[@]:1}") ;;
           *) break ;;
