@@ -1,6 +1,8 @@
 # One slice run fails outright. The fan-out's all_done join still completes
 # the node with a failure marker in that slot, so its sibling's result stands
 # and `next` still runs: the chain carries on past one failed slice.
+# close-parent is deliberately unstubbed: a wave that starts the next one
+# must skip it, and reaching an unstubbed node fails the fixture.
 fixture:
   expect: completed
   reached: [ready, slices, next]

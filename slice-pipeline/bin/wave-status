@@ -170,8 +170,16 @@ const last = chain[chain.length - 1];
 let chainState: string;
 if (LIVE.has(last.status)) {
   chainState = `wave ${chain.length} is ${last.status}; stop the chain with: archon workflow cancel ${last.id}`;
-} else if (last.status === "completed" && nodeOutput(last, "next")?.next_run === "") {
-  chainState = `ended: wave ${chain.length} found no new ready child`;
+} else if (nodeOutput(last, "next")?.next_run === "") {
+  // The last wave's close-parent says whether the parent closed, or which
+  // children kept it open.
+  const parent = nodeOutput(last, "close-parent");
+  const outcome = parent !== null
+    ? String(parent.reason)
+    : nodeState(last, "close-parent") === "failed"
+      ? `closing the parent failed; see archon workflow get ${last.id}`
+      : "the parent was not checked";
+  chainState = `ended: wave ${chain.length} found no new ready child; ${outcome}`;
 } else {
   chainState = `stopped: wave ${chain.length} ${last.status}`;
 }

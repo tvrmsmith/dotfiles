@@ -128,7 +128,10 @@ this wave has merged or handed its bead back. If the wave dispatched anything,
 its `next` node starts the following wave detached, passing on the list of
 beads the chain has tried. A later wave never retries a bead an earlier wave
 released, so a slice that failed is not rebuilt in a loop. The chain ends on
-a wave that finds nothing new. One failed slice leaves its siblings and the
+a wave that finds nothing new. That wave's `close-parent` node closes the
+parent once every direct child is closed. Otherwise it leaves the parent open
+and names the children still open, such as a released or kept-claimed bead.
+It never forces the close. One failed slice leaves its siblings and the
 chain running. Its bead lands where implement-slice puts it: a build or
 validate failure hands it back, and a failed review keeps it claimed.
 
@@ -139,6 +142,8 @@ wave-status <any wave's run id, or a unique prefix> [--json]
 This prints one row per bead across the whole chain: the wave, the bead, the
 slice run holding it, that run's state, and its worktree. The last line says
 whether the chain is still going, and if so, which run to cancel to stop it.
+An ended chain's last line also says whether the parent closed, or which
+children kept it open.
 A slice's state is one of `running`, `awaiting review`, `merged`,
 `released`, `kept claimed`, `not claimed` (its claim failed), `starting` or
 `not started` (the wave picked the bead but no run exists yet, or never

@@ -1,6 +1,8 @@
 # Two ready children: each gets one implement-slice child, and `next` runs
 # once both have finished, handed this wave's beads and the chain's tried
 # list. The two slice results stand in for implement-slice's merge output.
+# close-parent is deliberately unstubbed: a wave that starts the next one
+# must skip it, and reaching an unstubbed node fails the fixture.
 fixture:
   expect: completed
   reached: [ready, slices, next]
