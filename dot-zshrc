@@ -235,6 +235,9 @@ clcwf() { (export CLAUDE_CODE_DISABLE_WORKFLOWS=0; claude-launcher --dangerously
 # entirely. See dotfiles-7wt.
 [ -f "$XDG_CONFIG_HOME/op/plugins.sh" ] && source "$XDG_CONFIG_HOME/op/plugins.sh"
 unalias gh 2>/dev/null
+# Newer op writes a function instead of an alias. A function beats PATH just the
+# same, and unalias leaves it in place.
+unfunction gh 2>/dev/null
 
 # bun completions
 [ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
