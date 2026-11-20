@@ -1,0 +1,208 @@
+name: implement-in-waves
+description: |
+  PROTOTYPE for dotfiles-co3.36, throwaway. A copy of co3.11's
+  implement-in-waves (with co3.38's close-parent) plus two gates: a per-wave
+  seam gate between `ready` and `slices`, and an end gate after close-parent
+  that offers to re-dispatch the children the chain left open.
+
+  Use when: running the co3.36 prototype from its scratch repo (setup.sh).
+  NOT for: real work.
+
+model: large
+
+worktree:
+  enabled: false
+mutates_checkout: false
+
+inputs:
+  parent:
+    required: true
+    description: The bead whose direct children make up the wave.
+  beads_dir:
+    required: true
+    description: Absolute path to the tracker's .beads directory.
+  max_slices:
+    default: "0"
+    description: Most slices one wave dispatches. 0 means no cap.
+  tried:
+    default: "[]"
+    description: JSON array of beads earlier waves in this chain dispatched.
+  previous:
+    default: ""
+    description: Run id of the wave that started this one.
+
+nodes:
+  # Unchanged from co3.11 except that it also reports a count, for `when:`.
+  - id: ready
+    runtime: bun
+    script: ready
+    timeout: 120000
+    output_format:
+      type: object
+      properties:
+        beads: {type: array}
+        count: {type: number}
+        tried: {type: array}
+      required: [beads, count, tried]
+
+  # The seam gate. An agent proposes seams for the whole wave against the
+  # code as it stands now; the human approves or sends comments, which may
+  # drop a bead from this wave or take it out of the epic.
+  - id: seams
+    depends_on: [ready]
+    when: "$ready.output.count > 0"
+    loop_group:
+      until_bash: d=$seam-gate.output.decision; test "$d" = approve
+      max_iterations: 6
+      fresh_context: false
+      nodes:
+        - id: propose
+          prompt: |
+            You design the seams for one wave of slices that will be built in
+            parallel, each by an unattended agent in its own worktree.
+
+            Candidate beads this wave: $ready.output.beads
+            Read each with: BEADS_DIR=$INPUTS.beads_dir bd show <id>
+            Read the repository in your working directory as it stands now.
+
+            The human's comments on your previous proposal, empty the first time:
+            $LOOP_PREV.seam-gate.output.text
+
+            Propose, for the whole wave: which modules each slice touches,
+            the interface each slice exposes or consumes at the seam between
+            slices, and any pair that would edit the same code. Apply the
+            human's comments: a bead they drop stays out of this wave (it
+            comes back next wave); a bead they say is not this epic goes in
+            not_this_epic.
+
+            Return:
+            - question: the proposal as markdown, for the human to approve.
+              End it with the wave you would dispatch and anything dropped
+              or moved out of the epic.
+            - wave: the bead ids to dispatch now.
+            - seams: one {id, seams} per bead in wave; seams is the text to
+              append to that bead's notes.
+            - not_this_epic: bead ids to remove from the epic.
+          output_format:
+            type: object
+            properties:
+              question: {type: string}
+              wave: {type: array, items: {type: string}}
+              seams:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: {type: string}
+                    seams: {type: string}
+                  required: [id, seams]
+              not_this_epic: {type: array, items: {type: string}}
+            required: [question, wave, seams, not_this_epic]
+
+        - id: seam-gate
+          depends_on: [propose]
+          wait:
+            attention: $propose.output.question
+            form: select
+            options:
+              - id: approve
+                label: Approve
+                does: Writes the seams onto the beads and dispatches the wave.
+              - id: revise
+                label: Comments in the text
+                does: Revises the proposal. Say "drop <id>" or "not this epic <id>" to change the wave.
+
+  # Writes the approved seams to each bead's notes, unparents not-this-epic
+  # beads, and settles the wave and the chain's tried list. Runs on an empty
+  # wave too, with no proposal, so `next` always has its inputs.
+  - id: apply-seams
+    depends_on: [ready, seams]
+    trigger_rule: none_failed_min_one_success
+    runtime: bun
+    script: apply-seams
+    timeout: 120000
+    with:
+      candidates: $ready.output.beads
+      proposal: {from: $seams.output, if_skipped: "{}"}
+    output_format:
+      type: object
+      properties:
+        beads: {type: array}
+        tried: {type: array}
+      required: [beads, tried]
+
+  - id: slices
+    depends_on: [apply-seams]
+    workflow: implement-slice
+    isolation: worktree
+    with:
+      beads_dir: $INPUTS.beads_dir
+    fan_out:
+      items: $apply-seams.output.beads
+      as: bead
+      max_parallel: all
+
+  - id: next
+    depends_on: [apply-seams, slices]
+    runtime: bun
+    script: next
+    timeout: 120000
+    with:
+      wave: $apply-seams.output.beads
+      chain: $apply-seams.output.tried
+    output_format:
+      type: object
+      properties:
+        next_run: {type: string}
+        reason: {type: string}
+      required: [next_run, reason]
+
+  # co3.38, unchanged.
+  - id: close-parent
+    depends_on: [next]
+    when: "$next.output.next_run == ''"
+    runtime: bun
+    script: close-parent
+    timeout: 120000
+    output_format:
+      type: object
+      properties:
+        closed: {type: boolean}
+        open: {type: array}
+        reason: {type: string}
+      required: [closed, open, reason]
+
+  # The end gate: the chain found nothing new but children are open.
+  - id: end-gate
+    depends_on: [close-parent]
+    when: "$close-parent.output.closed == false"
+    wait:
+      attention: >-
+        The chain found nothing new, and $close-parent.output.reason.
+        Re-dispatch? Put bead ids in the text, or leave it empty to re-dispatch
+        every open, unclaimed child.
+      form: select
+      options:
+        - id: redispatch
+          label: Re-dispatch
+          does: Starts another wave with those beads cleared from the chain's tried list.
+        - id: stop
+          label: Stop
+          does: Ends the chain and leaves the epic open.
+
+  - id: redispatch
+    depends_on: [end-gate]
+    when: "$end-gate.output.decision == 'redispatch'"
+    runtime: bun
+    script: redispatch
+    timeout: 120000
+    with:
+      chain: $apply-seams.output.tried
+      open: $close-parent.output.open
+      text: $end-gate.output.text
+    output_format:
+      type: object
+      properties:
+        next_run: {type: string}
+        redispatched: {type: array}
+      required: [next_run, redispatched]

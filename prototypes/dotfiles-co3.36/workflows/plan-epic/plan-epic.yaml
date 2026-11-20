@@ -1,0 +1,122 @@
+name: plan-epic
+description: |
+  PROTOTYPE for dotfiles-co3.36, throwaway. Grill a goal over attention gates,
+  recap the grilling log the way to-spec would receive it, stand in for
+  to-spec and to-tickets with a scripted epic, then hand the epic to
+  implement-in-waves detached and finish.
+
+  Use when: running the co3.36 prototype from its scratch repo (setup.sh).
+  NOT for: real work.
+
+model: large
+
+# Planning reads the tracker and starts a run; it never writes the checkout.
+worktree:
+  enabled: false
+mutates_checkout: false
+
+inputs:
+  goal:
+    required: true
+    description: The goal, or an absolute path to a PRD file.
+  beads_dir:
+    required: true
+    description: Absolute path to the scratch tracker's .beads directory.
+
+nodes:
+  # One grilling round per iteration, then a terminal attention wait. The
+  # body's session continues across rounds (fresh_context: false), but a
+  # loop_group is not a session source for any node after it, so the round
+  # carries a cumulative decision log: that log is all to-spec would get.
+  - id: grill
+    loop_group:
+      until_bash: d=$grill-gate.output.decision; test "$d" = settled
+      max_iterations: 8
+      fresh_context: false
+      nodes:
+        - id: grill-round
+          skills: [grilling]
+          prompt: |
+            Goal (text, or a path to a PRD file you should read): $INPUTS.goal
+
+            The human's answer to your previous round, empty on the first round:
+            $LOOP_PREV.grill-gate.output.text
+
+            Run ONE round of /grilling on this goal: the current frontier of
+            the design tree, numbered, each with your recommended answer, in
+            the skill's format. Do not answer for the human. You get the
+            human's reply on the next round.
+
+            Return:
+            - round: the round's questions as markdown, exactly as the human
+              should read them.
+            - decisions: the cumulative decision log so far. Every decision
+              settled in any earlier round, one line each, in the human's own
+              terms, including the ones settled by accepting a
+              recommendation. Carry earlier lines forward unchanged.
+          output_format:
+            type: object
+            properties:
+              round: {type: string}
+              decisions: {type: string}
+            required: [round, decisions]
+
+        - id: grill-gate
+          depends_on: [grill-round]
+          wait:
+            attention: $grill-round.output.round
+            form: select
+            options:
+              - id: answered
+                label: Answers in the text
+                does: Runs another round, reading your text as the answers.
+              - id: settled
+                label: Shared understanding reached
+                does: Ends grilling; your text, if any, is the last word.
+
+  # What to-spec would see: the group's output is the last round's, so this
+  # node is the test of whether the decision log carries the grilling.
+  - id: recap
+    depends_on: [grill]
+    prompt: |
+      You are about to write a spec. All you have from the grilling is this:
+
+      $grill.output
+
+      List every decision it records, then list what a spec writer would
+      still have to ask about. Do not invent decisions.
+
+  # Stand-in for to-spec and to-tickets: an epic with three slices. A files a
+  # follow-up under the epic when it builds. B fails its first build. C is
+  # blocked by A, so it lands in a later wave.
+  - id: tickets
+    depends_on: [recap]
+    bash: |
+      set -e
+      export BEADS_DIR="$INPUTS_BEADS_DIR"
+      epic=$(bd create --type epic --title "Prototype epic" --description "Stand-in spec for the co3.36 prototype." --silent)
+      a=$(bd create --parent "$epic" --type task --title "A: first slice, files a follow-up" --silent)
+      bd create --parent "$epic" --type task --title "B: second slice, fails once" --labels fail-once --silent >/dev/null
+      bd create --parent "$epic" --type task --title "C: third slice, after A" --deps "blocked-by:$a" --silent >/dev/null
+      printf '{"epic": "%s"}' "$epic"
+    output_format:
+      type: object
+      properties:
+        epic: {type: string}
+      required: [epic]
+
+  # Starts the wave chain detached and finishes. The chain closes the epic
+  # itself (co3.38), so nothing here waits on it.
+  - id: handoff
+    depends_on: [tickets]
+    runtime: bun
+    script: handoff
+    timeout: 120000
+    with:
+      epic: $tickets.output.epic
+    output_format:
+      type: object
+      properties:
+        wave_run: {type: string}
+        status: {type: string}
+      required: [wave_run, status]
