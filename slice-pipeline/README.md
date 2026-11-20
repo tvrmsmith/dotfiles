@@ -118,7 +118,8 @@ Start it from the target repository's checkout, since every slice cuts its
 worktree from that repository's `origin/<base>`. `beads_dir` names the
 tracker, which can live in another repository. The wave lists the parent's
 direct children that `bd ready --unassigned` reports. It never takes a
-grandchild or a claimed bead. Then it runs one implement-slice for each child,
+grandchild, a claimed bead, or a child with an open child of its own, which
+bd would refuse to close after its slice merged. Then it runs one implement-slice for each child,
 all at once, each in its own worktree. `--input max_slices=N` caps a wave at N
 slices and leaves the rest for later waves. The default of 0 means no cap.
 

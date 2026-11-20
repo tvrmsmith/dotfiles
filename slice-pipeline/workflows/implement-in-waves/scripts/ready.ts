@@ -1,6 +1,8 @@
 // Lists the beads one wave dispatches: the parent's direct children that bd
 // reports ready and unassigned, minus the beads earlier waves of this chain
-// already tried, capped at max_slices. Prints {beads, tried}, where `tried` is
+// already tried and any child with an open child of its own, capped at
+// max_slices. bd refuses to close a bead with an open child, so a slice of one
+// would merge and then fail its close with the bead still claimed. Prints {beads, tried}, where `tried` is
 // the chain's list with this wave's beads added, for the next wave to carry.
 //
 // Reads the workflow's inputs from INPUTS_* directly rather than through
@@ -50,10 +52,29 @@ try {
 }
 if (!Array.isArray(rows)) refuse("bd ready printed JSON that is not a list");
 
+// bd list without --all lists every child not closed, which is what bd close
+// counts as open.
+function hasOpenChild(id: string): boolean {
+  const list = Bun.spawnSync(["bd", "list", "--parent", id, "--json", "--limit", "0"], {
+    env: { ...process.env, BEADS_DIR: beadsDir },
+    stderr: "pipe",
+  });
+  if (list.exitCode !== 0) refuse(`bd list exited ${list.exitCode}: ${list.stderr.toString().trim()}`);
+  let listed: unknown;
+  try {
+    listed = JSON.parse(list.stdout.toString() || "[]");
+  } catch {
+    refuse(`bd list --parent ${id} printed something other than JSON`);
+  }
+  if (!Array.isArray(listed)) refuse(`bd list --parent ${id} printed JSON that is not a list`);
+  return (listed as Array<{ parent?: unknown }>).some((row) => row.parent === id);
+}
+
 const children = (rows as Array<{ id?: unknown; parent?: unknown }>)
   .filter((row) => row.parent === parent && typeof row.id === "string")
   .map((row) => row.id as string)
-  .filter((id) => !triedIds.includes(id));
+  .filter((id) => !triedIds.includes(id))
+  .filter((id) => !hasOpenChild(id));
 const beads = maxSlices === 0 ? children : children.slice(0, maxSlices);
 
 console.log(JSON.stringify({ beads, tried: [...triedIds, ...beads] }));

@@ -3,7 +3,7 @@
 // appends its argv to a log and prints what the test told it to.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -24,7 +24,8 @@ let bin: string;
 
 // A stub that logs `<BEADS_DIR>\t<argv>` and prints the file named by
 // <NAME>_OUT, exiting with <NAME>_EXIT. <NAME>_OUT_<subcommand> and
-// <NAME>_EXIT_<subcommand> (bd list, bd show, ...) win over those.
+// <NAME>_EXIT_<subcommand> (bd list, bd show, ...) win over those, and a file
+// byArgs() wrote for the exact argv wins over both.
 function stub(name: string) {
   const path = join(bin, name);
   const upper = name.toUpperCase();
@@ -33,6 +34,7 @@ function stub(name: string) {
     `#!/bin/bash
 printf '%s\\t%s\\n' "\${BEADS_DIR:-}" "$*" >> "${bin}/${name}.log"
 out="${upper}_OUT_\${1:-}"; out="\${!out:-\${${upper}_OUT:-}}"
+exact="${bin}/${name}.by-args/$(printf '%s' "$*" | tr ' /' '__')"; [ -f "$exact" ] && out="$exact"
 code="${upper}_EXIT_\${1:-}"; code="\${!code:-\${${upper}_EXIT:-0}}"
 [ -n "$out" ] && cat "$out"
 exit "$code"
@@ -45,6 +47,12 @@ function output(name: string, text: string): string {
   const path = join(bin, `${name}.out`);
   writeFileSync(path, text);
   return path;
+}
+
+// Makes stub `name` print `text` when called with exactly `args`.
+function byArgs(name: string, args: string, text: string) {
+  mkdirSync(join(bin, `${name}.by-args`), { recursive: true });
+  writeFileSync(join(bin, `${name}.by-args`, args.replace(/[ /]/g, "_")), text);
 }
 
 function calls(name: string): string[] {
@@ -96,8 +104,48 @@ describe("ready", () => {
 
   test("dispatches direct children only, never a grandchild", () => {
     const rows = [child("p.1"), child("p.1.1", "p.1"), child("p.2")];
-    const r = run(["bun", READY], { ...inputs(), BD_OUT: output("bd", JSON.stringify(rows)) });
+    const r = run(["bun", READY], {
+      ...inputs(),
+      BD_OUT_ready: output("bd-ready", JSON.stringify(rows)),
+      BD_OUT_list: output("bd-list", "[]"),
+    });
     expect(r.json()).toEqual({ beads: ["p.1", "p.2"], tried: ["p.1", "p.2"] });
+  });
+
+  // bd refuses to close a bead with an open child, so a slice of one would
+  // merge and then fail its close with the bead still claimed.
+  test("skips a child that has open children of its own, without marking it tried", () => {
+    const rows = [child("p.1"), child("p.1.1", "p.1"), child("p.2")];
+    byArgs("bd", "list --parent p.1 --json --limit 0", JSON.stringify([{ id: "p.1.1", parent: "p.1", status: "deferred" }]));
+    const r = run(["bun", READY], {
+      ...inputs(),
+      BD_OUT_ready: output("bd-ready", JSON.stringify(rows)),
+      BD_OUT_list: output("bd-list", "[]"),
+    });
+    expect(r.code).toBe(0);
+    expect(r.json()).toEqual({ beads: ["p.2"], tried: ["p.2"] });
+    expect(calls("bd")).toContain("/tracker/.beads\tlist --parent p.1 --json --limit 0");
+  });
+
+  test("caps the wave after skipping, so a skipped child does not take a slot", () => {
+    const rows = [child("p.1"), child("p.2"), child("p.3")];
+    byArgs("bd", "list --parent p.1 --json --limit 0", JSON.stringify([child("p.1.1", "p.1")]));
+    const r = run(["bun", READY], {
+      ...inputs({ INPUTS_MAX_SLICES: "1" }),
+      BD_OUT_ready: output("bd-ready", JSON.stringify(rows)),
+      BD_OUT_list: output("bd-list", "[]"),
+    });
+    expect(r.json()).toEqual({ beads: ["p.2"], tried: ["p.2"] });
+  });
+
+  test("fails the node when bd cannot list a child's children, rather than dispatching it blind", () => {
+    const r = run(["bun", READY], {
+      ...inputs(),
+      BD_OUT_ready: output("bd-ready", JSON.stringify([child("p.1")])),
+      BD_EXIT_list: "2",
+    });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("bd list exited 2");
   });
 
   test("skips a bead an earlier wave of the chain tried, and carries the chain's list on", () => {
