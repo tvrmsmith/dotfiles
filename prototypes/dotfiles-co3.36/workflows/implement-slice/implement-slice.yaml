@@ -1,0 +1,45 @@
+name: implement-slice
+description: |
+  PROTOTYPE stand-in for implement-slice (dotfiles-co3.36). Claims, "builds",
+  then closes or releases. A bead labelled fail-once fails its first build and
+  loses the label. A bead titled "files a follow-up" files one under its
+  parent, the way a real slice agent would under the epic.
+worktree:
+  enabled: true
+inputs:
+  bead: {required: true}
+  beads_dir: {required: true}
+nodes:
+  - id: claim
+    bash: BEADS_DIR="$INPUTS_BEADS_DIR" bd update "$INPUTS_BEAD" --claim >/dev/null
+  - id: build
+    depends_on: [claim]
+    bash: |
+      set -e
+      export BEADS_DIR="$INPUTS_BEADS_DIR"
+      sleep 5
+      bead=$(bd show "$INPUTS_BEAD" --json)
+      if printf '%s' "$bead" | jq -e '.[0].labels // [] | index("fail-once")' >/dev/null; then
+        bd update "$INPUTS_BEAD" --remove-label fail-once >/dev/null
+        printf '{"ok": false}'
+        exit 0
+      fi
+      case "$(printf '%s' "$bead" | jq -r '.[0].title')" in
+        *"files a follow-up"*)
+          parent=$(printf '%s' "$bead" | jq -r '.[0].parent')
+          bd create --parent "$parent" --type task --no-inherit-labels \
+            --title "Follow-up filed by $INPUTS_BEAD" --silent >/dev/null ;;
+      esac
+      printf '{"ok": true}'
+    output_format:
+      type: object
+      properties: {ok: {type: boolean}}
+      required: [ok]
+  - id: close
+    depends_on: [build]
+    when: "$build.output.ok == true"
+    bash: BEADS_DIR="$INPUTS_BEADS_DIR" bd close "$INPUTS_BEAD" --reason prototype >/dev/null
+  - id: release
+    depends_on: [build]
+    when: "$build.output.ok == false"
+    bash: BEADS_DIR="$INPUTS_BEADS_DIR" bd unclaim "$INPUTS_BEAD" >/dev/null
