@@ -51,5 +51,26 @@ agent fronted the gates for Trevor.
   workflows stay pure Archon, and whoever fronts the run drives it through the
   CLI.
 
-Not exercised as of this commit: the wave 2 seam gate with a not-this-epic
-choice, the end gate, re-dispatch, and the epic closing itself.
+The chain then ran through waves 2 and 3 (`407464ad`, `5dd73052`):
+
+- **"Settled" loses its answer.** The loop ended on the gate, so the text
+  Trevor sent with "settled" never reached the decision log. recap kept a
+  placeholder from an earlier round and listed the settled questions as
+  unanswered. Trevor: "No, it misses the end". The fix is a final fold-in
+  round, with the loop ending on the round's output.
+- **Invented seams spread.** The stub beads had no descriptions, so the wave 1
+  proposal invented `slices/a.md` and `slices/b.md`. Approval wrote them to
+  the beads' notes, and wave 2's proposal then cited them as the pattern.
+  Trevor: "I don't think I like that". Seams have to come from the bead or the
+  code, or the proposal has to say nothing constrains the slice.
+- **The gate text needed explaining.** At the first seam gate Trevor asked for
+  details: what approve does, and where the seams came from.
+- **Not-this-epic works, but reads oddly.** The follow-up lost its parent and
+  left the wave. `wave-status` still listed it as "not started" because it
+  reads `ready`, and `bd list` still drew it under the epic by its
+  hierarchical id.
+- **The end gate fired as designed.** B was left open, and Trevor chose stop.
+  Re-dispatch and the epic closing itself were not exercised.
+- **A goal naming code that does not exist traps grilling.** It asked for the
+  CLI's location three rounds running. A real PRD names a real repository, so
+  this is a prototype artifact.
