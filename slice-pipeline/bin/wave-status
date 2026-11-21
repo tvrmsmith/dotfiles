@@ -147,9 +147,12 @@ chain.forEach((wave, index) => {
       worktree: slice.working_path ?? "",
     });
   }
-  // A bead the wave picked that has no slice run yet is still being started,
-  // or, once the wave has ended, was refused before a run existed.
-  const picked = nodeOutput(wave, "ready")?.beads;
+  // A bead the wave settled on that has no slice run yet is still being
+  // started, or, once the wave has ended, was refused before a run existed.
+  // The settled wave is apply-seams', not ready's candidates: a bead the seam
+  // gate dropped or moved out of the parent was never the wave's, and a wave
+  // still at its seam gate has settled nothing.
+  const picked = nodeOutput(wave, "apply-seams")?.beads;
   if (Array.isArray(picked)) {
     for (const bead of picked) {
       if (slices.some((slice) => slice.metadata?.inputs?.bead === bead)) continue;

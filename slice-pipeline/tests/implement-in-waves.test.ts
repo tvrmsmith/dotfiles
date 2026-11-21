@@ -11,6 +11,7 @@ const ROOT = resolve(import.meta.dir, "..");
 const READY = join(ROOT, "workflows/implement-in-waves/scripts/ready.ts");
 const NEXT = join(ROOT, "workflows/implement-in-waves/scripts/next.ts");
 const CLOSE_PARENT = join(ROOT, "workflows/implement-in-waves/scripts/close-parent.ts");
+const APPLY_SEAMS = join(ROOT, "workflows/implement-in-waves/scripts/apply-seams.ts");
 const WAVE_STATUS = join(ROOT, "bin/wave-status");
 // Recorded from the live smoke: `archon workflow runs --all --json --verbose`,
 // trimmed to the smoke's runs and to the fields wave-status reads, with the
@@ -109,7 +110,7 @@ describe("ready", () => {
       BD_OUT_ready: output("bd-ready", JSON.stringify(rows)),
       BD_OUT_list: output("bd-list", "[]"),
     });
-    expect(r.json()).toEqual({ beads: ["p.1", "p.2"], tried: ["p.1", "p.2"] });
+    expect(r.json()).toEqual({ beads: ["p.1", "p.2"], count: 2 });
   });
 
   // bd refuses to close a bead with an open child, so a slice of one would
@@ -123,7 +124,7 @@ describe("ready", () => {
       BD_OUT_list: output("bd-list", "[]"),
     });
     expect(r.code).toBe(0);
-    expect(r.json()).toEqual({ beads: ["p.2"], tried: ["p.2"] });
+    expect(r.json()).toEqual({ beads: ["p.2"], count: 1 });
     expect(calls("bd")).toContain("/tracker/.beads\tlist --parent p.1 --json --limit 0");
   });
 
@@ -135,7 +136,7 @@ describe("ready", () => {
       BD_OUT_ready: output("bd-ready", JSON.stringify(rows)),
       BD_OUT_list: output("bd-list", "[]"),
     });
-    expect(r.json()).toEqual({ beads: ["p.2"], tried: ["p.2"] });
+    expect(r.json()).toEqual({ beads: ["p.2"], count: 1 });
   });
 
   test("fails the node when bd cannot list a child's children, rather than dispatching it blind", () => {
@@ -148,13 +149,13 @@ describe("ready", () => {
     expect(r.stderr).toContain("bd list exited 2");
   });
 
-  test("skips a bead an earlier wave of the chain tried, and carries the chain's list on", () => {
+  test("skips a bead an earlier wave of the chain tried", () => {
     const rows = [child("p.1"), child("p.2"), child("p.3")];
     const r = run(["bun", READY], {
       ...inputs({ INPUTS_TRIED: '["p.1"]' }),
       BD_OUT: output("bd", JSON.stringify(rows)),
     });
-    expect(r.json()).toEqual({ beads: ["p.2", "p.3"], tried: ["p.1", "p.2", "p.3"] });
+    expect(r.json()).toEqual({ beads: ["p.2", "p.3"], count: 2 });
   });
 
   test("max_slices caps the wave and leaves the rest for later waves", () => {
@@ -163,13 +164,13 @@ describe("ready", () => {
       ...inputs({ INPUTS_MAX_SLICES: "2" }),
       BD_OUT: output("bd", JSON.stringify(rows)),
     });
-    expect(r.json()).toEqual({ beads: ["p.1", "p.2"], tried: ["p.1", "p.2"] });
+    expect(r.json()).toEqual({ beads: ["p.1", "p.2"], count: 2 });
   });
 
   test("an empty frontier is an empty wave, not a failure", () => {
     const r = run(["bun", READY], { ...inputs(), BD_OUT: output("bd", "[]") });
     expect(r.code).toBe(0);
-    expect(r.json()).toEqual({ beads: [], tried: [] });
+    expect(r.json()).toEqual({ beads: [], count: 0 });
   });
 
   test("fails the node when bd fails, rather than dispatching nothing as if all were done", () => {
@@ -234,6 +235,81 @@ describe("next", () => {
     const r = run(["bun", NEXT], { ...inputs(["p.2"], ["p.2"]), ARCHON_OUT: output("archon", "{}") });
     expect(r.code).toBe(1);
     expect(r.stderr).toContain("names no runId");
+  });
+});
+
+describe("apply-seams", () => {
+  const seams = (id: string) => ({ id, seams: `seams for ${id}` });
+  const inputs = (proposal: object | null, extra: Record<string, string> = {}) => ({
+    INPUTS_BEADS_DIR: "/tracker/.beads",
+    INPUTS_TRIED: '["p.1"]',
+    INPUTS_CANDIDATES: '["p.2","p.3","p.4"]',
+    INPUTS_PROPOSAL: proposal === null ? "{}" : JSON.stringify(proposal),
+    WORKFLOW_ID: "wave-run",
+    BD_OUT_show: output("bd-show", JSON.stringify([{ id: "x", notes: "" }])),
+    ...extra,
+  });
+  const writes = () => calls("bd").filter((line) => line.includes("\tupdate "));
+  const header = "Seams agreed in implement-in-waves run wave-run:";
+
+  test("appends each dispatched bead's seams to its notes, in the tracker the wave names", () => {
+    const r = run(["bun", APPLY_SEAMS], inputs({ wave: ["p.2", "p.3"], seams: [seams("p.2"), seams("p.3")], not_this_epic: [] }));
+    expect(r.code).toBe(0);
+    // The notes span lines, so the log is read whole rather than per call.
+    expect(writes()).toEqual([
+      `/tracker/.beads\tupdate p.2 --append-notes ${header}`,
+      `/tracker/.beads\tupdate p.3 --append-notes ${header}`,
+    ]);
+    const log = readFileSync(join(bin, "bd.log"), "utf8");
+    expect(log).toContain(`update p.2 --append-notes ${header}\nseams for p.2\n`);
+    expect(log).toContain(`update p.3 --append-notes ${header}\nseams for p.3\n`);
+  });
+
+  test("settles the wave and adds it to the chain's tried list, leaving a dropped bead in neither", () => {
+    const r = run(["bun", APPLY_SEAMS], inputs({ wave: ["p.2"], seams: [seams("p.2")], not_this_epic: [] }));
+    expect(r.json()).toEqual({ beads: ["p.2"], tried: ["p.1", "p.2"] });
+  });
+
+  test("takes a not-this-epic bead out of the epic and out of the wave", () => {
+    const r = run(["bun", APPLY_SEAMS], inputs({ wave: ["p.2"], seams: [seams("p.2")], not_this_epic: ["p.4"] }));
+    expect(r.code).toBe(0);
+    expect(r.json()).toEqual({ beads: ["p.2"], tried: ["p.1", "p.2"] });
+    expect(writes()[0]).toBe("/tracker/.beads\tupdate p.4 --parent ");
+  });
+
+  test("an empty wave, whose seam gate was skipped, settles to nothing and writes nothing", () => {
+    const r = run(["bun", APPLY_SEAMS], inputs(null, { INPUTS_CANDIDATES: "[]" }));
+    expect(r.code).toBe(0);
+    expect(r.json()).toEqual({ beads: [], tried: ["p.1"] });
+    expect(calls("bd")).toEqual([]);
+  });
+
+  test("a rerun does not append the same run's seams twice", () => {
+    const r = run(["bun", APPLY_SEAMS], inputs(
+      { wave: ["p.2"], seams: [seams("p.2")], not_this_epic: [] },
+      { BD_OUT_show: output("bd-show-seamed", JSON.stringify([{ id: "p.2", notes: `earlier\n${header}\nseams for p.2` }])) },
+    ));
+    expect(r.code).toBe(0);
+    expect(r.json().beads).toEqual(["p.2"]);
+    expect(writes()).toEqual([]);
+  });
+
+  test.each([
+    ["a bead ready did not offer", { wave: ["p.2", "q.9"], seams: [seams("p.2"), seams("q.9")], not_this_epic: [] }, "q.9 is not a candidate"],
+    ["a bead both dispatched and out of the epic", { wave: ["p.2"], seams: [seams("p.2")], not_this_epic: ["p.2"] }, "p.2 is both"],
+    ["a dispatched bead with no seams", { wave: ["p.2", "p.3"], seams: [seams("p.2")], not_this_epic: [] }, "no seams for p.3"],
+    ["a not-this-epic bead ready did not offer", { wave: [], seams: [], not_this_epic: ["q.9"] }, "q.9 is not a candidate"],
+  ])("refuses %s before writing anything", (_name, proposal, message) => {
+    const r = run(["bun", APPLY_SEAMS], inputs(proposal));
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain(message);
+    expect(writes()).toEqual([]);
+  });
+
+  test("fails the node when bd refuses a write", () => {
+    const r = run(["bun", APPLY_SEAMS], inputs({ wave: ["p.2"], seams: [seams("p.2")], not_this_epic: [] }, { BD_EXIT_update: "1" }));
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("bd update p.2 exited 1");
   });
 });
 
@@ -306,7 +382,7 @@ describe("implement-in-waves.yaml wiring", () => {
   const node = (id: string) => workflow.nodes.find((n: any) => n.id === id);
   const envName = (name: string) => `INPUTS_${name.toUpperCase()}`;
 
-  test.each([["ready", READY], ["next", NEXT], ["close-parent", CLOSE_PARENT]])("every input %s reads is bound", (id, path) => {
+  test.each([["ready", READY], ["apply-seams", APPLY_SEAMS], ["next", NEXT], ["close-parent", CLOSE_PARENT]])("every input %s reads is bound", (id, path) => {
     const bound = new Set([...Object.keys(workflow.inputs), ...Object.keys(node(id).with ?? {})].map(envName));
     const read = [...readFileSync(path, "utf8").matchAll(/INPUTS_[A-Z_]+/g)].map((m) => m[0]);
     expect(read.length).toBeGreaterThan(0);
@@ -319,8 +395,28 @@ describe("implement-in-waves.yaml wiring", () => {
       BD_OUT: output("bd", JSON.stringify([child("p.1")])),
     });
     expect(Object.keys(r.json()).sort()).toEqual([...node("ready").output_format.required].sort());
-    expect(node("slices").fan_out.items).toBe("$ready.output.beads");
-    expect(node("next").with).toEqual({ wave: "$ready.output.beads", chain: "$ready.output.tried" });
+    expect(node("seams").when).toBe("$ready.output.count > 0");
+    expect(node("apply-seams").with.candidates).toBe("$ready.output.beads");
+  });
+
+  test("apply-seams reads the proposal the seam gate approved, and slices and next dispatch only its settled wave", () => {
+    const group = node("seams").loop_group;
+    const propose = group.nodes.find((n: any) => n.id === "propose");
+    const gate = group.nodes.find((n: any) => n.id === "seam-gate");
+    expect(gate.depends_on).toEqual(["propose"]);
+    expect(gate.wait.options.map((o: any) => o.id)).toEqual(["approve", "revise"]);
+    expect(group.until_bash).toContain("$seam-gate.output.decision");
+    expect(propose.output_format.required).toEqual(expect.arrayContaining(["wave", "seams", "not_this_epic"]));
+    expect(node("apply-seams").with.proposal).toEqual({ from: "$seams.output", if_skipped: "{}" });
+
+    const r = run(["bun", APPLY_SEAMS], {
+      INPUTS_BEADS_DIR: "/b", INPUTS_TRIED: "[]", INPUTS_CANDIDATES: '["p.1"]',
+      INPUTS_PROPOSAL: JSON.stringify({ wave: ["p.1"], seams: [{ id: "p.1", seams: "s" }], not_this_epic: [] }),
+      WORKFLOW_ID: "w", BD_OUT_show: output("bd-show", '[{"notes":""}]'),
+    });
+    expect(Object.keys(r.json()).sort()).toEqual([...node("apply-seams").output_format.required].sort());
+    expect(node("slices").fan_out.items).toBe("$apply-seams.output.beads");
+    expect(node("next").with).toEqual({ wave: "$apply-seams.output.beads", chain: "$apply-seams.output.tried" });
   });
 
   test.each([
@@ -351,7 +447,17 @@ describe("wave-status", () => {
   const WAVE_3 = "d92de4b0da5125ffc4d58dab4df9de60";
 
   type Run = Record<string, any>;
-  const recorded = (path: string): Run[] => JSON.parse(readFileSync(path, "utf8")).runs;
+  // The listings were recorded before the seam gate existed. A wave now
+  // records its settled wave as apply-seams' output, which for these waves,
+  // with nothing dropped or moved out, is what ready picked.
+  const recorded = (path: string): Run[] => {
+    const runs: Run[] = JSON.parse(readFileSync(path, "utf8")).runs;
+    for (const r of runs.filter((r) => r.workflow_name === "implement-in-waves")) {
+      const ready = r.nodes.find((n: Run) => n.nodeId === "ready");
+      r.nodes.push({ nodeId: "apply-seams", state: ready.state, output: ready.output });
+    }
+    return runs;
+  };
   const listing = (runs: Run[]) => ({ ARCHON_OUT: output("archon", JSON.stringify({ runs })) });
   const status = (runs: Run[], id: string) => run([WAVE_STATUS, id, "--json"], listing(runs));
   const rows = (r: ReturnType<typeof run>): string[] =>
@@ -431,6 +537,22 @@ describe("wave-status", () => {
     expect(rows(status(runs, WAVE_1))[2]).toBe("2 wv-2nc.3 starting");
     wave2.status = "completed";
     expect(rows(status(runs, WAVE_1))[2]).toBe("2 wv-2nc.3 not started");
+  });
+
+  test("lists the wave the seam gate settled, not every bead ready offered", () => {
+    const runs = recorded(FINAL).filter((r) => r.parent_run_id !== WAVE_2);
+    const wave2 = runs.find((r) => r.id === WAVE_2)!;
+    node(wave2, "ready").output = JSON.stringify({ beads: ["wv-2nc.3", "wv-2nc.4"], count: 2 });
+    node(wave2, "apply-seams").output = JSON.stringify({ beads: ["wv-2nc.3"], tried: [] });
+    expect(rows(status(runs, WAVE_1)).filter((row) => row.startsWith("2 "))).toEqual(["2 wv-2nc.3 not started"]);
+  });
+
+  test("a wave paused at its seam gate lists none of ready's candidates", () => {
+    const runs = recorded(FINAL).filter((r) => r.parent_run_id !== WAVE_2);
+    const wave2 = runs.find((r) => r.id === WAVE_2)!;
+    wave2.status = "paused";
+    wave2.nodes = wave2.nodes.filter((n: Run) => n.nodeId !== "apply-seams");
+    expect(rows(status(runs, WAVE_1)).filter((row) => row.startsWith("2 "))).toEqual([]);
   });
 
   test("says so when an earlier wave is outside the window", () => {

@@ -10,7 +10,7 @@ just this one.
 bin/slice-wave                     every non-trivial rule, driven by bats
 bin/wave-status                    where a wave chain stands, read from Archon
 workflows/implement-slice/         one slice: the workflow and its offline fixtures
-workflows/implement-in-waves/      a parent's children, wave by wave
+workflows/implement-in-waves/      a parent's children, wave by wave, each behind a seam gate
 tests/                             the suites, their helpers, and the runner
 ```
 
@@ -119,9 +119,27 @@ worktree from that repository's `origin/<base>`. `beads_dir` names the
 tracker, which can live in another repository. The wave lists the parent's
 direct children that `bd ready --unassigned` reports. It never takes a
 grandchild, a claimed bead, or a child with an open child of its own, which
-bd would refuse to close after its slice merged. Then it runs one implement-slice for each child,
-all at once, each in its own worktree. `--input max_slices=N` caps a wave at N
+bd would refuse to close after its slice merged. `--input max_slices=N` caps a wave at N
 slices and leaves the rest for later waves. The default of 0 means no cap.
+
+Before any slice starts, the wave pauses on a seam gate. An agent reads each
+candidate bead and the code on `origin/<base>`, and proposes the modules
+each slice touches, the interfaces where slices meet, and the pairs that
+would edit the same code. Each seam cites the bead text or code it comes
+from. A slice that neither constrains gets no invented boundary, because
+approved seams become precedent for later waves. The gate's text says what
+each bead is, where each seam came from, and what Approve will do. Choose
+`approve`, or `revise` with comments in the text. A revise can also say
+`drop <id>` to hold a bead for the next wave, or `not this epic <id>` to take
+it out of the parent. On approval, `apply-seams` appends each dispatched
+bead's seams to its notes and clears each not-this-epic bead's parent. It
+then fixes the wave and the chain's tried list. A dropped bead is in
+neither, so the next wave offers it again. That needs a next wave, though,
+and a wave that dispatches nothing ends the chain. A wave with no candidates
+skips the gate.
+
+Then the wave runs one implement-slice for each approved child, all at once,
+each in its own worktree.
 
 A wave ends once every one of its slices has finished, and a slice waiting in
 review counts as unfinished. So the next wave starts only when every slice of
@@ -145,10 +163,14 @@ slice run holding it, that run's state, and its worktree. The last line says
 whether the chain is still going, and if so, which run to cancel to stop it.
 An ended chain's last line also says whether the parent closed, or which
 children kept it open.
+The rows cover the beads the seam gate approved, not every candidate. A
+wave still at its gate lists none, and a bead taken out of the parent never
+appears. `bd list` may still draw that bead under the parent, since it keeps
+its hierarchical id, but its parent is empty.
 A slice's state is one of `running`, `awaiting review`, `merged`,
 `released`, `kept claimed`, `not claimed` (its claim failed), `starting` or
-`not started` (the wave picked the bead but no run exists yet, or never
-will), or `cancelled` or `failed`, with `, still claimed` when the run had
+`not started` (the seam gate approved the bead but no run exists yet, or
+never will), or `cancelled` or `failed`, with `, still claimed` when the run had
 claimed the bead. `wave-status` stores nothing. It reads the most recent 1000
 runs from `archon workflow runs` and follows each wave's `previous` input back
 and forward. `--json` prints the same rows for a script to read.

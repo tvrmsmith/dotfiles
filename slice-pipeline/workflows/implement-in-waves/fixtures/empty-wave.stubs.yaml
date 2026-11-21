@@ -1,13 +1,19 @@
-# Nothing new is ready. The fan-out completes at once with no child and needs
-# no stub, `next` ends the chain, and close-parent runs to settle the parent.
+# Nothing new is ready. The seam gate is skipped, so no proposal is asked for
+# and nobody is paused for: propose and seam-gate are unstubbed, and reaching
+# either fails the fixture. apply-seams settles the empty wave, the fan-out
+# completes at once with no child and needs no stub, `next` ends the chain,
+# and close-parent runs to settle the parent.
 fixture:
   expect: completed
-  reached: [ready, slices, next, close-parent]
+  reached: [ready, apply-seams, slices, next, close-parent]
   inputs:
     parent: demo
     beads_dir: /tmp/beads
 
 ready:
+  beads: []
+  count: 0
+apply-seams:
   beads: []
   tried: [demo.1]
 next:

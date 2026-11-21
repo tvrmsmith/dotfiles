@@ -2,8 +2,10 @@
 // reports ready and unassigned, minus the beads earlier waves of this chain
 // already tried and any child with an open child of its own, capped at
 // max_slices. bd refuses to close a bead with an open child, so a slice of one
-// would merge and then fail its close with the bead still claimed. Prints {beads, tried}, where `tried` is
-// the chain's list with this wave's beads added, for the next wave to carry.
+// would merge and then fail its close with the bead still claimed. Prints
+// {beads, count}: the candidates the seam gate proposes from, and their
+// count, which lets the workflow skip that gate on an empty wave. apply-seams
+// adds the approved ones to the chain's tried list.
 //
 // Reads the workflow's inputs from INPUTS_* directly rather than through
 // `archon:script`, so `bun test` can run it with a stub `bd` on PATH.
@@ -77,4 +79,4 @@ const children = (rows as Array<{ id?: unknown; parent?: unknown }>)
   .filter((id) => !hasOpenChild(id));
 const beads = maxSlices === 0 ? children : children.slice(0, maxSlices);
 
-console.log(JSON.stringify({ beads, tried: [...triedIds, ...beads] }));
+console.log(JSON.stringify({ beads, count: beads.length }));

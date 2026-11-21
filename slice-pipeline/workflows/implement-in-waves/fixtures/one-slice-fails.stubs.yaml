@@ -5,12 +5,25 @@
 # must skip it, and reaching an unstubbed node fails the fixture.
 fixture:
   expect: completed
-  reached: [ready, slices, next]
+  reached: [ready, propose, seam-gate, apply-seams, slices, next]
   inputs:
     parent: demo
     beads_dir: /tmp/beads
 
 ready:
+  beads: [demo.1, demo.2]
+  count: 2
+propose:
+  question: "demo.1 and demo.2 dispatch."
+  wave: [demo.1, demo.2]
+  seams:
+    - {id: demo.1, seams: "nothing in the bead or the code constrains this slice"}
+    - {id: demo.2, seams: "nothing in the bead or the code constrains this slice"}
+  not_this_epic: []
+seam-gate:
+  decision: approve
+  text: ""
+apply-seams:
   beads: [demo.1, demo.2]
   tried: [demo.1, demo.2]
 slices:

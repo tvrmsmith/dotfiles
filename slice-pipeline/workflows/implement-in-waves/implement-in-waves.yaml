@@ -1,8 +1,9 @@
 name: implement-in-waves
 description: |
   Implement a parent bead's children in waves. Each run is one wave: list the
-  parent's ready, unclaimed direct children, run implement-slice for each in
-  its own worktree, and once every slice has finished, start the next wave by
+  parent's ready, unclaimed direct children, pause on a seam gate where an
+  engineer approves the seams proposed for them, run implement-slice for each
+  approved child in its own worktree, and once every slice has finished, start the next wave by
   itself when this one built anything. The chain ends on a wave that finds nothing new. `wave-status
   <run-id>` reads the whole chain back from Archon's run records.
 
@@ -12,8 +13,10 @@ description: |
   NOT for: one slice (run implement-slice), or a target that is not a git
   repository Archon can cut worktrees in.
 
-# The wave only reads the tracker and starts runs, so it runs in the checkout
-# it was launched from. Every slice gets its own worktree from the fan-out.
+# The wave only reads the code and tracker, settles its beads' notes, and
+# starts runs, so it runs in the checkout it was launched from. Every slice gets its own worktree from the fan-out.
+model: large
+
 worktree:
   enabled: false
 
@@ -62,22 +65,136 @@ nodes:
       type: object
       properties:
         beads: {type: array}
+        count: {type: number}
+      required: [beads, count]
+
+  # The seam gate, skipped on an empty wave. An agent proposes seams for every
+  # candidate against the code on origin as it stands now, citing the bead
+  # text or code each seam comes from, and the engineer approves or answers
+  # with comments that revise it: drop a bead from this wave (the next wave
+  # offers it again), or take a bead out of the epic. Approved seams land in
+  # the beads' notes, where later waves read them as precedent, which is why
+  # an uncited seam is never proposed. The body's session carries across
+  # rounds, and the group's output is the last proposal, read past the gate.
+  - id: seams
+    depends_on: [ready]
+    when: "$ready.output.count > 0"
+    loop_group:
+      until_bash: d=$seam-gate.output.decision; test "$d" = approve
+      max_iterations: 6
+      fresh_context: false
+      nodes:
+        - id: propose
+          prompt: |
+            You propose the seams for one wave of slices. Each slice will be
+            built in parallel by an unattended agent in its own worktree cut
+            from origin/$BASE_BRANCH. An engineer reads your proposal and
+            approves it or answers with comments. Change nothing yourself:
+            no file, no bead. Approval writes what you return.
+
+            Candidate beads this wave: $ready.output.beads
+            Read each with: BEADS_DIR=$INPUTS.beads_dir bd show <id>
+            Run `git fetch origin`, then read the code at origin/$BASE_BRANCH
+            (git show, git grep, git ls-tree), not the working tree, which
+            may lag behind it.
+
+            The engineer's comments on your previous proposal, empty the
+            first time: $LOOP_PREV.seam-gate.output.text
+
+            For each candidate, find the modules its slice touches, the
+            interface it exposes or consumes where it meets another slice
+            in this wave, and any other candidate that would edit the same
+            code. Every seam must come from the bead's own text (its
+            description, design, acceptance criteria or notes) or from the
+            code, and you cite which: quote the bead, or name the file and
+            symbol. Where neither constrains a slice, say "nothing in the
+            bead or the code constrains this slice" and propose no
+            boundary. Never invent a file, module or interface: approved
+            seams become precedent for later waves.
+
+            Apply the engineer's comments. A bead they drop stays out of
+            `wave` and out of `not_this_epic`; the next wave offers it
+            again. A bead they say is not this epic goes in
+            `not_this_epic`. Every other candidate goes in `wave`.
+
+            Return:
+            - question: the proposal as markdown, written for an engineer
+              who has not read the beads. For each candidate: its id and
+              what it is in one line, then its seams, each with its source.
+              Then the collisions. End with what Approve does, by bead id:
+              whose notes get which seams, which beads are dispatched now,
+              which are taken out of the epic, and which wait for the next
+              wave. Last, tell them how to revise: comment in the text,
+              "drop <id>" to hold a bead to the next wave, or "not this
+              epic <id>".
+            - wave: the bead ids to dispatch now.
+            - seams: one {id, seams} per bead in wave. seams is the text
+              appended to that bead's notes, each seam with its source.
+            - not_this_epic: the bead ids to take out of the epic.
+          output_format:
+            type: object
+            properties:
+              question: {type: string}
+              wave: {type: array, items: {type: string}}
+              seams:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: {type: string}
+                    seams: {type: string}
+                  required: [id, seams]
+              not_this_epic: {type: array, items: {type: string}}
+            required: [question, wave, seams, not_this_epic]
+
+        - id: seam-gate
+          depends_on: [propose]
+          wait:
+            attention: $propose.output.question
+            form: select
+            options:
+              - id: approve
+                label: Approve
+                does: Appends the seams to the beads' notes, takes not-this-epic beads out of the epic, and dispatches the wave.
+              - id: revise
+                label: Revise
+                does: Revises the proposal from the text. Say "drop <id>" to hold a bead to the next wave, or "not this epic <id>".
+
+  # Settles the wave: appends the approved seams to each dispatched bead's
+  # notes, takes not-this-epic beads out of the parent, and prints the wave
+  # with the chain's tried list. A dropped bead is in neither, so a later
+  # wave offers it again. Runs on an empty wave too, with no proposal, so
+  # slices and next always have their inputs. wave-status reads the wave
+  # from here, not from ready.
+  - id: apply-seams
+    depends_on: [ready, seams]
+    trigger_rule: none_failed_min_one_success
+    runtime: bun
+    script: apply-seams
+    timeout: 120000
+    with:
+      candidates: $ready.output.beads
+      proposal: {from: $seams.output, if_skipped: "{}"}
+    output_format:
+      type: object
+      properties:
+        beads: {type: array}
         tried: {type: array}
       required: [beads, tried]
 
-  # One implement-slice per bead, all at once: a wave's size is capped by
-  # max_slices in `ready`, not here. The default all_done join keeps one
-  # failed slice from touching its siblings; implement-slice itself decides
-  # where its bead lands. A child paused at its review gate holds this node,
+  # One implement-slice per approved bead, all at once: a wave's size is
+  # capped by max_slices in `ready`, not here. The default all_done join keeps
+  # one failed slice from touching its siblings; implement-slice itself
+  # decides where its bead lands. A child paused at its review gate holds this node,
   # so the next wave starts only once every slice of this one has finished.
   - id: slices
-    depends_on: [ready]
+    depends_on: [apply-seams]
     workflow: implement-slice
     isolation: worktree
     with:
       beads_dir: $INPUTS.beads_dir
     fan_out:
-      items: $ready.output.beads
+      items: $apply-seams.output.beads
       as: bead
       max_parallel: all
 
@@ -86,13 +203,13 @@ nodes:
   # that could start no child at all fails, and the chain stops there rather
   # than retrying the same beads forever.
   - id: next
-    depends_on: [ready, slices]
+    depends_on: [apply-seams, slices]
     runtime: bun
     script: next
     timeout: 120000
     with:
-      wave: $ready.output.beads
-      chain: $ready.output.tried
+      wave: $apply-seams.output.beads
+      chain: $apply-seams.output.tried
     output_format:
       type: object
       properties:

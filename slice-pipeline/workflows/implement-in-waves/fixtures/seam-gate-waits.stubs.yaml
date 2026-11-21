@@ -1,0 +1,20 @@
+# Two ready children, and nobody has answered the seam gate yet. The run
+# pauses there before any slice starts: apply-seams, slices and next are
+# unstubbed, so reaching any of them fails this fixture.
+fixture:
+  expect: paused
+  reached: [ready, propose]
+  inputs:
+    parent: demo
+    beads_dir: /tmp/beads
+
+ready:
+  beads: [demo.1, demo.2]
+  count: 2
+propose:
+  question: "demo.1 and demo.2 dispatch."
+  wave: [demo.1, demo.2]
+  seams:
+    - {id: demo.1, seams: "nothing in the bead or the code constrains this slice"}
+    - {id: demo.2, seams: "nothing in the bead or the code constrains this slice"}
+  not_this_epic: []
