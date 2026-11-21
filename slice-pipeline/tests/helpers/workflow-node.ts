@@ -22,6 +22,7 @@ interface OutputFormat {
 interface WorkflowNode {
   id: string;
   bash?: string;
+  prompt?: string;
   output_format?: unknown;
   wait?: { form?: string };
   loop_group?: { nodes?: WorkflowNode[]; until_bash?: string };
@@ -148,6 +149,13 @@ function commandBody(node: WorkflowNode): string {
   return node.bash;
 }
 
+function promptBody(node: WorkflowNode): string {
+  if (typeof node.prompt !== "string") {
+    unusable(`node '${node.id}' has no prompt`);
+  }
+  return node.prompt;
+}
+
 function untilBody(node: WorkflowNode): string {
   if (typeof node.loop_group?.until_bash !== "string") {
     unusable(`node '${node.id}' is no loop_group with an until_bash`);
@@ -198,13 +206,16 @@ async function checkOutput(node: WorkflowNode): Promise<void> {
 
 const [command, yamlPath, nodeId] = process.argv.slice(2);
 if (!command || !yamlPath || !nodeId) {
-  unusable("usage: workflow-node.ts <body|until|properties|check-output> <workflow.yaml> <node-id>");
+  unusable("usage: workflow-node.ts <body|prompt|until|properties|check-output> <workflow.yaml> <node-id>");
 }
 
 const node = loadNode(yamlPath, nodeId);
 switch (command) {
   case "body":
     console.log(commandBody(node));
+    break;
+  case "prompt":
+    console.log(promptBody(node));
     break;
   case "until":
     console.log(untilBody(node));

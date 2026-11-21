@@ -77,6 +77,14 @@ nodes:
       so this pipeline closes it itself, only after the work has merged. That
       overrides the usual rule to close finished work.
 
+      File any follow-up you find as a direct child of this bead's parent,
+      never as a child of $INPUTS.bead. Read the parent with
+      `BEADS_DIR=$INPUTS.beads_dir bd show $INPUTS.bead --json | jq -r '.[0].parent // empty'`
+      and pass it as `--parent` to `bd create`; with no parent, file the
+      follow-up with no `--parent`. A child of this bead is never built,
+      and while it stays open the pipeline cannot close this bead after
+      merge. Under the parent, the next wave picks the follow-up up.
+
   # Joins on all_done, not the default: under the default, a failed `build`
   # would skip `verify`, which would skip `validate`, `merge` and `release`
   # behind it, and the bead would stay claimed by a worker that is gone.

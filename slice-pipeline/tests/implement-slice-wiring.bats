@@ -263,3 +263,14 @@ run_until_bash() {
     }
   done
 }
+
+@test "the build prompt files follow-ups under the slice's parent, not the slice" {
+  # A child of the slice bead is never dispatched, since a wave lists only its
+  # parent's direct children, and while it stays open `bd close` refuses the
+  # slice after merge. The rule has to reach the agent, so it lives in the
+  # prompt the build node renders, not only in docs.
+  prompt="$(bun "$NODE" prompt "$WORKFLOW" build)"
+  contains "$prompt" '.parent'
+  contains "$prompt" '--parent'
+  contains "$prompt" 'never as a child of $INPUTS.bead'
+}
