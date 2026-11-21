@@ -186,6 +186,33 @@ seconds of each other, before the first wave's slices claim their beads, can
 build the same bead twice. Wait for the first wave's slices to show `running`
 before dispatching that parent again.
 
+### Front a run
+
+The workflows never notify anyone. Whoever fronts a run drives its gates
+through Archon's CLI: a person in a terminal, a chat session, or a bot all
+work the same way.
+
+```sh
+archon workflow wait <run> --json      # blocks until a gate opens or the run ends
+archon workflow answer <run> --occurrence <id> --choose revise --text 'drop <id>' --json
+archon workflow resume <run> --detach
+```
+
+`wait` returns the open gate's `occurrence`, its message and its options.
+Put the message to whoever decides, answer with their choice, resume, then
+wait again. Without `--json`, `answer` resumes the run itself, in your
+shell, and holds it until the run pauses or ends. `answer` has no
+`--detach`, so a front that must stay free records the answer with
+`--json` and continues the run with `resume --detach`. `wait` returns at
+once when a gate is already open, so a front that slept or lost its session
+reruns it on waking.
+
+Each wave starts the next one detached, so waiting on the first wave sees
+only that wave. Follow the chain with `wave-status <run>`: its last line
+names the live wave to wait on next. `archon workflow attention` lists
+every open gate across runs, which covers a wave and its slices' review
+gates together.
+
 On an `imr-ship` target, a slice whose ship halted hands its bead back with
 the halted ship still in its worktree. The chain will not dispatch that bead
 again, but a fresh dispatch of the same parent will, and a fresh ship over a
