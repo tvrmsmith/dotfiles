@@ -1,0 +1,254 @@
+#!/usr/bin/env bash
+#
+# map-next <map-id> [--launch] [--parent auto|current|parent|<selector>] [--max N]
+#
+# Reads a wayfinder map from bd and prints the actions that move it on, as
+# JSON: {"map": <id>, "actions": [...]}. It keeps no state between runs, so a
+# rerun is always safe: everything it decides comes from bd, Orca's worktree
+# list and the forge, read fresh each time. --launch acts on launch and handoff
+# actions, and nothing else.
+#
+# Contracts it reads, which the sessions that work the map write:
+#   - a ticket is a child of the map; its wayfinder:<type> label is its type
+#   - a claim is a ticket in_progress with an assignee
+#   - a session is live while an unarchived Orca worktree named for its bead
+#     exists (<ticket-id>, or <map-id>-handoff for the handoff). Orca's agent
+#     state cannot tell a HITL chat parked on Trevor from a finished one
+#   - a ticket that wrote docs carries metadata docs_pr=<PR URL>
+#   - the handoff claims the map itself, and sets metadata build_epic=<id> on
+#     the map once its tickets are published
+#
+# Launch claims with --if-status open rather than --claim: every session runs
+# as the same bd actor, and --claim is idempotent for one actor, so two runs
+# would both win it.
+set -uo pipefail
+
+usage() {
+	echo "usage: map-next <map-id> [--launch] [--parent auto|current|parent|<selector>] [--max N]" >&2
+	exit 2
+}
+
+die() {
+	echo "map-next: $*" >&2
+	exit 1
+}
+
+MAP=""
+LAUNCH=0
+PARENT_MODE=auto
+MAX_HITL=2
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--launch) LAUNCH=1 ;;
+	--parent)
+		[ $# -ge 2 ] || usage
+		PARENT_MODE="$2"
+		shift
+		;;
+	--max)
+		[ $# -ge 2 ] || usage
+		case "$2" in '' | *[!0-9]*) usage ;; esac
+		MAX_HITL="$2"
+		shift
+		;;
+	-*) usage ;;
+	*)
+		[ -z "$MAP" ] || usage
+		MAP="$1"
+		;;
+	esac
+	shift
+done
+[ -n "$MAP" ] || usage
+
+ACTOR="${BEADS_ACTOR:-$(git config user.name 2>/dev/null || true)}"
+ACTOR="${ACTOR:-${USER:-map-next}}"
+
+map_json="$(bd show "$MAP" --json 2>/dev/null)" || die "bd cannot find map $MAP"
+map_json="$(jq -c '.[0]' <<<"$map_json")"
+
+# The text of one "## <heading>" section of the map body, HTML comments removed.
+section() {
+	jq -r '.description // ""' <<<"$map_json" | perl -0777 -ne '
+		s/<!--.*?-->//gs;
+		print $1 if /^##[ \t]+'"$1"'[ \t]*\n(.*?)(?=^##[ \t]|\z)/msi;
+	'
+}
+
+emit() {
+	jq -n --arg map "$MAP" --argjson actions "$1" '{map: $map, actions: $actions}'
+}
+
+# Names of unarchived Orca worktrees, one per line.
+live_names() {
+	local out
+	out="$(orca worktree list --json)" || die "orca worktree list failed"
+	jq -r '.result.worktrees[] | select(.isArchived != true) | .displayName // empty' <<<"$out"
+}
+
+# The --parent-worktree selector this run launches under.
+resolve_parent() {
+	local cur id pk
+	case "$PARENT_MODE" in
+	auto | current | parent) ;;
+	*)
+		printf '%s\n' "$PARENT_MODE"
+		return 0
+		;;
+	esac
+	cur="$(orca worktree current --json)" || die "orca worktree current failed; is this an Orca worktree?"
+	id="$(jq -r '.result.worktree.id // empty' <<<"$cur")"
+	pk="$(jq -r '.result.worktree.workspaceLineage.parentWorkspaceKey // empty' <<<"$cur")"
+	case "$PARENT_MODE" in
+	current) printf 'worktree:%s\n' "$id" ;;
+	parent)
+		[ -n "$pk" ] || die "this worktree has no parent to launch under"
+		printf '%s\n' "$pk"
+		;;
+	auto)
+		case "$pk" in
+		worktree:*) printf '%s\n' "$pk" ;;
+		*) printf 'worktree:%s\n' "$id" ;;
+		esac
+		;;
+	esac
+}
+
+# start <action-json> <bead> <worktree-name> <prompt> <parent>: claims the bead,
+# starts the session, and prints the action with its result added. Returns 1
+# when the session failed to start, after handing the claim back.
+start() {
+	local action="$1" bead="$2" name="$3" prompt="$4" parent="$5" out
+	if ! bd update "$bead" --if-status open --status in_progress --assignee "$ACTOR" >/dev/null 2>&1; then
+		# Lost the race (exit 13 for this actor, a refusal for another one), or bd failed.
+		[ "$(bd show "$bead" --json 2>/dev/null | jq -r '.[0].status')" != open ] ||
+			die "bd could not claim $bead"
+		jq -c '. + {result: "claimed elsewhere"}' <<<"$action"
+		return 0
+	fi
+	if out="$(orca worktree create --name "$name" --agent claude --prompt "$prompt" \
+		--parent-worktree "$parent" --json 2>&1)"; then
+		jq -c --arg p "$parent" --arg w "$(jq -r '.result.worktree.id // empty' <<<"$out" 2>/dev/null)" \
+			'. + {result: "launched", worktree: $w, parent: $p}' <<<"$action"
+		return 0
+	fi
+	bd update "$bead" --status open --assignee "" >/dev/null 2>&1 ||
+		echo "map-next: could not hand back the claim on $bead" >&2
+	jq -c --arg e "$out" '. + {result: "failed", error: $e}' <<<"$action"
+	return 1
+}
+
+# Acts on the launch and handoff actions in $1 when --launch is set, and prints
+# the final document. Exits 1 when any launch failed.
+finish() {
+	local actions="$1" parent="" failed=0 out=() a kind
+	if [ "$LAUNCH" -eq 0 ] || ! jq -e 'any(.[]; .action == "launch" or .action == "handoff")' <<<"$actions" >/dev/null; then
+		emit "$actions"
+		return 0
+	fi
+	parent="$(resolve_parent)" || exit 1
+	while IFS= read -r a; do
+		kind="$(jq -r .action <<<"$a")"
+		case "$kind" in
+		launch)
+			t="$(jq -r .ticket <<<"$a")"
+			a="$(start "$a" "$t" "$t" "$(jq -r .prompt <<<"$a")" "$parent")" || failed=1
+			;;
+		handoff)
+			a="$(start "$a" "$MAP" "$MAP-handoff" "$(jq -r .prompt <<<"$a")" "$parent")" || failed=1
+			;;
+		esac
+		out+=("$a")
+	done < <(jq -c '.[]' <<<"$actions")
+	emit "$(printf '%s\n' "${out[@]}" | jq -cs .)"
+	return "$failed"
+}
+
+# --- build -------------------------------------------------------------------
+build_epic="$(jq -r '.metadata.build_epic // empty' <<<"$map_json")"
+if [ -n "$build_epic" ]; then
+	kids="$(bd list --parent "$build_epic" --all --json 2>/dev/null)" || die "bd cannot list $build_epic"
+	if [ "$(jq 'length' <<<"$kids")" -gt 0 ]; then
+		emit "$(jq -cn --arg b "$build_epic" '[{action: "build", build_epic: $b}]')"
+		exit 0
+	fi
+fi
+
+children="$(bd list --parent "$MAP" --all --json 2>/dev/null)" || die "bd cannot list the children of $MAP"
+ready="$(bd ready --parent "$MAP" --unassigned --json 2>/dev/null)" || die "bd ready failed for $MAP"
+live="$(live_names | jq -Rsc 'split("\n") | map(select(. != ""))')"
+indexed="$(section 'Decisions so far'; section 'Out of scope')"
+
+# Each child as {ticket, title, type, state}, state one of closed, claimed,
+# ready, blocked. A child with no wayfinder:<type> label has type null and
+# counts as needing Trevor.
+tickets="$(jq -c --argjson ready "$ready" '
+	($ready | map(.id)) as $r
+	| map({
+		ticket: .id,
+		title: .title,
+		type: ((.labels // []) | map(select(startswith("wayfinder:") and . != "wayfinder:map") | sub("^wayfinder:"; "")) | first),
+		state: (if .status == "closed" then "closed"
+			elif (.assignee // "") != "" or .status == "in_progress" then "claimed"
+			elif (.id | IN($r[])) then "ready"
+			else "blocked" end),
+		docs_pr: (.metadata.docs_pr // null)
+	})
+	| sort_by(.ticket as $id | ($r | index($id)) // 1e9)
+' <<<"$children")" || die "could not read the tickets of $MAP"
+
+actions="$(jq -c --argjson live "$live" --arg indexed "$indexed" --arg map "$MAP" --argjson max "$MAX_HITL" '
+	def base: {ticket, title, type};
+	def hitl: .type != "research";
+	def is_live: (.ticket | IN($live[]));
+	(map(select(.state == "closed" and (.ticket as $t | $indexed | contains($t) | not)))
+		| map({action: "flag", ticket, title, reason: "closed but missing from Decisions so far"})) as $flags
+	| (map(select(.state == "claimed"))) as $claimed
+	| ($claimed | map(select(is_live | not)) | map({action: "stale"} + base)) as $stale
+	| ($claimed | map(select(is_live)) | map({action: "wait"} + base)) as $wait
+	| ($claimed | map(select(is_live and hitl)) | length) as $busy
+	| (map(select(.state == "ready"))) as $ready
+	| ([$ready[] | select(hitl)] | .[:([$max - $busy, 0] | max)] | map(.ticket)) as $hitl_go
+	| ($ready | map(select((hitl | not) or (.ticket | IN($hitl_go[])))))
+		| map({action: "launch"} + base + {prompt: "/wayfinder \($map) \(.ticket)"}) as $launch
+	| ($ready | map(select(hitl and (.ticket | IN($hitl_go[]) | not))))
+		| map({action: "hold"} + base + {reason: "\($max) tickets that need Trevor already running"}) as $hold
+	| $flags + $stale + $wait + $launch + $hold
+' <<<"$tickets")" || die "could not derive the actions"
+
+open_count="$(jq '[.[] | select(.state != "closed")] | length' <<<"$tickets")"
+if [ "$open_count" -gt 0 ] || [ "$(jq length <<<"$actions")" -gt 0 ]; then
+	finish "$actions"
+	exit $?
+fi
+
+# --- the way is clear of tickets: fog, docs PRs, handoff ---------------------
+if [ -n "$(section 'Not yet specified' | tr -d '[:space:]')" ]; then
+	emit '[{"action": "fog", "reason": "no open tickets, but Not yet specified still holds fog"}]'
+	exit 0
+fi
+
+pr_waits="[]"
+while IFS=$'\t' read -r t url; do
+	[ -n "$url" ] || continue
+	state="$(gh pr view "$url" --json state 2>/dev/null | jq -r '.state // empty')"
+	[ -n "$state" ] || die "the forge cannot read docs PR $url on $t"
+	[ "$state" = MERGED ] && continue
+	pr_waits="$(jq -c --arg t "$t" --arg u "$url" --arg s "$state" '. + [{action: "wait", ticket: $t, docs_pr: $u, state: $s}]' <<<"$pr_waits")"
+done < <(jq -r '.[] | select(.docs_pr) | [.ticket, .docs_pr] | @tsv' <<<"$tickets")
+if [ "$pr_waits" != "[]" ]; then
+	emit "$pr_waits"
+	exit 0
+fi
+
+if [ -n "$(jq -r '.assignee // empty' <<<"$map_json")" ] || [ "$(jq -r .status <<<"$map_json")" = in_progress ]; then
+	if jq -e --arg n "$MAP-handoff" 'index($n)' <<<"$live" >/dev/null; then
+		emit "$(jq -cn --arg m "$MAP" '[{action: "wait", ticket: $m, handoff: true}]')"
+	else
+		emit "$(jq -cn --arg m "$MAP" '[{action: "stale", ticket: $m, handoff: true}]')"
+	fi
+	exit 0
+fi
+
+prompt="/to-spec-to-tickets Wayfinder map $MAP is the conversation to synthesize, not an existing spec: write the spec from its Destination, its Decisions so far, and the design of every ticket under it. Then finish the handoff as the map-next skill says."
+finish "$(jq -cn --arg m "$MAP" --arg p "$prompt" '[{action: "handoff", ticket: $m, prompt: $p}]')"
