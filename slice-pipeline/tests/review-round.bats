@@ -317,3 +317,68 @@ assert_orca_failure() {
   assert_orca_failure "orca: stub repo list configured to fail"
   lacks "$(cat "$CALL_LOG")" "terminal create"
 }
+
+# GitHub mode, for a machine with no Orca or tuicr: review-round starts a
+# detached review-watch on the pull request's GitHub reviews instead of a
+# tab. The watcher here finds the run completed and exits at once.
+github_round() {
+  SLICE_WAVE_REVIEW=github SLICE_WAVE_REVIEW_APPROVERS=trevor round "$@"
+}
+
+# True once the detached watcher has read the pull request's reviews and
+# ended, waiting up to 5 seconds for it, so teardown never pulls its stubs
+# from under it.
+watcher_read_reviews() {
+  local tries=0
+  until grep -q $'^gh\tapi repos/owner/repo/pulls/42/reviews' "$CALL_LOG" &&
+    grep -q "so the watch ends" "$XDG_STATE_HOME/slice-pipeline/review-run-1.log" 2>/dev/null; do
+    [ "$tries" -lt 50 ] || return 1
+    tries=$((tries + 1))
+    sleep 0.1
+  done
+}
+
+@test "review-round in GitHub mode starts a watcher instead of a tab and names the pull request's URL and head" {
+  export XDG_STATE_HOME="$STUB_BIN/state" ARCHON_GET_SEQUENCE=completed SLICE_WAVE_REVIEW_POLL_SECONDS=0
+  rc=0; out="$(github_round)" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" outcome)" waiting
+  equals "$(field "$out" head_sha)" "$SHA"
+  contains "$(field "$out" question)" "https://github.com/owner/repo/pull/42 at $SHA on GitHub"
+  contains "$(field "$out" question)" "/approve"
+  watcher_read_reviews
+  is_empty "$(grep $'^orca\t' "$CALL_LOG")"
+}
+
+@test "review-round in GitHub mode approves the head the gate's answer names, calling nothing" {
+  rc=0; out="$(github_round approved "$SHA" "$OTHER")" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" outcome)" approved
+  equals "$(field "$out" head_sha)" "$SHA"
+  is_empty "$(cat "$CALL_LOG")"
+}
+
+@test "review-round in GitHub mode exits 1 and calls nothing when no approver is set" {
+  for approvers in "" " , "; do
+    rc=0; out="$(SLICE_WAVE_REVIEW=github SLICE_WAVE_REVIEW_APPROVERS="$approvers" round 2>"$STUB_BIN/err")" || rc=$?
+    equals "'$approvers' $rc" "'$approvers' 1"
+    is_empty "$out"
+    contains "$(cat "$STUB_BIN/err")" "needs SLICE_WAVE_REVIEW_APPROVERS"
+  done
+  is_empty "$(cat "$CALL_LOG")"
+}
+
+@test "review-round exits 1 and calls nothing on an unknown review mode" {
+  rc=0; out="$(SLICE_WAVE_REVIEW=gitlab round 2>"$STUB_BIN/err")" || rc=$?
+  equals "$rc" 1
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "must be tuicr or github, not 'gitlab'"
+  is_empty "$(cat "$CALL_LOG")"
+}
+
+@test "review-round in GitHub mode reports undelivered with no approvers set, since there is nothing to review" {
+  rc=0; out="$(SLICE_WAVE_REVIEW=github review_round --bead demo-1 --delivered false --pr 0 --repo '' --run run-1 --answer '' --answer-text '' --shown-head '')" || rc=$?
+  equals "$rc" 0
+  equals "$(field "$out" outcome)" undelivered
+  is_empty "$(cat "$CALL_LOG")"
+}

@@ -165,6 +165,10 @@ nodes:
   # there would hand a slice with an open, reviewed pull request back to the
   # frontier for a second worker to build again.
   #
+  # With SLICE_WAVE_REVIEW=github there is no tab: review-round starts the
+  # watcher detached on the pull request's GitHub reviews, and only a review
+  # by a login in SLICE_WAVE_REVIEW_APPROVERS answers the gate (see README).
+  #
   # On the first iteration every $LOOP_PREV renders as '', which review-round
   # reads as no answer yet. review-round's timeout covers a few gh and orca
   # calls.

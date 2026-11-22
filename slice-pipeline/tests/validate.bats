@@ -102,6 +102,26 @@ commit_slice_with_decisions() {
   lacks "$body" "Build decisions"
 }
 
+@test "validate opens the findings record's visible text with SLICE_WAVE_COMMENT_PREFIX, keeping its marker first" {
+  SLICE_WAVE_COMMENT_PREFIX="Claude Duet posting on behalf of tvrmsmith" validate --verified true >/dev/null
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  equals "$(printf '%s\n' "$body" | sed -n 1p)" "<!-- slice-pipeline:findings-record -->"
+  equals "$(printf '%s\n' "$body" | sed -n 2p)" "Claude Duet posting on behalf of tvrmsmith"
+  equals "$(printf '%s\n' "$body" | sed -n 3p)" ""
+  equals "$(printf '%s\n' "$body" | sed -n 4p)" "## slice-pipeline findings record"
+  contains "$body" "Outcome: checks-passed"
+}
+
+@test "validate opens an imr-ship findings record with SLICE_WAVE_COMMENT_PREFIX too" {
+  write_repos_config '{"owner/repo":{"validator":"imr-ship"}}'
+  export SLICE_WAVE_COMMENT_PREFIX="Claude Duet posting on behalf of tvrmsmith"
+  export GH_PR_LIST_JSON='[{"number":42,"url":"https://github.com/owner/repo/pull/42"}]'
+  validate --verified true >/dev/null
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  equals "$(printf '%s\n' "$body" | sed -n 2p)" "Claude Duet posting on behalf of tvrmsmith"
+  contains "$body" "Validator: imr pr ship --autofix-review"
+}
+
 @test "validate copies the slice commit's Seam and Assumption trailers into the findings record" {
   commit_slice_with_decisions
   validate --verified true >/dev/null

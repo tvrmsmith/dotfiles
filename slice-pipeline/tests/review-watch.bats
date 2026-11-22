@@ -357,3 +357,143 @@ resumed() {
   equals "$rc" 0
   equals "$(grep '^sleep' "$CALL_LOG")" "$(printf 'sleep\t15')"
 }
+
+# GitHub mode (SLICE_WAVE_REVIEW=github): the watch reads the pull request's
+# GitHub reviews instead of a tuicr session. Its first reviews read is the
+# baseline, so each scripted sequence starts with the reviews already there.
+
+# Watches owner/repo#42 for run run-1 in GitHub mode with trevor approving.
+github_watch() {
+  SLICE_WAVE_REVIEW=github SLICE_WAVE_REVIEW_APPROVERS="${APPROVERS-trevor}" watch "$@"
+}
+
+# Prints one review as GitHub's API reports it: id $1 by login $2 in state
+# $3 on commit $4, with body $5.
+review() {
+  jq -cn --argjson id "$1" --arg login "$2" --arg state "$3" --arg commit "$4" --arg body "${5:-}" \
+    '{id: $id, user: {login: $login}, state: $state, commit_id: $commit, body: $body}'
+}
+
+# Joins reviews into one JSON array, the shape of one reviews read.
+reviews_of() {
+  local IFS=,
+  printf '[%s]\n' "$*"
+}
+
+# Scripts the reviews reads, one JSON array per argument.
+review_reads() {
+  GH_REVIEWS_SEQUENCE="$(reads "$@")"
+  export GH_REVIEWS_SEQUENCE
+}
+
+@test "review-watch in GitHub mode approves an Approve review on the pull request's head and resumes the run" {
+  review_reads '[]' "$(reviews_of "$(review 1 trevor APPROVED "$SHA")")"
+  rc=0; out="$(github_watch 2>&1)" || rc=$?
+  equals "$rc" 0
+  is_empty "$out"
+  equals "$(answers)" "p1 approved $SHA"
+  resumed
+  contains "$(cat "$LOG")" "watching the GitHub reviews of owner/repo#42 for run run-1 after review 0"
+}
+
+@test "review-watch in GitHub mode approves a Comment review whose whole body is /approve, in any case and spacing" {
+  review_reads '[]' "$(reviews_of "$(review 1 trevor COMMENTED "$SHA" $'  /Approve\n')")"
+  rc=0; github_watch || rc=$?
+  equals "$rc" 0
+  equals "$(answers)" "p1 approved $SHA"
+}
+
+@test "review-watch in GitHub mode answers comments for an approval that carries inline comments" {
+  export ARCHON_GET_SEQUENCE="paused:p1 paused:p1 completed"
+  review_reads '[]' "$(reviews_of "$(review 1 trevor APPROVED "$SHA")")"
+  export GH_REVIEW_COMMENTS_JSON='[{"id":11,"pull_request_review_id":1},{"id":12,"pull_request_review_id":1},{"id":13,"pull_request_review_id":99}]'
+  rc=0; github_watch || rc=$?
+  equals "$rc" 0
+  equals "$(answers)" "p1 comments 2 comments in GitHub review 1"
+}
+
+@test "review-watch in GitHub mode answers comments for changes requested even beside a later approval" {
+  export ARCHON_GET_SEQUENCE="paused:p1 paused:p1 completed"
+  review_reads '[]' "$(reviews_of "$(review 1 trevor CHANGES_REQUESTED "$SHA" "fix it")" "$(review 2 trevor APPROVED "$SHA")")"
+  rc=0; github_watch || rc=$?
+  equals "$rc" 0
+  equals "$(answers)" "p1 comments 1 comments in GitHub review 2"
+}
+
+@test "review-watch in GitHub mode answers comments for a Comment review with any other body" {
+  export ARCHON_GET_SEQUENCE="paused:p1 paused:p1 completed"
+  review_reads '[]' "$(reviews_of "$(review 1 trevor COMMENTED "$SHA" "/approve once you rename it")")"
+  rc=0; github_watch || rc=$?
+  equals "$rc" 0
+  equals "$(answers)" "p1 comments 1 comments in GitHub review 1"
+}
+
+@test "review-watch in GitHub mode ignores reviews by a login that is not an approver, and pending or dismissed ones" {
+  export ARCHON_GET_SEQUENCE="paused:p1 completed"
+  review_reads '[]' "$(reviews_of "$(review 1 claude-bot APPROVED "$SHA")" "$(review 2 trevor PENDING "$SHA")" "$(review 3 trevor DISMISSED "$SHA")")"
+  rc=0; github_watch || rc=$?
+  equals "$rc" 0
+  is_empty "$(answers)"
+}
+
+@test "review-watch in GitHub mode trusts every login in a comma-separated approver list" {
+  review_reads '[]' "$(reviews_of "$(review 1 sam APPROVED "$SHA")")"
+  APPROVERS="trevor, sam"
+  rc=0; github_watch || rc=$?
+  equals "$rc" 0
+  equals "$(answers)" "p1 approved $SHA"
+}
+
+@test "review-watch in GitHub mode does not count a review made before the watch started" {
+  export ARCHON_GET_SEQUENCE="paused:p1 completed"
+  review_reads "$(reviews_of "$(review 5 trevor APPROVED "$SHA")")"
+  rc=0; github_watch || rc=$?
+  equals "$rc" 0
+  is_empty "$(answers)"
+  contains "$(cat "$LOG")" "after review 5"
+}
+
+@test "review-watch in GitHub mode does not approve an approval of a stale head, logs why, and approves the next one" {
+  export ARCHON_GET_SEQUENCE="paused:p1 paused:p1"
+  review_reads '[]' "$(reviews_of "$(review 1 trevor APPROVED "$OTHER")")" \
+    "$(reviews_of "$(review 1 trevor APPROVED "$OTHER")" "$(review 2 trevor APPROVED "$SHA")")"
+  rc=0; github_watch || rc=$?
+  equals "$rc" 0
+  equals "$(answers)" "p1 approved $SHA"
+  contains "$(cat "$LOG")" "the approving review 1 covered head $OTHER, not the pull request's head $SHA"
+}
+
+@test "review-watch in GitHub mode waits out a failed reviews read at the baseline and after it" {
+  review_reads FAIL '[]' FAIL "$(reviews_of "$(review 1 trevor APPROVED "$SHA")")"
+  rc=0; github_watch || rc=$?
+  equals "$rc" 0
+  equals "$(answers)" "p1 approved $SHA"
+  contains "$(cat "$LOG")" "gh could not list the reviews of pull request 42"
+}
+
+@test "review-watch in GitHub mode judges nothing while the inline comments cannot be read" {
+  export ARCHON_GET_SEQUENCE="paused:p1 completed" GH_REVIEW_COMMENTS_EXIT=1
+  review_reads '[]' "$(reviews_of "$(review 1 trevor APPROVED "$SHA")")"
+  rc=0; github_watch || rc=$?
+  equals "$rc" 0
+  is_empty "$(answers)"
+  contains "$(cat "$LOG")" "gh could not list the review comments of pull request 42"
+}
+
+@test "review-watch in GitHub mode ends when the pull request is no longer open" {
+  export GH_PR_VIEW_STATES=CLOSED
+  review_reads '[]'
+  rc=0; github_watch || rc=$?
+  equals "$rc" 0
+  is_empty "$(answers)"
+  contains "$(cat "$LOG")" "pull request 42 is CLOSED, so the watch ends"
+}
+
+@test "review-watch in GitHub mode exits 1 and logs why when no approver is set" {
+  APPROVERS=""
+  rc=0; github_watch || rc=$?
+  equals "$rc" 1
+  contains "$(cat "$LOG")" "needs SLICE_WAVE_REVIEW_APPROVERS"
+  is_empty "$(grep $'^gh\t' "$CALL_LOG")"
+  [ ! -e "$XDG_STATE_HOME/slice-pipeline/review-run-1.pid" ]
+}

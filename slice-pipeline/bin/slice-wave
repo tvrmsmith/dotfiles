@@ -855,6 +855,23 @@ build_decisions_section() {
 	[ -z "$assumptions" ] || printf 'Assumptions:\n%s\n\n' "$(printf '%s\n' "$assumptions" | sed 's/^/- /')"
 }
 
+# Copies a comment body from stdin to stdout, opening it with the line in
+# $SLICE_WAVE_COMMENT_PREFIX when that is set, such as "Claude Duet posting
+# on behalf of tvrmsmith" on a machine where Claude Duet runs the pipeline
+# for him. A leading HTML comment stays first, since readers find a record
+# by it, and the prefix opens the text a person sees.
+with_comment_prefix() {
+	if [ -z "${SLICE_WAVE_COMMENT_PREFIX:-}" ]; then
+		cat
+		return
+	fi
+	awk -v prefix="$SLICE_WAVE_COMMENT_PREFIX" '
+		NR == 1 && /^<!--.*-->$/ { print; next }
+		!done { print prefix; print ""; done = 1 }
+		{ print }
+		END { if (!done) { print prefix } }'
+}
+
 # Prints the markdown comment that records a drive on its pull request, from
 # the outcome $1, the fix count $2 and its `step: summary` lines $3, the
 # outstanding findings $4, the error or gate text $5, the run's full TOON
@@ -926,7 +943,7 @@ validate_slice() {
 	fi
 
 	if findings_record "$outcome" "$fix_rounds" "$fixes" "$findings" "$problem" "$toon" "$decisions" \
-		| gh pr comment "$pr_url" --body-file - >/dev/null; then
+		| with_comment_prefix | gh pr comment "$pr_url" --body-file - >/dev/null; then
 		record_posted=true
 	else
 		add_reason "cannot post the findings record on pull request $pr_url"
@@ -1002,7 +1019,7 @@ ship_slice() {
 	find_open_pr "$repo"
 	[ "$pr_number" -gt 0 ] || return
 
-	if ship_record "$outcome" "$stop" "$decisions" | gh pr comment "$pr_url" --body-file - >/dev/null; then
+	if ship_record "$outcome" "$stop" "$decisions" | with_comment_prefix | gh pr comment "$pr_url" --body-file - >/dev/null; then
 		record_posted=true
 	else
 		add_reason "cannot post the findings record on pull request $pr_url"
@@ -1367,6 +1384,127 @@ read_session() {
 	} <<<"$session"
 }
 
+# GitHub review, for machines with no Orca or tuicr (a cloud session), set by
+# SLICE_WAVE_REVIEW=github. It keeps tuicr's contract: a review with no
+# comments on the pull request's current head approves, anything with
+# comments starts another round, and review-watch answers the gate from it.
+#
+# Only reviews by a login in $SLICE_WAVE_REVIEW_APPROVERS (comma-separated)
+# count, so a bot's review can never approve a merge. GitHub refuses an
+# Approve on your own pull request, so a Comment review whose whole body is
+# /approve approves too. Either one needs no inline comments, and is pinned
+# to the head through the review's own commit_id.
+
+# Prints the review mode, tuicr or github, or names the problem on stderr and
+# returns 1 when the mode is unknown or github has no approvers to trust.
+review_mode() {
+	local mode="${SLICE_WAVE_REVIEW:-tuicr}"
+	case "$mode" in
+		tuicr) ;;
+		github)
+			[ -n "${SLICE_WAVE_REVIEW_APPROVERS//[ ,]/}" ] || {
+				echo "slice-wave: SLICE_WAVE_REVIEW=github needs SLICE_WAVE_REVIEW_APPROVERS, the GitHub logins whose review approves" >&2
+				return 1
+			}
+			;;
+		*)
+			echo "slice-wave: SLICE_WAVE_REVIEW must be tuicr or github, not '$mode'" >&2
+			return 1
+			;;
+	esac
+	printf '%s\n' "$mode"
+}
+
+# Sets the caller's reviews to every review of pull request $1 in repository
+# $2, or returns 1 with read_problem saying why gh cannot say.
+read_review_list() {
+	local said
+	said="$(gh api "repos/$2/pulls/$1/reviews" --paginate --jq '.[]' 2>&1)" || {
+		read_problem="gh could not list the reviews of pull request $1: $said"
+		return 1
+	}
+	reviews="$(jq -cs . <<<"$said" 2>&1)" || {
+		read_problem="cannot read the reviews of pull request $1: $reviews"
+		return 1
+	}
+	read_problem=""
+}
+
+# Sets the caller's reviews and inline from pull request $1 in repository $2:
+# every review, and every inline review comment (each names its review), or
+# returns 1 with read_problem saying why gh cannot say.
+read_github_reviews() {
+	local said
+	read_review_list "$1" "$2" || return 1
+	said="$(gh api "repos/$2/pulls/$1/comments" --paginate --jq '.[]' 2>&1)" || {
+		read_problem="gh could not list the review comments of pull request $1: $said"
+		return 1
+	}
+	inline="$(jq -cs . <<<"$said" 2>&1)" || {
+		read_problem="cannot read the review comments of pull request $1: $inline"
+		return 1
+	}
+	read_problem=""
+}
+
+# Prints the highest review id in the caller's reviews, 0 when there is none.
+last_review_id() {
+	jq '[.[].id] | max // 0' <<<"$reviews"
+}
+
+# Judges the caller's reviews and inline past base_id against pull request
+# head pr_head. Returns 0 with outcome, comments, head_sha and last set when
+# a review decides the round; otherwise moves base_id past what it read and
+# returns 1, setting read_problem when the reviews could not be judged. Any
+# review with comments decides the round as comments, even beside an
+# approval, as a send with comments does in tuicr.
+judge_github_reviews() {
+	local judged
+	judged="$(jq -c --argjson after "$base_id" --arg approvers "$SLICE_WAVE_REVIEW_APPROVERS" \
+		--argjson inline "$inline" '
+		($approvers | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(. != ""))) as $who
+		| map(select(.id > $after and (.user.login as $l | $who | index($l) != null)
+		             and (.state == "APPROVED" or .state == "COMMENTED" or .state == "CHANGES_REQUESTED")))
+		| sort_by(.id)
+		| map(. as $r | ([$inline[] | select(.pull_request_review_id == $r.id)] | length) as $n
+		      | {id, commit_id, n: $n,
+		         approves: ($n == 0 and (.state == "APPROVED"
+		                    or (.state == "COMMENTED" and ((.body // "") | gsub("^\\s+|\\s+$"; "") | ascii_downcase) == "/approve")))})
+		| {last: (map(.id) | max), comments: (map(select(.approves | not) | if .n > 0 then .n else 1 end) | add // 0),
+		   approval: (map(select(.approves)) | last)}' <<<"$reviews" 2>&1)" || {
+		read_problem="cannot judge the reviews of pull request $pr: $judged"
+		return 1
+	}
+	last="$(jq -r '.last // empty' <<<"$judged")"
+	[ -n "$last" ] || return 1
+	comments="$(jq -r '.comments' <<<"$judged")"
+	if [ "$comments" -gt 0 ]; then
+		outcome=comments
+		return 0
+	fi
+	local approved_head
+	approved_head="$(jq -r '.approval.commit_id // empty' <<<"$judged")"
+	if [ "$approved_head" = "$pr_head" ]; then
+		outcome=approved
+		head_sha="$approved_head"
+		return 0
+	fi
+	# An approval of a stale head approves nothing, and the engineer approves
+	# again once the new head is up.
+	add_reason "the approving review $last covered head $approved_head, not the pull request's head $pr_head"
+	base_id="$last"
+	return 1
+}
+
+# Starts a detached review-watch for run $1 on pull request $2 of repository
+# $3, the GitHub mode's stand-in for the review tab. The watcher keeps one
+# copy per run itself, so starting it every round is safe.
+start_github_watch() {
+	local self
+	self="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
+	nohup "$self" review-watch --run "$1" --pr "$2" --repo "$3" >/dev/null 2>&1 &
+}
+
 # Opens the review tab titled $3 in Orca, running tuicr on pull request $1
 # of repository $2 beside a review-watch for Archon run $4, unless a tab of
 # that title is already open.
@@ -1492,7 +1630,10 @@ cmd_review_round() {
 		esac
 	fi
 
-	local outcome="" head_sha="" question="" reason="" read_problem="" pr_state pr_head
+	local outcome="" head_sha="" question="" reason="" read_problem="" pr_state pr_head mode
+	if [ "$delivered" = true ]; then
+		mode="$(review_mode)" || return 1
+	fi
 	if [ "$delivered" = false ]; then
 		outcome=undelivered
 		reason="the slice was not delivered, so there is nothing to review"
@@ -1517,10 +1658,15 @@ cmd_review_round() {
 			echo "slice-wave: pull request $pr is $pr_state, so review ended without a merge" >&2
 			return 1
 		}
-		ensure_review_tab "$pr" "$repo" "review $bead #$pr" "$run" || return 1
 		outcome=waiting
 		head_sha="$pr_head"
-		question="Review $repo#$pr at $head_sha in the Orca tab 'review $bead #$pr'. A send with no comments approves that head and one with comments starts another round; the tab answers this for you."
+		if [ "$mode" = github ]; then
+			start_github_watch "$run" "$pr" "$repo"
+			question="Review https://github.com/$repo/pull/$pr at $head_sha on GitHub. An Approve, or a Comment review whose whole body is /approve, with no inline comments approves that head; any other review starts another round. A watcher answers this for you."
+		else
+			ensure_review_tab "$pr" "$repo" "review $bead #$pr" "$run" || return 1
+			question="Review $repo#$pr at $head_sha in the Orca tab 'review $bead #$pr'. A send with no comments approves that head and one with comments starts another round; the tab answers this for you."
+		fi
 		[ "$answer" != comments ] || reason="comments were sent, so this is a new round"
 	fi
 
@@ -1625,7 +1771,12 @@ cmd_review_watch() {
 
 	local poll="${SLICE_WAVE_REVIEW_POLL_SECONDS:-15}" slug="gh:$repo/pr/$pr"
 	local count path session_head base_count=0 base_path="" rc read_problem="" reason=""
-	local pr_state pr_head run_status wait_kind pause_id answered="" outcome comments head_sha
+	local pr_state pr_head run_status wait_kind pause_id answered="" outcome comments head_sha mode
+	mode="$(review_mode)" || return 1
+	if [ "$mode" = github ]; then
+		watch_github_reviews
+		return $?
+	fi
 	# The baseline is the session as it stands before tuicr starts, so a
 	# send made before the first poll still counts. A list tuicr cannot give
 	# may hide releases, so the watch waits for one rather than guess.
@@ -1675,6 +1826,65 @@ cmd_review_watch() {
 						return 0
 						;;
 					2) watch_log "dropped the $outcome send at release $count, since its gate took no answer" ;;
+				esac
+			fi
+			[ -z "$reason" ] || watch_log "$reason"
+		fi
+		[ -z "$read_problem" ] || watch_log "$read_problem"
+		read_problem=""
+		sleep "$poll"
+	done
+}
+
+# review-watch's GitHub mode, run with cmd_review_watch's locals: answers run
+# $run's review gate from the reviews of pull request $pr in repository
+# $repo, and exits once it approves, the pull request closes, or the run
+# stops. The baseline is the last review before the watch starts, so only a
+# review made for this round counts. A list gh cannot give may hide reviews,
+# so the watch waits for one rather than guess.
+watch_github_reviews() {
+	local reviews inline base_id last
+	while ! read_review_list "$pr" "$repo"; do
+		watch_log "$read_problem"
+		sleep "$poll"
+	done
+	base_id="$(last_review_id)"
+	watch_log "watching the GitHub reviews of $repo#$pr for run $run after review $base_id"
+
+	while :; do
+		if read_run "$run"; then
+			case "$run_status" in
+				paused | running) ;;
+				*)
+					watch_log "run $run is $run_status, so the watch ends"
+					return 0
+					;;
+			esac
+		else
+			watch_log "$read_problem"
+		fi
+		# A failed gh read leaves the head unknown, so this pass judges
+		# nothing and the next one reads the same reviews again.
+		if read_pr_head "$pr" "$repo"; then
+			[ "$pr_state" = OPEN ] || {
+				watch_log "pull request $pr is $pr_state, so the watch ends"
+				return 0
+			}
+			reason=""
+			if read_github_reviews "$pr" "$repo" && judge_github_reviews; then
+				base_id="$last"
+				rc=0
+				case "$outcome" in
+					comments) answer_gate "$run" comments "$comments comments in GitHub review $last" || rc=$? ;;
+					approved) answer_gate "$run" approved "$head_sha" || rc=$? ;;
+				esac
+				case "$rc" in
+					0) [ "$outcome" != approved ] || return 0 ;;
+					1)
+						watch_log "run $run stopped before its gate took the $outcome review, so the watch ends"
+						return 0
+						;;
+					2) watch_log "dropped the $outcome review $last, since its gate took no answer" ;;
 				esac
 			fi
 			[ -z "$reason" ] || watch_log "$reason"

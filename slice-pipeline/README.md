@@ -57,10 +57,28 @@ still claimed and the pull request open, and `archon workflow resume
 <run-id>` picks the review back up. A pull request closed or merged outside
 the pipeline fails the review the same way.
 
-Review needs Orca running and a tuicr built from Trevor's fork branch
-`groupdiff`, which keeps a released session after tuicr quits and reports its
-`head_sha` in `review list`. `SLICE_WAVE_REVIEW_POLL_SECONDS` (default 15) sets
-how often the watcher reads tuicr, the forge and the run.
+Review in the default tuicr mode needs Orca running and a tuicr built from
+Trevor's fork branch `groupdiff`, which keeps a released session after tuicr
+quits and reports its `head_sha` in `review list`.
+`SLICE_WAVE_REVIEW_POLL_SECONDS` (default 15) sets how often the watcher reads
+tuicr, the forge and the run.
+
+A machine with neither, such as a cloud session, sets `SLICE_WAVE_REVIEW=github`
+and `SLICE_WAVE_REVIEW_APPROVERS` to the comma-separated GitHub logins whose
+review counts. `review` then opens no tab: it starts the watcher detached on
+the pull request's GitHub reviews and pauses at the same gate. An Approve
+review, or a Comment review whose whole body is `/approve`, with no inline
+comments, on the pull request's current head, answers `approved`. The
+`/approve` comment is there because GitHub refuses an Approve on your own pull
+request. Any other review by an approver answers `comments`. Reviews by other
+logins never count, and neither does one made before the watcher started. Both
+variables reach the watcher through its environment, so set them in the shell
+that runs the workflow.
+
+`SLICE_WAVE_COMMENT_PREFIX`, when set, opens the visible text of every pull
+request comment slice-wave posts, such as "Claude Duet posting on behalf of
+tvrmsmith" when Claude Duet runs the pipeline. The record's hidden marker
+stays its first line.
 
 The target repo needs a GitHub remote gh can open pull requests on, a git
 credential that can push to origin, and its validator. `claim` checks all

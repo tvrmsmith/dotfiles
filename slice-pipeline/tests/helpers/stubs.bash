@@ -25,7 +25,7 @@ install_stubs() {
 		NO_MISTAKES_AXI_EXIT NO_MISTAKES_AXI_FIXTURE \
 		NO_MISTAKES_STATUS_EXIT NO_MISTAKES_STATUS_FIXTURE \
 		NO_MISTAKES_SYNC_EXIT NO_MISTAKES_SYNC_NEXT_STATUS_FIXTURE \
-		GH_PR_HEAD_OID \
+		GH_PR_HEAD_OID GH_REVIEWS_SEQUENCE GH_REVIEW_COMMENTS_JSON GH_REVIEW_COMMENTS_EXIT \
 		ORCA_TERMINAL_LIST_JSON ORCA_TERMINAL_LIST_EXIT \
 		ORCA_REPO_LIST_JSON ORCA_REPO_LIST_EXIT ORCA_REPO_ADD_EXIT \
 		ORCA_TERMINAL_CREATE_EXIT ORCA_TERMINAL_CREATE_SURFACE \
@@ -100,6 +100,26 @@ case "${1:-} ${2:-}" in
 		esac
 		[ "${GH_PR_MERGE_EXIT:-0}" -eq 0 ] || echo "GraphQL: Pull request is not mergeable" >&2
 		exit "${GH_PR_MERGE_EXIT:-0}"
+		;;
+	# A pull request's reviews and inline review comments, which review-watch
+	# reads in GitHub mode. Each prints its array as --jq '.[]' would, one
+	# object a line. GH_REVIEWS_SEQUENCE lists what each reviews read
+	# reports, one JSON array a line; reads past the end repeat the last
+	# line, and FAIL makes that read exit 1. GH_REVIEW_COMMENTS_JSON is every
+	# inline comment, and GH_REVIEW_COMMENTS_EXIT fails its read.
+	"api repos/"*/reviews)
+		calls="$(cat "$STUB_BIN/gh-reviews-calls" 2>/dev/null || echo 0)"
+		echo $((calls + 1)) > "$STUB_BIN/gh-reviews-calls"
+		sequence="${GH_REVIEWS_SEQUENCE:-[]}"
+		lines="$(printf '%s\n' "$sequence" | wc -l | tr -d ' ')"
+		[ "$calls" -lt "$lines" ] || calls=$((lines - 1))
+		read_line="$(printf '%s\n' "$sequence" | sed -n "$((calls + 1))p")"
+		[ "$read_line" != FAIL ] || { echo "gh: stub reviews read configured to fail" >&2; exit 1; }
+		printf '%s\n' "$read_line" | jq -c '.[]'
+		;;
+	"api repos/"*/comments)
+		[ "${GH_REVIEW_COMMENTS_EXIT:-0}" -eq 0 ] || { echo "gh: stub review comments read configured to fail" >&2; exit "$GH_REVIEW_COMMENTS_EXIT"; }
+		printf '%s\n' "${GH_REVIEW_COMMENTS_JSON:-[]}" | jq -c '.[]'
 		;;
 	"api graphql")
 		query=""
