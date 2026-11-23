@@ -19,6 +19,7 @@
 - Run `gh` where the repo is, or pass `-R owner/repo`. No `gh auth switch`, no `cd` first
 - A 403 from `gh` means the command needs Trevor's approval, which may not arrive promptly. Report it and carry on with work that doesn't depend on it
 - Merging a feature branch → prefer squash merge unless it's handled by the merge queue.
+- **One tracker item, one PR.** A bead, GitHub issue, or Jira ticket ships in exactly one PR. When the PR merges, close the item, naming the PR and merge sha. Work the PR left out becomes its own follow-up item in the same tracker, so every PR lands on an item it finishes.
 - Run `gcloud auth login` and `gcloud auth application-default login` yourself instead of handing them to me as `! <command>`. They open a browser for me to finish
 
 ## Planning

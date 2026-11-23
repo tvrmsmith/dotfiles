@@ -106,11 +106,9 @@ the user merging it themselves).
 
 ## 4. Close the beads issue
 
-**One issue, one PR, one merge, and the merge closes the issue.** Once the PR
-is `MERGED` (`gh pr view <#> --json state`), run `bd close <id>` with the PR and
-merge sha in `--reason`. A merged PR leaves nothing behind. Work the PR didn't
-finish goes into a new issue, proposed to the user, and never holds the merged
-issue open.
+Once the PR is `MERGED` (`gh pr view <#> --json state`), close the issue under
+the one-tracker-item-one-PR rule in `CLAUDE.md`. Propose each follow-up issue to
+the user before creating it.
 
 Persist the close (`bd dolt push` if that is how the repo syncs).
 
