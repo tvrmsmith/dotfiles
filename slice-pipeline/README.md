@@ -146,11 +146,25 @@ review counts as unfinished. So the next wave starts only when every slice of
 this wave has merged or handed its bead back. If the wave dispatched anything,
 its `next` node starts the following wave detached, passing on the list of
 beads the chain has tried. A later wave never retries a bead an earlier wave
-released, so a slice that failed is not rebuilt in a loop. The chain ends on
+released unless the end gate re-dispatches it, so a slice that failed is not
+rebuilt in a loop. The chain ends on
 a wave that finds nothing new. That wave's `close-parent` node closes the
 parent once every direct child is closed. Otherwise it leaves the parent open
 and names the children still open, such as a released or kept-claimed bead.
-It never forces the close. One failed slice leaves its siblings and the
+It never forces the close.
+
+When children stay open, that wave pauses on an end gate whose text lists
+them. Choose `redispatch` to start a new wave of the same chain. Name beads
+in the text, separated by spaces or commas, or leave it empty for every open,
+unclaimed child. `redispatch` clears those beads from the chain's tried list
+and starts the wave detached, and that wave passes the seam gate again. A
+named bead must be an open direct child and unclaimed: unclaim a kept-claimed
+bead first, since `ready` never offers a claimed one. Anything else fails the
+node before a wave starts. Recover from that with a fresh dispatch of the
+parent. Choose `stop` to end the chain and leave the parent open. When every
+child is closed, no gate opens.
+
+One failed slice leaves its siblings and the
 chain running. Its bead lands where implement-slice puts it: a build or
 validate failure hands it back, and a failed review keeps it claimed.
 
@@ -162,7 +176,8 @@ This prints one row per bead across the whole chain: the wave, the bead, the
 slice run holding it, that run's state, and its worktree. The last line says
 whether the chain is still going, and if so, which run to cancel to stop it.
 An ended chain's last line also says whether the parent closed, or which
-children kept it open.
+children kept it open, and a chain paused at its end gate says so. A
+re-dispatched wave counts as the next wave of the same chain.
 The rows cover the beads the seam gate approved, not every candidate. A
 wave still at its gate lists none, and a bead taken out of the parent never
 appears. `bd list` may still draw that bead under the parent, since it keeps

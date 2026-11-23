@@ -7,7 +7,8 @@
 // wave's run id works, or a unique prefix of one.
 //
 // Everything comes from one read of Archon's run records; nothing is stored.
-// A wave names the wave before it in its `previous` input, and a slice is a
+// A wave names the wave before it in its `previous` input, whether `next` or
+// the end gate's re-dispatch started it, and a slice is a
 // run whose parent_run_id is the wave. The read covers the most recent
 // RUN_WINDOW runs on the machine, so a chain older than that reads as cut off.
 //
@@ -171,7 +172,10 @@ chain.forEach((wave, index) => {
 
 const last = chain[chain.length - 1];
 let chainState: string;
-if (LIVE.has(last.status)) {
+const endGate = last.status === "paused" ? nodeOutput(last, "close-parent") : null;
+if (endGate !== null && endGate.closed === false) {
+  chainState = `wave ${chain.length} found no new ready child and waits at its end gate in run ${last.id}; ${endGate.reason}`;
+} else if (LIVE.has(last.status)) {
   chainState = `wave ${chain.length} is ${last.status}; stop the chain with: archon workflow cancel ${last.id}`;
 } else if (nodeOutput(last, "next")?.next_run === "") {
   // The last wave's close-parent says whether the parent closed, or which

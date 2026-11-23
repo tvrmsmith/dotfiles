@@ -1,4 +1,4 @@
-// Drives implement-in-waves's two scripts and wave-status as the engine and a
+// Drives implement-in-waves's scripts and wave-status as the engine and a
 // person run them, with `bd` and `archon` replaced by stubs on PATH. Each stub
 // appends its argv to a log and prints what the test told it to.
 
@@ -12,6 +12,7 @@ const READY = join(ROOT, "workflows/implement-in-waves/scripts/ready.ts");
 const NEXT = join(ROOT, "workflows/implement-in-waves/scripts/next.ts");
 const CLOSE_PARENT = join(ROOT, "workflows/implement-in-waves/scripts/close-parent.ts");
 const APPLY_SEAMS = join(ROOT, "workflows/implement-in-waves/scripts/apply-seams.ts");
+const REDISPATCH = join(ROOT, "workflows/implement-in-waves/scripts/redispatch.ts");
 const WAVE_STATUS = join(ROOT, "bin/wave-status");
 // Recorded from the live smoke: `archon workflow runs --all --json --verbose`,
 // trimmed to the smoke's runs and to the fields wave-status reads, with the
@@ -371,6 +372,89 @@ describe("close-parent", () => {
   });
 });
 
+describe("redispatch", () => {
+  const bead = (id: string, status = "open", assignee = "", parent = "p") => ({ id, parent, status, assignee });
+  const inputs = (text: string, children: object[], extra: Record<string, string> = {}) => ({
+    INPUTS_PARENT: "p",
+    INPUTS_BEADS_DIR: "/tracker/.beads",
+    INPUTS_MAX_SLICES: "2",
+    INPUTS_CHAIN: '["p.1","p.2","p.3"]',
+    INPUTS_TEXT: text,
+    WORKFLOW_ID: "last-wave",
+    ARCHON_CLI_COMMAND: JSON.stringify(["archon"]),
+    BD_OUT_list: output("bd-list", JSON.stringify(children)),
+    ARCHON_OUT: output("archon", '{"runId":"new-wave"}'),
+    ...extra,
+  });
+  const launched = () => calls("archon").map((line) => line.split("\t")[1]);
+
+  test("starts a new wave of the chain with the named beads cleared from the tried list", () => {
+    const r = run(["bun", REDISPATCH], inputs("p.2", [bead("p.2"), bead("p.3")]));
+    expect(r.code).toBe(0);
+    expect(r.json()).toEqual({ next_run: "new-wave", redispatched: ["p.2"] });
+    expect(calls("bd")).toEqual(["/tracker/.beads\tlist --parent p --json --limit 0"]);
+    expect(launched()).toHaveLength(1);
+    expect(launched()[0]).toContain(`workflow run implement-in-waves --detach --json --cwd ${bin}`);
+    expect(launched()[0]).toContain(
+      '--input parent=p --input beads_dir=/tracker/.beads --input max_slices=2 --input tried=["p.1","p.3"] --input previous=last-wave',
+    );
+  });
+
+  test("reads several names separated by commas or spaces, once each", () => {
+    const r = run(["bun", REDISPATCH], inputs(" p.2, p.3\np.2 ", [bead("p.2"), bead("p.3")]));
+    expect(r.json().redispatched).toEqual(["p.2", "p.3"]);
+    expect(launched()[0]).toContain('--input tried=["p.1"]');
+  });
+
+  test("empty text re-dispatches every open, unclaimed direct child and nothing else", () => {
+    const r = run(["bun", REDISPATCH], inputs("", [
+      bead("p.2"), bead("p.3", "in_progress", "someone"), bead("p.4", "blocked"), bead("p.5"), bead("p.5.1", "open", "", "p.5"),
+    ]));
+    expect(r.code).toBe(0);
+    expect(r.json().redispatched).toEqual(["p.2", "p.5"]);
+    expect(launched()[0]).toContain('--input tried=["p.1","p.3"]');
+  });
+
+  test("a bead unclaimed while the gate was open counts as unclaimed, since bd is read now", () => {
+    const r = run(["bun", REDISPATCH], inputs("p.3", [bead("p.3")]));
+    expect(r.code).toBe(0);
+    expect(r.json().redispatched).toEqual(["p.3"]);
+  });
+
+  test.each([
+    ["a name that is not an open child", "p.2 p.9", [bead("p.2")], "not an open child of p: p.9"],
+    ["a grandchild", "p.2.1", [bead("p.2.1", "open", "", "p.2")], "not an open child of p: p.2.1"],
+    ["a claimed bead", "p.3", [bead("p.3", "in_progress", "someone")], "still claimed, so no wave would offer it: p.3"],
+    ["empty text with no open, unclaimed child", "", [bead("p.3", "in_progress", "someone")], "nothing to re-dispatch"],
+    ["a chain that is not JSON", "p.2", [bead("p.2")], "chain is not JSON"],
+  ])("refuses %s before starting anything", (name, text, children, message) => {
+    const extra = name.startsWith("a chain") ? { INPUTS_CHAIN: "p.1" } : {};
+    const r = run(["bun", REDISPATCH], inputs(text, children, extra));
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain(message);
+    expect(calls("archon")).toEqual([]);
+  });
+
+  test("fails the node when bd cannot list the children", () => {
+    const r = run(["bun", REDISPATCH], inputs("p.2", [], { BD_EXIT_list: "2" }));
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("bd list exited 2");
+    expect(calls("archon")).toEqual([]);
+  });
+
+  test("fails the node when the new wave cannot start", () => {
+    const r = run(["bun", REDISPATCH], inputs("p.2", [bead("p.2")], { ARCHON_EXIT: "1" }));
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("starting the new wave exited 1");
+  });
+
+  test("fails the node when the launch acknowledges no run", () => {
+    const r = run(["bun", REDISPATCH], inputs("p.2", [bead("p.2")], { ARCHON_OUT: output("archon-empty", "{}") }));
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("names no runId");
+  });
+});
+
 // The fixtures stub both scripts away and the tests above hand-set their
 // inputs, so both stay green if the workflow and a script drift apart. This
 // reads what implement-in-waves.yaml declares about each script node and holds the
@@ -382,7 +466,7 @@ describe("implement-in-waves.yaml wiring", () => {
   const node = (id: string) => workflow.nodes.find((n: any) => n.id === id);
   const envName = (name: string) => `INPUTS_${name.toUpperCase()}`;
 
-  test.each([["ready", READY], ["apply-seams", APPLY_SEAMS], ["next", NEXT], ["close-parent", CLOSE_PARENT]])("every input %s reads is bound", (id, path) => {
+  test.each([["ready", READY], ["apply-seams", APPLY_SEAMS], ["next", NEXT], ["close-parent", CLOSE_PARENT], ["redispatch", REDISPATCH]])("every input %s reads is bound", (id, path) => {
     const bound = new Set([...Object.keys(workflow.inputs), ...Object.keys(node(id).with ?? {})].map(envName));
     const read = [...readFileSync(path, "utf8").matchAll(/INPUTS_[A-Z_]+/g)].map((m) => m[0]);
     expect(read.length).toBeGreaterThan(0);
@@ -438,6 +522,25 @@ describe("implement-in-waves.yaml wiring", () => {
     });
     expect(Object.keys(r.json()).sort()).toEqual([...node("close-parent").output_format.required].sort());
     expect(node("close-parent").when).toBe("$next.output.next_run == ''");
+  });
+
+  test("the end gate opens only when close-parent leaves the parent open, and only re-dispatch starts a wave", () => {
+    const gate = node("end-gate");
+    expect(gate.depends_on).toEqual(["close-parent"]);
+    expect(gate.when).toBe("$close-parent.output.closed == false");
+    expect(gate.wait.attention).toContain("$close-parent.output.reason");
+    expect(gate.wait.options.map((o: any) => o.id)).toEqual(["redispatch", "stop"]);
+    expect(node("redispatch").depends_on).toEqual(["end-gate"]);
+    expect(node("redispatch").when).toBe("$end-gate.output.decision == 'redispatch'");
+    expect(node("redispatch").with).toEqual({ chain: "$apply-seams.output.tried", text: "$end-gate.output.text" });
+
+    const r = run(["bun", REDISPATCH], {
+      INPUTS_PARENT: "p", INPUTS_BEADS_DIR: "/b", INPUTS_MAX_SLICES: "0", INPUTS_CHAIN: '["p.1"]', INPUTS_TEXT: "",
+      WORKFLOW_ID: "w", ARCHON_CLI_COMMAND: '["archon"]',
+      BD_OUT_list: output("bd-list", JSON.stringify([child("p.1")])),
+      ARCHON_OUT: output("archon", '{"runId":"w2"}'),
+    });
+    expect(Object.keys(r.json()).sort()).toEqual([...node("redispatch").output_format.required].sort());
   });
 });
 
@@ -578,6 +681,35 @@ describe("wave-status", () => {
     expect(status(runs, WAVE_1).json().chain).toBe(
       `ended: wave 3 found no new ready child; closing the parent failed; see archon workflow get ${WAVE_3}`,
     );
+  });
+
+  test("a chain paused at its end gate says so, with the children still open", () => {
+    const runs = recorded(FINAL);
+    const wave3 = runs.find((r) => r.id === WAVE_3)!;
+    wave3.status = "paused";
+    wave3.nodes.push({ nodeId: "close-parent", state: "completed", output: JSON.stringify({
+      closed: false, open: [{ id: "wv-2nc.2", status: "open", assignee: "" }], reason: "parent wv-2nc left open: wv-2nc.2 (open)",
+    }) });
+    expect(status(runs, WAVE_1).json().chain).toBe(
+      `wave 3 found no new ready child and waits at its end gate in run ${WAVE_3}; parent wv-2nc left open: wv-2nc.2 (open)`,
+    );
+  });
+
+  test("follows a chain into the wave its end gate re-dispatched", () => {
+    const runs = recorded(FINAL);
+    const wave4 = structuredClone(runs.find((r) => r.id === WAVE_2)!);
+    wave4.id = "e4d0000000000000000000000000000a";
+    wave4.started_at = "2099-01-01T00:00:00Z";
+    wave4.metadata.inputs.previous = WAVE_3;
+    const slice4 = structuredClone(slice(runs, "wv-2nc.3"));
+    slice4.id = "slice-4";
+    slice4.parent_run_id = wave4.id;
+    slice4.metadata.inputs.bead = "wv-2nc.2";
+    node(wave4, "apply-seams").output = JSON.stringify({ beads: ["wv-2nc.2"], tried: [] });
+    runs.push(wave4, slice4);
+    const r = status(runs, WAVE_1);
+    expect(r.json().waves.map((w: Run) => w.run)).toEqual([WAVE_1, WAVE_2, WAVE_3, wave4.id]);
+    expect(rows(r)).toContain("4 wv-2nc.2 merged");
   });
 
   test.each([

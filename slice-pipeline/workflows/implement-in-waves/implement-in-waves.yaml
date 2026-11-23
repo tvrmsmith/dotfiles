@@ -4,8 +4,10 @@ description: |
   parent's ready, unclaimed direct children, pause on a seam gate where an
   engineer approves the seams proposed for them, run implement-slice for each
   approved child in its own worktree, and once every slice has finished, start the next wave by
-  itself when this one built anything. The chain ends on a wave that finds nothing new. `wave-status
-  <run-id>` reads the whole chain back from Archon's run records.
+  itself when this one built anything. The chain ends on a wave that finds
+  nothing new: it closes the parent once every child is closed, and otherwise
+  pauses on an end gate that re-dispatches the open children or stops.
+  `wave-status <run-id>` reads the whole chain back from Archon's run records.
 
   Use when: a parent bead has several ready children whose specs live in
   their beads. Start it from the target repository's checkout, with
@@ -219,7 +221,7 @@ nodes:
 
   # Only on the chain's last wave, the one that found nothing new: closes the
   # parent when every direct child is closed, and otherwise leaves it open and
-  # names the children still open, for wave-status to report. A composing
+  # names the children still open, for the end gate and wave-status. A composing
   # workflow cannot do this, since it sees only the first wave of the chain.
   - id: close-parent
     depends_on: [next]
@@ -234,3 +236,48 @@ nodes:
         open: {type: array}
         reason: {type: string}
       required: [closed, open, reason]
+
+  # The end gate: the chain found nothing new and children are still open. No
+  # gate opens when close-parent closed the parent. Re-dispatch starts a new
+  # wave of this chain; stop ends the chain here and leaves the parent open.
+  - id: end-gate
+    depends_on: [close-parent]
+    when: "$close-parent.output.closed == false"
+    wait:
+      attention: |
+        The chain found no new ready child, and $close-parent.output.reason.
+
+        Re-dispatch starts a new wave of this chain with the beads you name in
+        the text, separated by spaces or commas, cleared from the chain's tried
+        list. Leave the text empty to re-dispatch every open, unclaimed child.
+        The new wave passes the seam gate again before any slice starts. A
+        claimed bead (in_progress) needs `bd unclaim <id>` first, or the
+        re-dispatch fails.
+
+        Stop ends the chain and leaves the parent open.
+      form: select
+      options:
+        - id: redispatch
+          label: Re-dispatch
+          does: Starts a new wave with the named beads, or every open, unclaimed child, cleared from the chain's tried list.
+        - id: stop
+          label: Stop
+          does: Ends the chain and leaves the parent open.
+
+  # Starts the re-dispatched wave detached, naming this run as its previous
+  # wave, so wave-status follows the chain into it.
+  - id: redispatch
+    depends_on: [end-gate]
+    when: "$end-gate.output.decision == 'redispatch'"
+    runtime: bun
+    script: redispatch
+    timeout: 120000
+    with:
+      chain: $apply-seams.output.tried
+      text: $end-gate.output.text
+    output_format:
+      type: object
+      properties:
+        next_run: {type: string}
+        redispatched: {type: array}
+      required: [next_run, redispatched]

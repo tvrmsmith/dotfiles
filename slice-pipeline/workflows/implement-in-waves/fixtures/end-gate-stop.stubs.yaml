@@ -1,0 +1,26 @@
+# The end gate chooses stop. The run completes with the parent left open:
+# redispatch is unstubbed, so reaching it fails this fixture.
+fixture:
+  expect: completed
+  reached: [ready, apply-seams, slices, next, close-parent, end-gate]
+  inputs:
+    parent: demo
+    beads_dir: /tmp/beads
+    tried: '["demo.1","demo.2"]'
+
+ready:
+  beads: []
+  count: 0
+apply-seams:
+  beads: []
+  tried: [demo.1, demo.2]
+next:
+  next_run: ""
+  reason: this wave found no new ready child, so the chain ends
+close-parent:
+  closed: false
+  open: [{id: demo.2, status: open, assignee: ""}]
+  reason: "parent demo left open: demo.2 (open)"
+end-gate:
+  decision: stop
+  text: ""
