@@ -49,3 +49,7 @@ dot-claude/skills/no-mistakes/
 # Claude Code writes each mod's API types here when it loads the mod, and
 # rewrites them after every update. Generated per build, never committed.
 dot-claude/skills/*/.claude-plugin/types/
+
+# Claude Code syncs the claude.ai account's skills (anthropic-skills) here,
+# keyed by account. Per-machine state it rewrites itself, not dotfile content.
+dot-claude/skills/synced/
