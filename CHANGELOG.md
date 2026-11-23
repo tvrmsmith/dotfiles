@@ -7,8 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-15
+
+### Added
+
+- `op run --environment` (op 2.41.0+) and `op environment secret list` (op
+  2.42.0+) as short reference. `secret list` prints non-concealed values in
+  cleartext, so the warn-first rule now covers the bare command, not only
+  `--reveal`. For `op run --environment`, the skill assumes only concealed
+  values are masked in the subprocess's output.
+- Shell Plugins refreshed from `op plugin list`: xAI Grok (`grok`), the
+  Hugging Face plugin's move to `hf`, the Codex CLI under the OpenAI plugin,
+  and a table mapping AI tools to the executable `op plugin init` expects.
+- README: how to run the tests, and their PyYAML dependency.
+- **GitHub Actions workflow covering bash 3.2, shellcheck, and release
+  invariants.** The `test` job runs on `ubuntu-latest` and `macos-latest`;
+  only the macOS leg validates the bash 3.2 target, against the real
+  `/bin/bash` 3.2, and it asserts the `/bin/bash` major version so a bash 5 on
+  PATH cannot pass silently. The Linux leg runs GNU bash 5.x. The `shellcheck`
+  job gates at `--severity=error` and prints the full report non-gating. The
+  `release-gate` job enforces valid JSON in manifests, a three-way version
+  lock, tracked `marketplace.json`, and a link reference for every released
+  CHANGELOG heading.
+
 ### Changed
 
+- Output masking is described as best effort throughout SKILL.md and the
+  README, matching `op run --help` ("a safety net, not a guarantee", op
+  2.40.0+). The sandbox-launch and `--reveal` guidance was tightened to match: launching
+  Claude under `op run` exposes every injected value to `env`/`printenv`
+  unmasked, and `--reveal` is used only after warning the user, with `op run`
+  preferred. `OP_RUN_NO_MASKING` (op 2.30.3+) is called out alongside
+  `--no-masking`; the Error Catalog `--reveal` fix carries a warn-first note.
+  Environment precedence and the non-concealed masking gap are reworded to
+  match the help text.
 - Every secret-reference example now brackets the vault segment:
   `op://<vault>/<item>/<field>`. Illustrative item and field names are kept
   (`op://<vault>/GitHub/token`, `op://<vault>/SSH Key/public key`) because they
@@ -30,6 +62,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   be bracketed, since a real vault name can never begin with `<`. Bare prose
   mentions of the scheme are correctly ignored, which matters in a repo whose
   whole subject is that syntax.
+- **The test suite was flaky under `pipefail` because `grep -q` exits on the
+  first match, sending `SIGPIPE` to the producer.** This made `convert.sh`
+  abort on a valid file intermittently. There were 13 instances across 6
+  files, `convert.sh` included; the others were latent rather than
+  intermittent. The fix used here-strings, pure-bash string handling, or
+  capture-then-feed, with no `pipefail` disabled. A deterministic lint guard
+  now fails the suite if any script that sets `pipefail` contains a pipeline
+  feeding an early-exit consumer.
+- **BSD `wc` left-pads its output, causing valid files to be reported as
+  truncated.** The numeric guard rejected the padded string and substituted 0,
+  making a healthy 12KB file appear as "only 0 bytes." The count is now
+  whitespace-stripped, and unmeasurable sizes are reported as such rather than
+  collapsed into "too small."
+- **`printf` format strings built from variables broke every script when
+  `TERM` was unset.** On non-interactive CI runners, color variables were
+  empty, causing `printf` to parse leading dashes as option flags and abort.
+  104 sites across 7 files now use literal format strings with data passed as
+  arguments, and color variables use ANSI-C quoting to ensure real ESC bytes
+  are rendered.
+- **The integration test discarded `convert.sh` error output, making failures
+  a guessing game.** The full-conversion assertion previously sent stdout and
+  stderr to `/dev/null`, hiding the reason for failure. It now captures and
+  echoes the output indented on failure, so the cause travels with the error
+  message.
 
 ## [1.1.0] - 2026-08-07
 
@@ -124,6 +180,7 @@ strings that do not exist.
 - Vault name sanitization in `gemini-review.sh`
 - Dynamic Cursor description extraction from multiline YAML block scalars; corrected Gemini CLI install path in README
 
+[1.2.0]: https://github.com/petejm/1password-skill/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/petejm/1password-skill/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/petejm/1password-skill/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/petejm/1password-skill/compare/v1.0.0...v1.0.1
