@@ -1,19 +1,16 @@
 load helpers/assert
 
-# The shim decides read vs write from argv alone, so GH_SHIM_EXPLAIN covers the
-# whole decision without a network call, a keychain read, or a 1Password prompt.
+# GH_SHIM_EXPLAIN prints the owner the shim resolved and which keyring entry, if
+# any, it would use, and runs nothing. Owner tests read the second field.
 SHIM="${BATS_TEST_DIRNAME}/../dot-local/bin/gh"
 
 routes() { GH_SHIM_EXPLAIN=1 bash "$SHIM" "$@"; }
+owner() { routes "$@" | awk '{print $2}'; }
 
 # The token tests stub `security`, so pin gh-keyring to the macOS backend
-# whatever this suite runs on. The Linux backend has its own tests below and in
+# whatever this suite runs on. The Linux backend has its own test below and in
 # tests/gh-keyring.bats.
 export GH_KEYRING_BACKEND=security
-
-# Every tier now reports the owner it resolved, so a test that only cares which
-# tier was chosen takes the first field rather than pinning the owner too.
-tier() { routes "$@" | awk '{print $1}'; }
 
 # A shim only shims if it wins the PATH race. dot-zshenv prepends ~/.local/bin,
 # then brew, gcloud and mise each prepend over it in dot-zprofile, which once
@@ -82,141 +79,7 @@ tier() { routes "$@" | awk '{print $1}'; }
   command -v brew >/dev/null 2>&1 || skip "no homebrew"
   brew list --formula gh >/dev/null 2>&1 || skip "gh not installed with brew"
   [ -x "$(brew --prefix)/opt/gh/bin/gh" ] || { echo "brew's gh keg has no opt link" >&2; exit 1; }
-  equals "$(PATH=/usr/bin:/bin GH_SHIM_EXPLAIN=1 bash "$SHIM" pr list 2>&1 | awk '{print $1}')" "read"
-}
-
-@test "read verbs stay on the silent path" {
-  for args in "pr list" "pr view 12" "pr diff 12" "pr checks 12" \
-              "issue list" "issue view 3" "repo view" "repo clone o/r" \
-              "run view 1" "run list" "release list" "workflow list" \
-              "auth status" "search prs --author @me" "--version"; do
-    # shellcheck disable=SC2086
-    contains "$(routes $args)" read
-  done
-}
-
-# git asks the credential helper for a token without saying whether it is
-# fetching or pushing, so the helper always gets the read token. Pushes go over
-# SSH, and `store`/`erase` are no-ops in gh, so read covers every call git makes.
-@test "the git credential helper gets the read token for every operation" {
-  for op in get store erase; do
-    equals "$(tier auth git-credential $op)" read
-  done
-}
-
-# The PR lifecycle verbs used to sit here. They moved to the pr-write tier and
-# have their own test; everything below stays on the approval path.
-@test "mutating verbs escalate" {
-  for args in "pr merge 12" \
-              "issue create -t x" "issue comment 3 -b x" "repo delete o/r" \
-              "run rerun 1" "run cancel 1" "release create v1" "secret set K" \
-              "workflow run deploy" "ssh-key add k.pub" "auth login"; do
-    # shellcheck disable=SC2086
-    equals "$(tier $args)" write
-  done
-}
-
-# Opening a PR is the write agents do constantly. GitHub gates it on
-# `Pull requests: write` while merging needs `Contents: write`, so a token with
-# the first and not the second opens PRs and cannot merge by any route.
-@test "the PR lifecycle routes to the pr-write token" {
-  for args in "pr create --fill" "pr comment 12 -b x" "pr edit 12 --title t" \
-              "pr close 12" "pr reopen 12"; do
-    # shellcheck disable=SC2086
-    contains "$(routes $args)" pr-write
-  done
-}
-
-# GitHub refuses the ready/draft GraphQL mutations to a fine-grained token
-# without `Contents: write`, so the pr-write token cannot run them.
-@test "marking a PR ready or draft routes to write" {
-  equals "$(tier pr ready 12)" write
-  equals "$(tier pr draft 12)" write
-}
-
-@test "merging is never a pr-write, in any spelling" {
-  for args in "pr merge 12" "pr merge 12 --auto" "pr merge 12 --squash" \
-              "api -X PUT /repos/o/r/pulls/12/merge" \
-              "api -X POST /repos/o/r/pulls/12/merge-async" \
-              "api -X PUT /repos/o/r/pulls/12/update-branch"; do
-    # shellcheck disable=SC2086
-    equals "$(tier $args)" write
-  done
-}
-
-# Approving cannot merge either, but it is how a required-approval rule gets
-# satisfied, and an agent should not clear that bar for its own PR.
-@test "submitting a review still needs an approval" {
-  equals "$(tier pr review 12 --approve)" write
-  equals "$(tier api -X POST /repos/o/r/pulls/12/reviews -f event=APPROVE)" write
-  equals "$(tier api -X POST /repos/o/r/pulls/12/requested_reviewers -f reviewers[]=x)" write
-}
-
-@test "the REST spellings of the PR lifecycle route to pr-write too" {
-  contains "$(routes api -X POST /repos/o/r/pulls -f title=x)" pr-write
-  # gh infers POST from a body, so the method is usually left off.
-  contains "$(routes api /repos/o/r/pulls -f title=x -f head=b -f base=main)" pr-write
-  contains "$(routes api -X PATCH /repos/o/r/pulls/12 -f state=closed)" pr-write
-  contains "$(routes api -X POST /repos/o/r/issues/12/comments -f body=x)" pr-write
-
-  # A different verb on the same path is not covered.
-  equals "$(tier api -X DELETE /repos/o/r/pulls/12)" write
-  # Neither is a different resource.
-  equals "$(tier api -X POST /repos/o/r/releases -f tag_name=v1)" write
-  equals "$(tier api -X POST /repos/o/r/git/blobs -f content=x)" write
-}
-
-@test "a pr-write resolves an owner, so it can pick that owner's token" {
-  TMP="$(mktemp -d)"
-  cd "$TMP"
-  git init -q .
-  git remote add origin git@github.com:some-org/Thing.git
-
-  equals "$(routes pr create --fill)" "pr-write some-org"
-  equals "$(routes pr create -R other-org/x --fill)" "pr-write other-org"
-  equals "$(routes api -X POST /repos/other-org/x/pulls -f title=t)" "pr-write other-org"
-
-  rm -rf "$TMP"
-}
-
-@test "an unknown subcommand escalates rather than passing as a read" {
-  equals "$(tier gibberish thing)" write
-  equals "$(tier pr somethingnew 12)" write
-}
-
-@test "gh api routes on its method, not its name" {
-  contains "$(routes api user)" read
-  contains "$(routes api --method GET /user)" read
-  contains "$(routes api -XGET /user)" read
-  equals "$(tier api -X POST /repos/o/r/issues)" write
-  equals "$(tier api --method DELETE /repos/o/r)" write
-}
-
-@test "a body on gh api makes it a write even with no explicit method" {
-  equals "$(tier api /repos/o/r/issues -f title=x)" write
-  equals "$(tier api /repos/o/r/issues -F body=@f)" write
-  equals "$(tier api /repos/o/r --input payload.json)" write
-}
-
-# Every GraphQL call POSTs a `-f query=` body, so the body rule alone made all of
-# them writes. The daemon polling branch protection over GraphQL then spent an
-# approval per poll.
-@test "a graphql query is a read, a graphql mutation is not" {
-  contains "$(routes api graphql -f query='query { viewer { login } }')" read
-  contains "$(routes api --hostname github.com graphql -f query='query($o: String!) { repository(owner: $o) { id } }' -f o=x)" read
-  # A leading newline is how a multi-line query usually arrives.
-  contains "$(routes api graphql -f query='
-    query { viewer { login } }')" read
-  contains "$(routes api graphql -f query='{ viewer { login } }')" read
-
-  equals "$(tier api graphql -f query='mutation { addStar(input: {}) { clientMutationId } }')" write
-  # Not inspectable, so it keeps the prompting path.
-  equals "$(tier api graphql -f query=@op.graphql)" write
-  equals "$(tier api graphql --input q.json)" write
-  # No body at all: nothing to mutate with, so the generic api rule's read is right.
-  contains "$(routes api graphql)" read
-  # The exemption is for graphql alone; a REST body is still a write.
-  equals "$(tier api /repos/o/r/issues -f query=query)" write
+  equals "$(PATH=/usr/bin:/bin GH_SHIM_EXPLAIN=1 bash "$SHIM" pr list 2>&1 | awk '{print $1}')" "owner"
 }
 
 @test "the owner comes from the repo remote, in every URL spelling" {
@@ -225,13 +88,13 @@ tier() { routes "$@" | awk '{print $1}'; }
   git init -q .
 
   git remote add origin git@github.com:some-org/Thing.git
-  equals "$(routes pr list)" "read some-org"
+  equals "$(owner pr list)" "some-org"
 
   git remote set-url origin git@github-personal:tvrmsmith/dotfiles.git
-  equals "$(routes pr list)" "read tvrmsmith"
+  equals "$(owner pr list)" "tvrmsmith"
 
   git remote set-url origin https://github.com/octo-user/thing.git
-  equals "$(routes pr list)" "read octo-user"
+  equals "$(owner pr list)" "octo-user"
 
   rm -rf "$TMP"
 }
@@ -242,11 +105,11 @@ tier() { routes "$@" | awk '{print $1}'; }
   git init -q .
   git remote add origin git@github.com:some-org/Thing.git
 
-  equals "$(routes pr list -R other-org/x)" "read other-org"
-  equals "$(routes pr list --repo other-org/x)" "read other-org"
-  equals "$(routes pr list --repo=other-org/x)" "read other-org"
-  equals "$(routes pr list -Rother-org/x)" "read other-org"
-  equals "$(routes pr list -R github.com/other-org/x)" "read other-org"
+  equals "$(owner pr list -R other-org/x)" "other-org"
+  equals "$(owner pr list --repo other-org/x)" "other-org"
+  equals "$(owner pr list --repo=other-org/x)" "other-org"
+  equals "$(owner pr list -Rother-org/x)" "other-org"
+  equals "$(owner pr list -R github.com/other-org/x)" "other-org"
 
   rm -rf "$TMP"
 }
@@ -257,13 +120,13 @@ tier() { routes "$@" | awk '{print $1}'; }
   git init -q .
   git remote add origin git@github.com:some-org/Thing.git
 
-  equals "$(routes repo view other-org/x)" "read other-org"
-  equals "$(routes repo clone other-org/x)" "read other-org"
-  equals "$(routes repo clone https://github.com/other-org/x)" "read other-org"
-  equals "$(routes repo list other-org)" "read other-org"
+  equals "$(owner repo view other-org/x)" "other-org"
+  equals "$(owner repo clone other-org/x)" "other-org"
+  equals "$(owner repo clone https://github.com/other-org/x)" "other-org"
+  equals "$(owner repo list other-org)" "other-org"
   # No positional: the remote still decides.
-  equals "$(routes repo view)" "read some-org"
-  equals "$(routes repo list --limit 5)" "read some-org"
+  equals "$(owner repo view)" "some-org"
+  equals "$(owner repo list --limit 5)" "some-org"
 
   rm -rf "$TMP"
 }
@@ -274,13 +137,13 @@ tier() { routes "$@" | awk '{print $1}'; }
   git init -q .
   git remote add origin git@github.com:some-org/Thing.git
 
-  equals "$(routes api /repos/other-org/x/pulls)" "read other-org"
-  equals "$(routes api repos/other-org/x)" "read other-org"
-  equals "$(routes api /orgs/other-org/members)" "read other-org"
-  equals "$(routes api /users/octo-user)" "read octo-user"
+  equals "$(owner api /repos/other-org/x/pulls)" "other-org"
+  equals "$(owner api repos/other-org/x)" "other-org"
+  equals "$(owner api /orgs/other-org/members)" "other-org"
+  equals "$(owner api /users/octo-user)" "octo-user"
   # gh fills {owner} from the current repo, so it names nobody itself.
-  equals "$(routes api /repos/{owner}/{repo}/pulls)" "read some-org"
-  equals "$(routes api /user)" "read some-org"
+  equals "$(owner api /repos/{owner}/{repo}/pulls)" "some-org"
+  equals "$(owner api /user)" "some-org"
 
   rm -rf "$TMP"
 }
@@ -295,7 +158,7 @@ tier() { routes "$@" | awk '{print $1}'; }
   git worktree add -q --detach "$TMP/far-away" HEAD
 
   cd "$TMP/far-away"
-  equals "$(routes pr list)" "read some-org"
+  equals "$(owner pr list)" "some-org"
 
   cd "$TMP"
   rm -rf "$TMP"
@@ -308,10 +171,10 @@ tier() { routes "$@" | awk '{print $1}'; }
 
   # A gate-repo clone: origin is a path on disk, which must not parse as an owner.
   git remote add origin /Users/someone/.no-mistakes/repos/abc123.git
-  equals "$(routes pr list)" "read TrevorSmith-Wellsky"
+  equals "$(owner pr list)" "TrevorSmith-Wellsky"
 
   git remote add upstream git@github-personal:tvrmsmith/thing.git
-  equals "$(routes pr list)" "read tvrmsmith"
+  equals "$(owner pr list)" "tvrmsmith"
 
   rm -rf "$TMP"
 }
@@ -330,7 +193,7 @@ tier() { routes "$@" | awk '{print $1}'; }
 
   err="$( (trap '' PIPE; GH_SHIM_EXPLAIN=1 bash "$SHIM" pr list) 2>&1 >/dev/null )"
   is_empty "$err"
-  equals "$(routes pr list)" "read o1"
+  equals "$(owner pr list)" "o1"
 
   rm -rf "$TMP"
 }
@@ -338,349 +201,145 @@ tier() { routes "$@" | awk '{print $1}'; }
 @test "outside a repo the owner falls back on the directory rule" {
   TMP="$(mktemp -d)"
   cd "$TMP"
-  equals "$(routes pr list)" "read TrevorSmith-Wellsky"
+  equals "$(owner pr list)" "TrevorSmith-Wellsky"
 
   # A scratch HOME: the directory rule reads $HOME, and a repo left under the
   # real ~/dev/personal by a failed run broke every run after it.
   export HOME="$TMP/home"
   mkdir -p "$HOME/dev/personal/gh-shim-test" && cd "$HOME/dev/personal/gh-shim-test"
-  equals "$(routes pr list)" "read tvrmsmith"
+  equals "$(owner pr list)" "tvrmsmith"
 
   rm -rf "$TMP"
 }
 
-# GH_SHIM_EXPLAIN stops before the keychain, so the token choice needs the real
-# path: a stub `security` holding one owner's token, and a stub `gh` that
-# reports whichever token it was handed.
-@test "a keyring token that is only whitespace counts as no token" {
-  # A lone CR in the keyring was passed to gh as the Authorization header.
-  TMP="$(mktemp -d)"
+
+# GH_SHIM_EXPLAIN stops before running gh, so the token choice needs the real
+# path: a stub `security` holding tokens, a stub `gh` that reports whichever
+# token it was handed, and a stub `op` that would show any 1Password call.
+stub_bin() {
   BIN="$TMP/bin"
   mkdir -p "$BIN"
-  printf '#!/bin/bash\nprintf "\\r"; exit 0\n' > "$BIN/security"
   printf '#!/bin/bash\necho "token=$GH_TOKEN"\n' > "$BIN/gh"
-  printf '#!/bin/bash\necho FELL_THROUGH\n' > "$BIN/op"
-  chmod +x "$BIN"/*
+  printf '#!/bin/bash\necho "OP CALLED $*"\n' > "$BIN/op"
+  chmod +x "$BIN"/gh "$BIN"/op
+}
 
-  export HOME="$TMP/home"
-  mkdir -p "$HOME/dev/personal/gh-shim-blank" && cd "$HOME/dev/personal/gh-shim-blank"
-  git init -q .
-  git remote add origin git@github.com:tvrmsmith/thing.git
+# security(1) stub: answers the gh-token service for the owners given as
+# owner=token pairs, and nothing else.
+stub_security() {
+  {
+    echo '#!/bin/bash'
+    echo 'svc=""; acct=""'
+    echo 'while [ $# -gt 0 ]; do case "$1" in -s) svc="$2"; shift 2 ;; -a) acct="$2"; shift 2 ;; *) shift ;; esac; done'
+    echo '[ "$svc" = gh-token ] || exit 1'
+    echo 'case "$acct" in'
+    for pair in "$@"; do echo "  ${pair%%=*}) echo ${pair#*=}; exit 0 ;;"; done
+    echo 'esac'
+    echo 'exit 1'
+  } > "$BIN/security"
+  chmod +x "$BIN/security"
+}
 
-  out="$(PATH="$BIN:$PATH" XDG_CONFIG_HOME="$TMP/config" XDG_STATE_HOME="$TMP/state" bash "$SHIM" pr list 2>&1)"
-  contains "$out" "FELL_THROUGH"
-  lacks "$out" "token="
-
+@test "the repo owner's token is handed to gh, for writes and reads alike" {
+  TMP="$(mktemp -d)"; stub_bin; stub_security some-org=org-token tvrmsmith=personal-token
   cd "$TMP"
+  git init -q .
+  git remote add origin git@github.com:some-org/Thing.git
+
+  for args in "pr list" "pr create --fill" "pr merge 12 --squash" "api -X PUT /repos/some-org/Thing/pulls/1/merge" "auth git-credential get"; do
+    # shellcheck disable=SC2086
+    equals "$(PATH="$BIN:$PATH" bash "$SHIM" $args 2>&1)" "token=org-token"
+  done
+
   rm -rf "$TMP"
 }
 
-@test "a read for an owner with no token borrows one instead of prompting" {
-  # The no-mistakes daemon polls an upstream repo owned by nobody we hold a
-  # token for. Escalating that read fired a 1Password approval every few
-  # seconds, and no approval protects a public read.
-  TMP="$(mktemp -d)"
-  BIN="$TMP/bin"
-  mkdir -p "$BIN"
-  cat > "$BIN/security" <<'STUB'
-#!/bin/bash
-case " $* " in *" -a tvrmsmith "*) echo personal-token; exit 0 ;; esac
-exit 1
-STUB
-  printf '#!/bin/bash\necho "token=$GH_TOKEN"\n' > "$BIN/gh"
-  printf '#!/bin/bash\nexit 0\n' > "$BIN/op"
-  chmod +x "$BIN"/*
+@test "nothing ever asks 1Password" {
+  TMP="$(mktemp -d)"; stub_bin; stub_security
+  cd "$TMP"
+  git init -q .
+  git remote add origin git@github.com:nobody-here/thing.git
 
+  out="$(PATH="$BIN:$PATH" bash "$SHIM" pr merge 12 2>&1)"
+  lacks "$out" "OP CALLED"
+  equals "$out" "token="
+
+  rm -rf "$TMP"
+}
+
+@test "an explicit GH_TOKEN wins over the keyring" {
+  TMP="$(mktemp -d)"; stub_bin; stub_security some-org=org-token
+  cd "$TMP"
+  git init -q .
+  git remote add origin git@github.com:some-org/Thing.git
+
+  equals "$(GH_TOKEN=mine PATH="$BIN:$PATH" bash "$SHIM" pr list 2>&1)" "token=mine"
+
+  rm -rf "$TMP"
+}
+
+@test "a third-party owner falls back on the directory's account" {
+  TMP="$(mktemp -d)"; stub_bin; stub_security tvrmsmith=personal-token TrevorSmith-Wellsky=work-token
   export HOME="$TMP/home"   # scratch: the directory rule reads $HOME
   mkdir -p "$HOME/dev/personal/gh-shim-borrow" && cd "$HOME/dev/personal/gh-shim-borrow"
   git init -q .
   git remote add origin git@github.com:third-party/thing.git
+  equals "$(PATH="$BIN:$PATH" bash "$SHIM" pr create --fill 2>&1)" "token=personal-token"
+  equals "$(PATH="$BIN:$PATH" routes pr list)" "owner third-party token tvrmsmith"
 
-  out="$(PATH="$BIN:$PATH" bash "$SHIM" pr list 2>&1)"
-  equals "$out" "token=personal-token"
-
-  cd "$TMP"
-  rm -rf "$TMP"
-}
-
-@test "a pr-write uses the owner's gh-prwrite entry, not the read-only one" {
-  TMP="$(mktemp -d)"
-  BIN="$TMP/bin"
-  mkdir -p "$BIN"
-  cat > "$BIN/security" <<'STUB'
-#!/bin/bash
-svc=""; acct=""
-while [ $# -gt 0 ]; do
-  case "$1" in -s) svc="$2"; shift 2 ;; -a) acct="$2"; shift 2 ;; *) shift ;; esac
-done
-[ "$svc" = gh-prwrite ] && [ "$acct" = some-org ] && { echo pr-token; exit 0; }
-[ "$svc" = gh-readonly ] && [ "$acct" = some-org ] && { echo read-token; exit 0; }
-exit 1
-STUB
-  printf '#!/bin/bash\necho "token=$GH_TOKEN"\n' > "$BIN/gh"
-  printf '#!/bin/bash\necho "op $*"\n' > "$BIN/op"
-  chmod +x "$BIN"/*
-
-  cd "$TMP"
-  git init -q .
-  git remote add origin git@github.com:some-org/Thing.git
-
-  equals "$(PATH="$BIN:$PATH" bash "$SHIM" pr create --fill 2>&1)" "token=pr-token"
-  # The read tier still picks the read-only entry.
-  equals "$(PATH="$BIN:$PATH" bash "$SHIM" pr list 2>&1)" "token=read-token"
-
-  rm -rf "$TMP"
-}
-
-# On Linux (CachyOS) the same two tiers read the Secret Service, keyed the same
-# way. Before gh-keyring the lookup was `security` alone, which Linux lacks, so
-# every read fell through to a 1Password approval.
-# install.sh makes ~/.local/bin a real directory, so stow links each file in it
-# separately and a newly added helper has no link there until the next install.
-# The shim has to find gh-keyring beside its real file in the repo, or a machine
-# that only pulled sends every read to a 1Password prompt.
-@test "a stowed shim finds gh-keyring in the repo when its link dir lacks one" {
-  TMP="$(mktemp -d)"
-  BIN="$TMP/bin"
-  LINKS="$TMP/links"
-  mkdir -p "$BIN" "$LINKS"
-  ln -s "$SHIM" "$LINKS/gh"
-  printf '#!/bin/bash\necho stored-token\n' > "$BIN/security"
-  printf '#!/bin/bash\necho "token=$GH_TOKEN"\n' > "$BIN/gh"
-  printf '#!/bin/bash\necho "op $*"\n' > "$BIN/op"
-  chmod +x "$BIN"/*
-
-  cd "$TMP"
-  git init -q .
-  git remote add origin git@github.com:some-org/Thing.git
-
-  out="$(PATH="$BIN:$PATH" bash "$LINKS/gh" pr list 2>&1)"
-  equals "$out" "token=stored-token"
-
-  rm -rf "$TMP"
-}
-
-@test "on Linux the read and pr-write tiers read the Secret Service" {
-  TMP="$(mktemp -d)"
-  BIN="$TMP/bin"
-  mkdir -p "$BIN"
-  cat > "$BIN/secret-tool" <<'STUB'
-#!/bin/bash
-[ "$1" = lookup ] || exit 1
-[ "$5" = some-org ] || exit 1
-case "$3" in gh-readonly) printf read-token ;; gh-prwrite) printf pr-token ;; *) exit 1 ;; esac
-STUB
-  printf '#!/bin/bash\necho "token=$GH_TOKEN"\n' > "$BIN/gh"
-  printf '#!/bin/bash\necho "op $*"\n' > "$BIN/op"
-  chmod +x "$BIN"/*
-
-  cd "$TMP"
-  git init -q .
-  git remote add origin git@github.com:some-org/Thing.git
-
-  linux() { GH_KEYRING_BACKEND=secret-tool PATH="$BIN:$PATH" bash "$SHIM" "$@" 2>&1; }
-  equals "$(linux pr list)" "token=read-token"
-  equals "$(linux pr create --fill)" "token=pr-token"
-
-  rm -rf "$TMP"
-}
-
-# The borrow loop exists so a public read finds any valid token. That reasoning
-# does not carry to a credential that can write, so a PR against an owner we hold
-# no PR token for prompts instead of reaching for someone else's.
-@test "a pr-write never borrows another owner's token" {
-  TMP="$(mktemp -d)"
-  BIN="$TMP/bin"
-  mkdir -p "$BIN"
-  cat > "$BIN/security" <<'STUB'
-#!/bin/bash
-case " $* " in *" -a tvrmsmith "*) echo personal-token; exit 0 ;; esac
-exit 1
-STUB
-  printf '#!/bin/bash\necho "REAL GH RAN token=$GH_TOKEN"\n' > "$BIN/gh"
-  printf '#!/bin/bash\necho "op $*"\n' > "$BIN/op"
-  chmod +x "$BIN"/*
-
-  export HOME="$TMP/home"   # scratch: the directory rule reads $HOME
-  mkdir -p "$HOME/dev/personal/gh-shim-prborrow" && cd "$HOME/dev/personal/gh-shim-prborrow"
+  mkdir -p "$TMP/work" && cd "$TMP/work"
   git init -q .
   git remote add origin git@github.com:third-party/thing.git
-
-  out="$(XDG_STATE_HOME="$TMP/state" XDG_CONFIG_HOME="$TMP/config" \
-    PATH="$BIN:$PATH" bash "$SHIM" pr create --fill 2>&1)"
-  contains "$out" "op plugin run -- gh pr create --fill"
-  lacks "$out" "personal-token"
+  equals "$(PATH="$BIN:$PATH" bash "$SHIM" pr list 2>&1)" "token=work-token"
 
   cd "$TMP"
   rm -rf "$TMP"
 }
 
-@test "a write is never satisfied by a borrowed token" {
-  TMP="$(mktemp -d)"
-  BIN="$TMP/bin"
-  mkdir -p "$BIN"
-  printf '#!/bin/bash\necho personal-token\n' > "$BIN/security"
-  printf '#!/bin/bash\necho "REAL GH RAN"\n' > "$BIN/gh"
-  printf '#!/bin/bash\necho "op $*"\n' > "$BIN/op"
-  chmod +x "$BIN"/*
-
+@test "a keyring token that is only whitespace counts as no token" {
+  # A lone CR in the keyring was passed to gh as the Authorization header.
+  TMP="$(mktemp -d)"; stub_bin
+  printf '#!/bin/bash\nprintf "\\r"; exit 0\n' > "$BIN/security"
+  chmod +x "$BIN/security"
   cd "$TMP"
-  # Own state and config dirs: the escalation the shim logs here is a test, not
-  # a real one, and the write map must be this test's, not the machine's.
-  out="$(XDG_STATE_HOME="$TMP/state" XDG_CONFIG_HOME="$TMP/config" \
-    PATH="$BIN:$PATH" bash "$SHIM" pr merge 12 2>&1)"
-  contains "$out" "op plugin run -- gh pr merge 12"
-  lacks "$out" "token="
-  contains "$(cat "$TMP/state/gh-shim.log")" "gh pr merge 12"
+  git init -q .
+  git remote add origin git@github.com:tvrmsmith/thing.git
+
+  equals "$(PATH="$BIN:$PATH" bash "$SHIM" pr list 2>&1)" "token="
 
   rm -rf "$TMP"
 }
 
-# The write tier used to hand credential selection to `op plugin run`, which
-# pins one account in its own config and then lets a per-terminal selection
-# override it. Merging a personal PR authenticated as the work user and 403'd.
-# See dotfiles-4ul.
-@test "a write resolves its 1Password account from the repo owner" {
-  TMP="$(mktemp -d)"
-  BIN="$TMP/bin"
-  mkdir -p "$BIN" "$TMP/config/gh-shim"
-  printf '#!/bin/bash\nexit 1\n' > "$BIN/security"
-  printf '#!/bin/bash\necho "GH RAN token=$GH_TOKEN"\n' > "$BIN/gh"
-  # Echoes what it was asked for, and answers with a token naming the account,
-  # so one run shows both which reference was read and what reached gh.
-  printf '#!/bin/bash\necho "op $*" >&2\n[ "$1" = read ] && echo "tok-$3"\n' > "$BIN/op"
-  chmod +x "$BIN"/*
-  cat > "$TMP/config/gh-shim/write-tokens" <<'MAP'
-# comment lines and blanks are skipped
-
-mine   my.example.com    op://vault-a/item-a/token
-theirs work.example.com  op://vault-b/item-b/token
-MAP
-
+# install.sh makes ~/.local/bin a real directory, so stow links each file in it
+# separately and a newly added helper has no link there until the next install.
+# The shim has to find gh-keyring beside its real file in the repo.
+@test "a stowed shim finds gh-keyring in the repo when its link dir lacks one" {
+  TMP="$(mktemp -d)"; stub_bin; stub_security some-org=stored-token
+  LINKS="$TMP/links"
+  mkdir -p "$LINKS"
+  ln -s "$SHIM" "$LINKS/gh"
   cd "$TMP"
-  run_write() {
-    XDG_STATE_HOME="$TMP/state" XDG_CONFIG_HOME="$TMP/config" \
-      PATH="$BIN:$PATH" bash "$SHIM" "$@" 2>&1
-  }
+  git init -q .
+  git remote add origin git@github.com:some-org/Thing.git
 
-  out="$(run_write pr merge 12 -R mine/repo)"
-  contains "$out" "op read --account my.example.com --no-newline op://vault-a/item-a/token"
-  contains "$out" "GH RAN token=tok-my.example.com"
-
-  out="$(run_write pr merge 12 -R theirs/repo)"
-  contains "$out" "op read --account work.example.com --no-newline op://vault-b/item-b/token"
-  contains "$out" "GH RAN token=tok-work.example.com"
-
-  # An owner the map does not name keeps the old path rather than failing.
-  contains "$(run_write pr merge 12 -R nobody/repo)" "op plugin run -- gh"
+  equals "$(PATH="$BIN:$PATH" bash "$LINKS/gh" pr list 2>&1)" "token=stored-token"
 
   rm -rf "$TMP"
 }
 
-# The reason the write tier reads one reference rather than running `op run`:
-# op run resolves every op:// reference in the inherited environment, so a shell
-# exporting a work-vault reference broke each personal-account write and, on a
-# work write, fetched unrelated secrets into gh's environment.
-@test "a write reads one reference and ignores op:// vars in the environment" {
-  TMP="$(mktemp -d)"
-  BIN="$TMP/bin"
-  mkdir -p "$BIN" "$TMP/config/gh-shim"
-  printf '#!/bin/bash\nexit 1\n' > "$BIN/security"
-  printf '#!/bin/bash\necho "GH RAN stray=${STRAY_REF:-unset}"\n' > "$BIN/gh"
-  printf '#!/bin/bash\necho "op $*" >&2\n[ "$1" = read ] && echo tok\n' > "$BIN/op"
-  chmod +x "$BIN"/*
-  printf 'mine my.example.com op://vault-a/item-a/token\n' \
-    > "$TMP/config/gh-shim/write-tokens"
-
+@test "on Linux the token comes from the Secret Service" {
+  TMP="$(mktemp -d)"; stub_bin
+  cat > "$BIN/secret-tool" <<'STUB'
+#!/bin/bash
+[ "$1" = lookup ] && [ "$3" = gh-token ] && [ "$5" = some-org ] || exit 1
+printf linux-token
+STUB
+  chmod +x "$BIN/secret-tool"
   cd "$TMP"
-  out="$(STRAY_REF='op://Employee/Some Token/credential' \
-    XDG_STATE_HOME="$TMP/state" XDG_CONFIG_HOME="$TMP/config" \
-    PATH="$BIN:$PATH" bash "$SHIM" pr merge 12 -R mine/repo 2>&1)"
+  git init -q .
+  git remote add origin git@github.com:some-org/Thing.git
 
-  # One op call, for our reference only. The stray variable never reaches op.
-  op_calls="$(printf '%s\n' "$out" | grep '^op ')"
-  equals "$(printf '%s\n' "$op_calls" | wc -l | tr -d ' ')" 1
-  lacks "$op_calls" "Employee"
-  lacks "$op_calls" "op run"
-  lacks "$op_calls" "env-file"
-  # The stray variable is passed through untouched rather than resolved.
-  contains "$out" "GH RAN stray=op://Employee/Some Token/credential"
+  equals "$(GH_KEYRING_BACKEND=secret-tool PATH="$BIN:$PATH" bash "$SHIM" pr list 2>&1)" "token=linux-token"
 
-  rm -rf "$TMP"
-}
-
-# The retry band in dot-claude/skills/1p-retry-band reads these three stderr
-# lines: the banner, the gh call on one line, and the directory it ran in.
-write_fixture() {
-  TMP="$(mktemp -d)"
-  BIN="$TMP/bin"
-  mkdir -p "$BIN" "$TMP/config/gh-shim"
-  printf '#!/bin/bash\nexit 1\n' > "$BIN/security"
-  printf '#!/bin/bash\necho "GH RAN"\n' > "$BIN/gh"
-  printf '#!/bin/bash\n[ "$1" = read ] && echo tok\n' > "$BIN/op"
-  chmod +x "$BIN"/*
-  printf 'mine my.example.com op://vault-a/item-a/token\n' \
-    > "$TMP/config/gh-shim/write-tokens"
-  cd "$TMP" || return
-}
-
-run_shim() {
-  XDG_STATE_HOME="$TMP/state" XDG_CONFIG_HOME="$TMP/config" \
-    PATH="$BIN:$PATH" bash "$SHIM" "$@" 2>"$TMP/stderr"
-}
-
-@test "a write names the gh call and its directory on the two lines after the banner" {
-  write_fixture
-  run_shim pr merge 12 -R mine/repo >/dev/null
-  equals "$(sed -n 1p "$TMP/stderr")" "gh: needs write access, asking 1Password to approve:"
-  equals "$(sed -n 2p "$TMP/stderr")" "    gh pr merge 12 -R mine/repo"
-  equals "$(sed -n 3p "$TMP/stderr")" "    in $(printf %q "$TMP")"
-  rm -rf "$TMP"
-}
-
-@test "an owner with no write-tokens entry is told what setup is missing" {
-  write_fixture
-  printf '#!/bin/bash\necho "PLUGIN RAN"\n' > "$BIN/op"
-  run_shim pr merge 12 -R other/repo >/dev/null
-  equals "$(sed -n 4p "$TMP/stderr")" "gh: could not read the write token for other: no entry in $TMP/config/gh-shim/write-tokens"
-  contains "$(sed -n 5p "$TMP/stderr")" "op://<vault>/<item-id>/<field-id>"
-  contains "$(sed -n 6p "$TMP/stderr")" "op plugin init gh"
-  rm -rf "$TMP"
-}
-
-@test "a multi-line argument stays on one shell-quoted gh line" {
-  write_fixture
-  run_shim issue comment 5 --body $'line one\nline two' -R mine/repo >/dev/null
-  line="$(sed -n 2p "$TMP/stderr")"
-  equals "$(sed -n 3p "$TMP/stderr" | cut -c1-7)" "    in "
-  eval "set -- ${line#    gh }"
-  equals "$#" 7
-  equals "$4" "--body"
-  equals "$5" $'line one\nline two'
-  rm -rf "$TMP"
-}
-
-@test "a 1Password wait past the cap fails in the foreground and never runs gh" {
-  write_fixture
-  printf '#!/bin/bash\ntrap "" ALRM\nexec sleep 10\n' > "$BIN/op"
-  start=$SECONDS
-  status=0
-  out="$(GH_SHIM_APPROVAL_TIMEOUT=1 run_shim pr merge 12 -R mine/repo 2>&1)" || status=$?
-  [ $((SECONDS - start)) -lt 5 ] || { echo "took $((SECONDS - start))s" >&2; exit 1; }
-  equals "$status" 1
-  contains "$(cat "$TMP/stderr")" "gh: 1Password approval timed out after 1s."
-  lacks "$out" "GH RAN"
-  rm -rf "$TMP"
-}
-
-@test "a 1Password refusal under the cap prints the write-token failure and never runs gh" {
-  write_fixture
-  printf '#!/bin/bash\necho "[ERROR] authorization prompt dismissed" >&2\nexit 1\n' > "$BIN/op"
-  status=0
-  out="$(run_shim pr merge 12 -R mine/repo 2>&1)" || status=$?
-  equals "$status" 1
-  equals "$(tail -1 "$TMP/stderr")" "gh: could not read the write token for my.example.com from 1Password."
-  lacks "$(cat "$TMP/stderr")" "approval timed out"
-  lacks "$out" "GH RAN"
   rm -rf "$TMP"
 }

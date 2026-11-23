@@ -28,34 +28,34 @@ teardown() { rm -rf "$BIN"; }
 keyring() { PATH="$BIN:$PATH" bash "$KEYRING" "$@"; }
 
 @test "macOS get reads the keychain by service and owner" {
-  equals "$(GH_KEYRING_BACKEND=security keyring get gh-readonly tvrmsmith)" stored-token
-  contains "$(cat "$LOG")" "security find-generic-password -s gh-readonly -a tvrmsmith -w"
+  equals "$(GH_KEYRING_BACKEND=security keyring get gh-token tvrmsmith)" stored-token
+  contains "$(cat "$LOG")" "security find-generic-password -s gh-token -a tvrmsmith -w"
 }
 
 @test "macOS set passes the stdin token with -w and overwrites with -U" {
-  printf 'new-token' | GH_KEYRING_BACKEND=security keyring set gh-prwrite some-org "GitHub PR-write PAT"
-  contains "$(cat "$LOG")" "security add-generic-password -U -s gh-prwrite -a some-org -w new-token -D GitHub PR-write PAT"
+  printf 'new-token' | GH_KEYRING_BACKEND=security keyring set gh-token some-org "GitHub token"
+  contains "$(cat "$LOG")" "security add-generic-password -U -s gh-token -a some-org -w new-token -D GitHub token"
 }
 
 @test "Linux get reads the Secret Service by the same service and owner" {
-  equals "$(GH_KEYRING_BACKEND=secret-tool keyring get gh-readonly tvrmsmith)" stored-token
-  contains "$(cat "$LOG")" "secret-tool lookup service gh-readonly account tvrmsmith"
+  equals "$(GH_KEYRING_BACKEND=secret-tool keyring get gh-token tvrmsmith)" stored-token
+  contains "$(cat "$LOG")" "secret-tool lookup service gh-token account tvrmsmith"
 }
 
 @test "Linux set keeps the token off argv and feeds it on stdin" {
-  printf 'new-token' | GH_KEYRING_BACKEND=secret-tool keyring set gh-readonly some-org "GitHub read-only PAT"
+  printf 'new-token' | GH_KEYRING_BACKEND=secret-tool keyring set gh-token some-org "GitHub token"
   log="$(cat "$LOG")"
-  contains "$log" "secret-tool store --label=GitHub read-only PAT (gh-readonly/some-org) service gh-readonly account some-org <stdin:new-token>"
+  contains "$log" "secret-tool store --label=GitHub token (gh-token/some-org) service gh-token account some-org <stdin:new-token>"
 }
 
 @test "with no override the backend follows uname" {
   printf '#!/bin/bash\necho Darwin\n' > "$BIN/uname"; chmod +x "$BIN/uname"
-  keyring has gh-readonly x
+  keyring has gh-token x
   contains "$(cat "$LOG")" "security find-generic-password"
 
   : > "$LOG"
   printf '#!/bin/bash\necho Linux\n' > "$BIN/uname"
-  keyring has gh-readonly x
+  keyring has gh-token x
   contains "$(cat "$LOG")" "secret-tool lookup"
 }
 
@@ -65,13 +65,13 @@ keyring() { PATH="$BIN:$PATH" bash "$KEYRING" "$@"; }
   rm "$BIN/secret-tool"
   # PATH is the stub dir alone, so a real secret-tool on this machine (any
   # CachyOS box with libsecret) cannot answer and turn this into a lookup test.
-  run env GH_KEYRING_BACKEND=secret-tool PATH="$BIN" "$BASH" "$KEYRING" get gh-readonly x
+  run env GH_KEYRING_BACKEND=secret-tool PATH="$BIN" "$BASH" "$KEYRING" get gh-token x
   equals "$status" 1
   is_empty "$output"
 }
 
 @test "a missing argument is a usage error" {
-  run keyring get gh-readonly
+  run keyring get gh-token
   equals "$status" 2
   contains "$output" "usage: gh-keyring"
 }

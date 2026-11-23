@@ -1,27 +1,22 @@
 #!/usr/bin/env bash
-# gh — pick the credential from what the command does, not from who is asking.
+# gh — run the real gh with the token of the account that owns the repo.
 #
-# Three tiers, each with its own credential:
+# One classic token per GitHub account, kept in the OS keyring under the
+# service gh-token and keyed by owner login. gh-token-sync copies them there
+# from 1Password; a machine without the sync gets them by hand with
+# `gh-keyring set gh-token <owner>`. Nothing here asks for an approval: agents
+# act as Trevor, and the token is the whole credential. See
+# docs/adr/0002-agents-use-synced-classic-tokens.md.
 #
-#   read      a read-only token from the OS keyring (gh-keyring), silent
-#   pr-write  a token scoped `Pull requests: write` with contents at read, silent
-#   write     a full-access token read from 1Password, which asks for approval
+# Why a shim at all, when gh can hold both accounts itself: gh has one active
+# account per host, and `gh auth switch` rewrites a hosts.yml shared by every
+# agent running in parallel. Picking the token per call, from the repo's owner,
+# keeps a personal-repo call off the work account and the reverse. git uses this
+# file as its HTTPS credential helper for the same reason.
 #
-# The point is to spend approvals only where one changes the outcome. Routing
-# every read through 1Password produced dozens of identical prompts a day, none
-# naming the command, which trains dismissal rather than scrutiny. Opening a PR
-# is frequent enough to have the same effect, and GitHub scopes it separately
-# from merging, so it gets its own token rather than an approval.
-#
-# Misclassification is safe in every direction, because each tier's token cannot
-# exceed its tier: a write treated as a read gets 403, a merge treated as a
-# pr-write gets 403, and a read treated as a write costs one needless prompt.
-#
-# The scoping only holds for callers that come through here. `gh auth login`
-# leaves a write-scoped token in gh's own keyring, and the real binary reads it
-# without asking, so anything invoking gh by absolute path escapes the whole
-# design. Keeping the raw binary logged out is what makes the shim enforcement
-# rather than a signpost. See dotfiles-7wt.
+# GH_SHIM_EXPLAIN=1 gh <args> prints the owner and whether a token was found, and
+# runs nothing.
+
 set -euo pipefail
 
 # Follow a symlink chain to the file itself. BSD readlink has no -f, and a link
@@ -83,187 +78,13 @@ if [ -n "${GH_TOKEN:-}" ] || [ -n "${GITHUB_TOKEN:-}" ]; then
 	exec "$real_gh" "$@"
 fi
 
-# A GraphQL call is always a POST carrying `-f query=...`, so the body rule below
-# calls every one of them a write. What actually decides is the operation type in
-# the query text: `query` (or a bare `{`) reads, `mutation` writes. Without this,
-# polling repo merge settings over GraphQL cost an approval per poll.
-#
-# Only inspectable queries qualify. A body from a file or stdin (`--input`,
-# `-f query=@file`) could hold a mutation, so it keeps the prompting path.
-gh_flag_takes_value() {
-	case "$1" in
-		-f | -F | --field | --raw-field | -H | --header | -X | --method \
-			| --hostname | --input | --template | -t | --jq | -q | --cache) return 0 ;;
-	esac
-	return 1
-}
-
-api_is_graphql_read() {
-	local arg prev="" endpoint="" query=""
-	for arg in "$@"; do
-		if ! gh_flag_takes_value "$prev"; then
-			case "$arg" in -*) ;; *) [ -n "$endpoint" ] || endpoint="$arg" ;; esac
-		fi
-		case "$arg" in
-			--input | --input=*) return 1 ;;
-			query=*) query="${arg#query=}" ;;
-			-fquery=* | -Fquery=*) query="${arg#*query=}" ;;
-		esac
-		prev="$arg"
-	done
-
-	[ "$endpoint" = graphql ] || return 1
-	[ -n "$query" ] || return 1
-
-	# Strip leading whitespace: a multi-line query usually opens with a newline.
-	query="${query#"${query%%[![:space:]]*}"}"
-	case "$query" in
-		query* | '{'*) return 0 ;;
-	esac
-	return 1
-}
-
-# `gh api` defaults to GET, but a body turns it into a write: -f/-F/--field/--raw-field
-# make gh switch to POST on its own. An explicit --method settles it either way, and it
-# outranks the fields, because under GET gh sends them as query parameters rather than a
-# body. So read the whole argument list before deciding, rather than answering on the
-# first field flag: `--method GET ... -f per_page=100` is a paginated read.
-api_is_read() {
-	api_is_graphql_read "$@" && return 0
-	local prev="" method="" field=0
-	for arg in "$@"; do
-		case "$arg" in
-			--input | --input=*) return 1 ;;
-			-f* | -F* | --field | --field=* | --raw-field | --raw-field=*) field=1 ;;
-		esac
-		case "$arg" in
-			--method=*) method="${arg#--method=}" ;;
-			-X?*) method="${arg#-X}" ;;
-		esac
-		case "$prev" in
-			-X | --method) method="$arg" ;;
-		esac
-		prev="$arg"
-	done
-
-	case "$method" in
-		GET | HEAD | get | head) return 0 ;;
-		"") [ "$field" -eq 0 ] && return 0 ;;
-	esac
-	return 1
-}
-
-# Default deny: anything not listed here, including an unrecognised subcommand
-# and a gh version that grew new verbs, takes the prompting path.
-is_read() {
-	case "${1:-}" in
-		"" | --version | -v | --help | -h | help | status | search | browse | completion)
-			return 0 ;;
-		api)
-			shift
-			api_is_read "$@"
-			return $? ;;
-	esac
-
-	case "$1 ${2:-}" in
-		"pr view" | "pr list" | "pr diff" | "pr checks" | "pr status") return 0 ;;
-		"issue view" | "issue list" | "issue status") return 0 ;;
-		"repo view" | "repo list" | "repo clone") return 0 ;;
-		"run view" | "run list" | "run watch" | "run download") return 0 ;;
-		"release view" | "release list" | "release download") return 0 ;;
-		"workflow view" | "workflow list") return 0 ;;
-		"cache list" | "label list" | "variable list" | "secret list") return 0 ;;
-		"gist view" | "gist list") return 0 ;;
-		"ssh-key list" | "gpg-key list") return 0 ;;
-		"auth status" | "auth token" | "auth git-credential") return 0 ;;
-		"org list" | "project list" | "project view") return 0 ;;
-	esac
-	return 1
-}
-
-# Opening a PR is the one write agents do constantly, and gating it on an
-# approval made the common case the expensive one. GitHub splits the two
-# permissions along exactly the line that matters here: creating a PR needs
-# `Pull requests: write`, while merging one needs `Contents: write`, and so does
-# enabling auto-merge. A token holding the first and not the second can open a PR
-# and cannot merge it by any route.
-#
-# So the ceiling is the token, not this list. The list only decides which
-# commands are worth reaching for that token at all; anything it misses still
-# prompts, and anything it wrongly lets through still cannot merge.
-#
-# `pr ready` and `pr draft` stay off too, though the token holds the PR
-# permission they look like they need. GitHub refuses their GraphQL mutations
-# (markPullRequestReadyForReview, convertPullRequestToDraft) to a fine-grained
-# token without `Contents: write` ("Resource not accessible by personal access
-# token", cli/cli discussion 6924), and Contents at read is the no-merge gate.
-# So they take the write tier rather than widening this token.
-#
-# `pr review` stays off deliberately. It cannot merge either, but approving is
-# how a branch-protection rule gets satisfied, and an agent should not clear that
-# bar for its own PR. See dotfiles-jwp.
-is_pr_write() {
-	case "$1 ${2:-}" in
-		"pr create" | "pr comment" | "pr edit" | "pr close" | "pr reopen") return 0 ;;
-	esac
-
-	[ "${1:-}" = api ] || return 1
-
-	# The REST spellings of the same operations. Method and path both have to
-	# match, so a DELETE to the same path is not covered.
-	local arg prev="" method="" path=""
-	for arg in "$@"; do
-		case "$prev" in
-			-X | --method) method="$arg" ;;
-		esac
-		case "$arg" in
-			-X?*) method="${arg#-X}" ;;
-			--method=*) method="${arg#--method=}" ;;
-			-*) ;;
-			# The endpoint is the first bare argument that is not the `api`
-			# subcommand itself and not the value of a flag. Without the flag
-			# check, `-X POST` makes POST look like the path.
-			*)
-				if [ -z "$path" ] && [ "$arg" != api ] && ! gh_flag_takes_value "$prev"; then
-					path="$arg"
-				fi ;;
-		esac
-		prev="$arg"
-	done
-
-	# gh infers POST from a body, which is how `gh api .../pulls -f title=x` is
-	# usually written.
-	if [ -z "$method" ]; then
-		for arg in "$@"; do
-			case "$arg" in
-				-f | -F | --field | --raw-field) method=POST; break ;;
-			esac
-		done
-	fi
-
-	case "$method" in POST | PATCH) ;; *) return 1 ;; esac
-
-	case "${path#/}" in
-		repos/*/*/pulls | repos/*/*/pulls/[0-9]* | repos/*/*/issues/[0-9]*/comments) ;;
-		*) return 1 ;;
-	esac
-
-	# `.../pulls/{n}/merge` is a longer path that the pattern above would
-	# otherwise swallow, and it is the one thing this tier must never cover.
-	case "${path#/}" in
-		*/merge | */merge-async | */update-branch | */reviews | */requested_reviewers)
-			return 1 ;;
-	esac
-	return 0
-}
-
-# Tokens are keyed by GitHub resource owner, not by account. A fine-grained PAT
-# has exactly one owner, so the work user and the work org need separate tokens
-# even though one person signs in to both. Owner is also what an explicit
-# `-R owner/repo` names, which no account-level view could see.
+# Tokens are keyed by GitHub resource owner. A classic token covers every owner
+# its account can reach, so the sync stores the same token under each owner it
+# serves (the work user and the work org, say), and a lookup stays one key.
 #
 # Resolved per invocation and passed as GH_TOKEN. Never `gh auth switch`: that
 # rewrites a shared hosts.yml, and several agents run here in parallel.
+
 # The owner segment of a GitHub remote URL, or failure for anything else. The
 # host check is what keeps a filesystem remote (`git clone /path/to/repo.git`,
 # the no-mistakes gate repos) from yielding "Users" as an owner.
@@ -372,226 +193,50 @@ dir_owner() {
 	esac
 }
 
-# Two keyring entries per owner, written by extras/gh-readonly-tokens.sh: a
-# read-only token, and one scoped `Pull requests: write` with contents kept at
-# read. gh's own `gh:github.com` entries are keyed by account and so cannot hold
-# two tokens for one user; these are ours, under distinct service names.
-#
 # Which keyring (macOS keychain, Linux Secret Service) is gh-keyring's business,
 # so nothing below this line knows what OS it is on.
 #
 # Found beside this file's real path, not beside the link to it. install.sh
 # makes ~/.local/bin a real directory, so stow links its files one by one and a
-# new helper has no link there until the next install. Looked for in
-# $shim_dir, it was missing on every machine that had only pulled, and each
-# read fell through to a 1Password prompt. The repo copy always exists, and in
-# a sandbox that copies dot-local/bin the two directories are the same.
+# new helper has no link there until the next install. The repo copy always
+# exists, and in a sandbox that copies dot-local/bin the two directories are the
+# same.
 keyring="$(dirname "$self")/gh-keyring"
 keychain_token() {
 	# A token never holds whitespace. A lone "\r" once landed in the keyring (a
 	# hidden prompt read in a terminal that sent CR), and `[ -n "$token" ]` let it
 	# through as an Authorization header gh rejected. Strip it, and treat what is
-	# left being empty as no token, so the caller falls through to the prompt.
+	# left being empty as no token.
 	local token
-	token="$("$keyring" get "${2:-gh-readonly}" "$1" 2>/dev/null | tr -d '[:space:]')" || return 1
+	token="$("$keyring" get gh-token "$1" 2>/dev/null | tr -d '[:space:]')" || return 1
 	[ -n "$token" ] || return 1
 	printf '%s\n' "$token"
 }
 
-# Report the routing decision and exit without running anything. Lets the bats
-# suite cover the classifier, and lets you check a command before trusting it.
+# The repo owner's token first, then the token for the directory's account. A
+# repo whose owner has no token here is usually a third party (an upstream, a
+# public dependency), and the account you are working as is the right identity
+# for it.
+owner="$(gh_owner "$@")"
+token="" used=""
+for candidate in "$owner" "$(dir_owner)"; do
+	[ -n "$candidate" ] || continue
+	if token="$(keychain_token "$candidate")"; then
+		used="$candidate"
+		break
+	fi
+	token=""
+done
+
 if [ -n "${GH_SHIM_EXPLAIN:-}" ]; then
-	if is_read "$@"; then
-		echo "read $(gh_owner "$@")"
-	elif is_pr_write "$@"; then
-		echo "pr-write $(gh_owner "$@")"
+	if [ -n "$used" ]; then
+		echo "owner $owner token $used"
 	else
-		# The owner belongs here too. Leaving it off is what hid dotfiles-4ul:
-		# the other two tiers printed one and this one did not, and nobody read
-		# that as "this tier never asks whose repo it is".
-		echo "write $(gh_owner "$@")"
+		echo "owner $owner token none"
 	fi
 	exit 0
 fi
 
-if is_read "$@"; then
-	# The owner's own token first, then any read-only token at all. A repo whose
-	# owner has no token here is usually a third party, and reading a public repo
-	# needs a valid token rather than a particular one, so borrowing keeps it
-	# silent. Prompting instead would spend an approval on something no approval
-	# protects: the no-mistakes daemon polling an upstream repo every few seconds
-	# produced a stream of them. A borrowed token still cannot write anywhere.
-	for owner in "$(gh_owner "$@")" "$(dir_owner)"; do
-		[ -n "$owner" ] || continue
-		if token="$(keychain_token "$owner")" && [ -n "$token" ]; then
-			if [ "$1" = pr ] && [ "${2:-}" = checks ]; then
-				# GitHub withdrew the Checks permission from fine-grained tokens,
-				# so the real `gh pr checks` answers a private repo with ten
-				# GraphQL "Resource not accessible" lines and no permission fixes
-				# it. gh-pr-checks rebuilds the same table from commit statuses
-				# and Actions jobs, which this token can read. See dotfiles-4ul
-				# and community discussion 129512.
-				shift 2
-				exec env GH_TOKEN="$token" REAL_GH="$real_gh" \
-					"$shim_dir/gh-pr-checks" "$@"
-			fi
-			exec env GH_TOKEN="$token" "$real_gh" "$@"
-		fi
-	done
-	# No read-only token at all (fresh machine, or the wizard never run). Fall
-	# through and prompt rather than failing the command.
-elif is_pr_write "$@"; then
-	# This owner's PR token only. Never the borrow loop above: that exists so a
-	# public read finds any valid token, and the reasoning does not carry over to
-	# a credential that can write. Opening a PR against someone else's repo on a
-	# token minted for a different owner is not a thing to do silently.
-	owner="$(gh_owner "$@")"
-	if [ -n "$owner" ] && token="$(keychain_token "$owner" gh-prwrite)" && [ -n "$token" ]; then
-		exec env GH_TOKEN="$token" "$real_gh" "$@"
-	fi
-	# No PR token for this owner. Prompt, same as any other write.
-fi
-
-# op matches plugins by bare command name, so `op plugin run -- /abs/path/gh`
-# errors with "unknown plugin". Drop this shim's directory from PATH instead,
-# which leaves the real binary first and avoids recursing into ourselves.
-stripped=""
-IFS=: read -ra parts <<< "$PATH"
-for part in "${parts[@]}"; do
-	[ "$part" = "$shim_dir" ] && continue
-	stripped="${stripped:+$stripped:}$part"
-done
-
-# Which 1Password item holds the write token for an owner. One `owner account
-# op://vault/item/field` line each, machine-local because the work vault and
-# item are not ours to publish.
-#
-# This map exists because `op plugin run` cannot be told which account to use.
-# It pins one item in ~/.config/op/plugins/gh.json and then lets a per-terminal
-# selection override it, so the same command authenticated as the work user in
-# one window and the personal user in another, and a personal-repo merge came
-# back "TrevorSmith-Wellsky does not have the correct permissions". OP_ACCOUNT
-# does not fix it: it only changes which account the already-chosen vault is
-# looked up in, so it errors rather than switching. See dotfiles-4ul.
-write_map="${XDG_CONFIG_HOME:-$HOME/.config}/gh-shim/write-tokens"
-
-# Sets write_account and write_ref, or returns 1 when the owner has no entry.
-write_credential() {
-	local want="$1" owner account ref
-	[ -f "$write_map" ] || return 1
-	while read -r owner account ref; do
-		case "$owner" in '' | '#'*) continue ;; esac
-		[ "$owner" = "$want" ] || continue
-		[ -n "$account" ] && [ -n "$ref" ] || continue
-		write_account="$account"
-		write_ref="$ref"
-		return 0
-	done < "$write_map"
-	return 1
-}
-
-# `op read` and not `op run`, because `op run` resolves every op:// reference in
-# the inherited environment rather than only the ones in its --env-file. A shell
-# exporting JIRA_API_TOKEN or GIT_TOKEN against the work vault therefore broke
-# each personal-account write, with an error naming that unrelated variable, and
-# on a work write it fetched both and handed them to gh for no reason. Reading
-# the one reference avoids both, and matches how the other two tiers already
-# fetch their token.
-
-# No 1Password to escalate to: a Linux sandbox gets dot-local/bin copied in, so
-# this shim shadows the real gh there too, and it must not break it. The
-# sandbox's own gh auth is the credential in that case.
-if ! command -v op >/dev/null 2>&1; then
-	exec "$real_gh" "$@"
-fi
-
-# A 1Password prompt names no command and no caller, so a GUI app polling gh in
-# the background is indistinguishable from an agent doing real work. Record who
-# asked before handing over. Escalations only, so the file stays small.
-log="${XDG_STATE_HOME:-$HOME/.local/state}/gh-shim.log"
-mkdir -p "$(dirname "$log")" 2>/dev/null || true
-{
-	caller="$(ps -o comm= -p "$PPID" 2>/dev/null || echo unknown)"
-	printf '%s  ppid=%s  %s  cwd=%s  gh %s\n' \
-		"$(date '+%Y-%m-%d %H:%M:%S')" "$PPID" "${caller##*/}" "$PWD" "$*" >> "$log"
-} 2>/dev/null || true
-
-# dot-claude/skills/1p-retry-band reads this output, so keep its shape. Three
-# stderr lines, each after the one before:
-#
-#   gh: needs write access, asking 1Password to approve:
-#       gh <args, shell-quoted on ONE line, so `eval` of it reproduces them>
-#       in <$PWD, %q-quoted>
-#
-# The band takes the banner as a whole line, the gh line after it, and the
-# `    in ` line after that as the directory to retry in. It arms when the first
-# line after those is missing, "gh: could not read the write token" or "gh:
-# 1Password approval timed out" (both below), op's [ERROR] line, or the Bash
-# tool's timeout notice. Reword any of them and its retry band goes dark.
-#
-# The approval wait is capped at GH_SHIM_APPROVAL_TIMEOUT seconds (default 100),
-# under the Bash tool's 2-minute limit. Past that limit the tool moves the call
-# to the background and nothing prints; the cap fails in the foreground instead,
-# so the band can arm. macOS has no timeout(1), hence the perl watchdog. It
-# holds the alarm itself and kills op, because op is a Go binary and Go ignores
-# a SIGALRM it never asked for. The `op plugin run` fallback is not capped.
-echo "gh: needs write access, asking 1Password to approve:" >&2
-printf '    gh' >&2
-printf ' %q' "$@" >&2
-printf '\n' >&2
-printf '    in %q\n' "$PWD" >&2
-
-write_account="" write_ref=""
-if write_credential "$(gh_owner "$@")"; then
-	cap="${GH_SHIM_APPROVAL_TIMEOUT:-100}"
-	status=0
-	token="$(perl -MPOSIX=:sys_wait_h -e '
-		my $cap = shift;
-		defined(my $pid = fork) or die "gh: fork failed: $!\n";
-		if (!$pid) { exec { $ARGV[0] } @ARGV; exit 127 }
-		$SIG{ALRM} = sub {
-			kill TERM => $pid;
-			for (1 .. 10) {
-				exit 142 if waitpid($pid, WNOHANG);
-				select undef, undef, undef, 0.1;
-			}
-			kill KILL => $pid;
-			waitpid $pid, 0;
-			exit 142;
-		};
-		alarm $cap;
-		waitpid $pid, 0;
-		exit($? & 127 ? 128 + ($? & 127) : $? >> 8);
-	' "$cap" op read --account "$write_account" --no-newline "$write_ref")" || status=$?
-	# The watchdog exits 142 when the cap passes.
-	if [ "$status" -eq 142 ]; then
-		echo "gh: 1Password approval timed out after ${cap}s." >&2
-		exit 1
-	fi
-	if [ "$status" -eq 0 ] && [ -n "$token" ]; then
-		# PATH stays whole here, unlike the fallback below. $stripped exists only
-		# so `op plugin run` resolves `gh` to the real binary instead of recursing
-		# into this shim; running the real binary by absolute path needs no such
-		# trick, and handing gh a PATH without ~/.local/bin would hide every other
-		# shim from the editor and git subprocesses it spawns.
-		export GH_TOKEN="$token"
-		exec "$real_gh" "$@"
-	fi
-	echo "gh: could not read the write token for $write_account from 1Password." >&2
-	exit 1
-fi
-
-# No entry for this owner, so fall back to the plugin. It may well pick the
-# wrong account, but failing outright would be worse on a machine where the map
-# was never written.
-#
-# The fallback needs a TTY, so from an agent shell it dies with "interactive IO
-# not available" and no hint why. Name the missing setup first. The first line
-# keeps the "could not read the write token" prefix the retry band arms on.
-owner="$(gh_owner "$@" 2>/dev/null || true)"
-echo "gh: could not read the write token for ${owner:-this owner}: no entry in $write_map" >&2
-echo "    add one line: <owner> <op-account> op://<vault>/<item-id>/<field-id>" >&2
-if [ ! -f "${XDG_CONFIG_HOME:-$HOME/.config}/op/plugins/gh.json" ]; then
-	echo "    or, from a real terminal, run once: op plugin init gh" >&2
-fi
-exec env PATH="$stripped" op plugin run -- gh "$@"
+# No token on this machine: let the real gh use its own login, or none.
+[ -n "$token" ] || exec "$real_gh" "$@"
+exec env GH_TOKEN="$token" "$real_gh" "$@"

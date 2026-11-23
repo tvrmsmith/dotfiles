@@ -1,0 +1,22 @@
+# Copies each GitHub owner's token from 1Password into the keyring, as a
+# 1Password service account. install.sh links this into ~/.config/systemd/user
+# on Linux; gh-token-sync.timer runs it.
+#
+# The service account token is a systemd credential, encrypted for this user
+# and sealed to the TPM where one exists (systemd 256 or later):
+#
+#   systemd-creds encrypt --user --name=op-service-account - \
+#     ~/.config/gh-token-sync/op-service-account.cred
+#
+# then paste the token and press Ctrl-D. Only this user, on this machine, can
+# decrypt it, and it is never written to disk in the clear.
+[Unit]
+Description=Sync GitHub tokens from 1Password into the keyring
+# The Secret Service lives on the session bus, which exists only while
+# Trevor is logged in; a run before that fails and the next one catches up.
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+LoadCredentialEncrypted=op-service-account:%h/.config/gh-token-sync/op-service-account.cred
+ExecStart=%h/.local/bin/gh-token-sync

@@ -227,10 +227,9 @@ clcwf() { (export CLAUDE_CODE_DISABLE_WORKFLOWS=0; claude-launcher --dangerously
 
 # 1Password CLI shell plugins. `op plugin init` writes one alias per plugin
 # here, so the file is sourced to keep future plugins working, then the gh alias
-# alone is dropped. That alias sends every gh call, reads included, through a
-# biometric approval, and it reaches agent shells; dot-local/bin/gh does the job
-# better, using a read-only keychain token for reads and this same plugin for
-# writes. Unaliasing rather than editing the file, because `op plugin init`
+# alone is dropped. That alias sends every gh call through a biometric
+# approval, and it reaches agent shells; dot-local/bin/gh hands gh the repo
+# owner's token from the keyring instead, with no prompt. Unaliasing rather than editing the file, because `op plugin init`
 # rewrites it. An alias beats PATH, so leaving it would shadow the shim
 # entirely. See dotfiles-7wt.
 [ -f "$XDG_CONFIG_HOME/op/plugins.sh" ] && source "$XDG_CONFIG_HOME/op/plugins.sh"

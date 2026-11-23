@@ -5,9 +5,9 @@
 #   gh-keyring has <service> <owner>          exit 0 if a token is stored
 #   gh-keyring set <service> <owner> [label]  store the token read from stdin
 #
-# The gh shim and extras/gh-readonly-tokens.sh both come through here, so a
-# platform is one branch below rather than a copy in each caller. Services are
-# gh-readonly and gh-prwrite, keyed by GitHub owner login.
+# The gh shim and gh-token-sync both come through here, so a platform is one
+# branch below rather than a copy in each caller. The service is gh-token, keyed
+# by GitHub owner login.
 #
 #   macOS   the login keychain via security(1)
 #   Linux   the Secret Service (KWallet, gnome-keyring) via secret-tool(1),

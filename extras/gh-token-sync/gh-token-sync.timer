@@ -1,0 +1,13 @@
+# Hourly, and five minutes after the user manager starts (login), so a token
+# rotated in 1Password reaches this machine within the hour. Persistent applies
+# to the calendar trigger: a run missed while asleep happens on wake.
+[Unit]
+Description=Hourly GitHub token sync from 1Password
+
+[Timer]
+OnStartupSec=5min
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
