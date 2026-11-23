@@ -67,8 +67,21 @@ if [ -z "$real_gh" ]; then
 	done
 fi
 
+# On Linux gh comes from mise (dot-config/mise/config.toml pins "latest"), and
+# agent shells and git's credential helper run without mise on PATH. The
+# `latest` link is read directly, not through `mise which gh`, for the same
+# per-call subprocess cost as above.
 if [ -z "$real_gh" ]; then
-	echo "gh shim: no real gh binary found on PATH or in a Homebrew opt prefix" >&2
+	for candidate in "${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}"/installs/gh/latest/*/bin/gh; do
+		if [ -x "$candidate" ]; then
+			real_gh="$candidate"
+			break
+		fi
+	done
+fi
+
+if [ -z "$real_gh" ]; then
+	echo "gh shim: no real gh binary found on PATH, in a Homebrew opt prefix or in mise" >&2
 	exit 127
 fi
 
