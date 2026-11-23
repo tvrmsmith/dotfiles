@@ -229,14 +229,11 @@ setup_dotfiles() {
 	# link_slice_pipeline's slice-wave link lands inside this checkout.
 	mkdir -p "$HOME/.local/bin"
 
-	# ~/.ssh holds far more runtime state than config — known_hosts, agent
-	# sockets, the ControlMaster sockets dot-ssh/config points at — so it must
-	# never fold into a link to dot-ssh/. Creating the sockets subdir forces the
-	# parent to exist as a real directory and gives ssh the ControlPath dir it
-	# refuses to create itself. 700 because ssh ignores a group- or
-	# world-writable socket directory.
-	mkdir -p "$HOME/.ssh/sockets"
-	chmod 700 "$HOME/.ssh" "$HOME/.ssh/sockets"
+	# ~/.ssh holds far more runtime state than config (known_hosts, agent
+	# sockets, keys), so it must never fold into a link to dot-ssh/. 700 because
+	# ssh refuses keys and config under a group- or world-writable directory.
+	mkdir -p "$HOME/.ssh"
+	chmod 700 "$HOME/.ssh"
 
 	# ~/.config for the same reason, and this one has teeth: a machine-local
 	# corporate-ca-bundle writes the trust bundle to $XDG_CONFIG_HOME/corporate-ca.crt.
@@ -375,26 +372,36 @@ link_beads_prime() {
 	fi
 }
 
-# Pushes ride SSH only where 1Password's SSH agent can sign them; anywhere else
-# (a Cloud Workstation, a sandbox) they stay on HTTPS with gh's credential. The
-# agent's directory, not its socket, is the signal: the socket exists only while
-# the app runs, and an install with 1Password closed must not drop the link.
-onepassword_agent_dir() {
-	if [ -n "${ONEPASSWORD_AGENT_DIR:-}" ]; then
-		printf '%s\n' "$ONEPASSWORD_AGENT_DIR"
-	elif [ "$(uname)" = Darwin ]; then
-		printf '%s\n' "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password"
-	else
-		printf '%s\n' "$HOME/.1password"
+# Git talks to GitHub over HTTPS alone now, with the gh shim's token, so the
+# old ssh-push include is gone. Drop the link an earlier install made, but leave
+# a hand-written file alone: that one is the machine's own choice.
+remove_ssh_push_link() {
+	local link="$HOME/.gitconfig.ssh-push"
+	if [ -L "$link" ]; then
+		rm -f "$link"
 	fi
 }
 
-link_ssh_push() {
-	local link="$HOME/.gitconfig.ssh-push"
-	if [ -d "$(onepassword_agent_dir)" ]; then
-		ln -sfn "$SCRIPT_DIR/extras/git/ssh-push.gitconfig" "$link"
-	elif [ -L "$link" ]; then
-		rm -f "$link"
+# The hourly token sync (extras/gh-token-sync) on a Linux machine with a systemd
+# user manager. The units are linked one by one into a real
+# ~/.config/systemd/user, so `systemctl --user enable` writes its wants link
+# there and never into this repo. The timer is enabled only once the service
+# account credential exists, because every run would fail without it; until then
+# install says what to do.
+link_gh_token_sync() {
+	[ "$(uname)" = Linux ] || return 0
+	command -v systemctl >/dev/null 2>&1 || return 0
+	local units="$HOME/.config/systemd/user" unit
+	mkdir -p "$units"
+	for unit in gh-token-sync.service gh-token-sync.timer; do
+		ln -sfn "$SCRIPT_DIR/extras/gh-token-sync/$unit" "$units/$unit"
+	done
+	systemctl --user daemon-reload 2>/dev/null || return 0
+	if [ -f "$HOME/.config/gh-token-sync/op-service-account.cred" ] \
+		&& [ -f "$HOME/.config/gh-token-sync/tokens" ]; then
+		systemctl --user enable --now gh-token-sync.timer
+	else
+		echo "gh-token-sync: timer not enabled; see extras/gh-token-sync/README.md to set it up."
 	fi
 }
 
@@ -409,7 +416,8 @@ main() {
 	unlink_brew_gh
 	link_slice_pipeline
 	link_beads_prime
-	link_ssh_push
+	remove_ssh_push_link
+	link_gh_token_sync
 	echo "Dot files installed."
 }
 
