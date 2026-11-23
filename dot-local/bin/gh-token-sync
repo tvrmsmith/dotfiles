@@ -7,8 +7,8 @@
 # The map is machine-local, because the vault and items are not ours to publish:
 #
 #   ~/.config/gh-token-sync/tokens
-#   # owner                op:// reference
-#   tvrmsmith              op://Agent credentials/GitHub tvrmsmith/token
+#   # owner    op:// reference
+#   <owner>    op://<vault>/<item>/<field>
 #
 # A classic token covers every owner its account reaches, so a work user and a
 # work org can share one reference; it is read once per run.

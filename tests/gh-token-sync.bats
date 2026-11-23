@@ -41,17 +41,17 @@ teardown() { rm -rf "$TMP"; }
 vault() { printf '%s' "$2" > "$TMP/vault/$(printf '%s' "$1" | tr '/ ' '__')"; }
 
 @test "each owner's token lands in the keyring under gh-token" {
-  vault "op://Agent credentials/GitHub personal/token" personal-token
-  vault "op://Agent credentials/GitHub work/token" work-token
+  vault "op://Vault A/Item one/token" personal-token
+  vault "op://Vault A/Item two/token" work-token
   cat > "$TMP/tokens" <<MAP
 # owner  ref
-tvrmsmith            op://Agent credentials/GitHub personal/token
-TrevorSmith-Wellsky  op://Agent credentials/GitHub work/token
-some-work-org        op://Agent credentials/GitHub work/token
+user-one             op://Vault A/Item one/token
+user-two             op://Vault A/Item two/token
+some-work-org        op://Vault A/Item two/token
 MAP
   out="$(bash "$SYNC" 2>&1)"
-  equals "$(cat "$STORE/gh-token.tvrmsmith")" personal-token
-  equals "$(cat "$STORE/gh-token.TrevorSmith-Wellsky")" work-token
+  equals "$(cat "$STORE/gh-token.user-one")" personal-token
+  equals "$(cat "$STORE/gh-token.user-two")" work-token
   equals "$(cat "$STORE/gh-token.some-work-org")" work-token
   # A shared reference is read once.
   equals "$(wc -l < "$TMP/op-reads" | tr -d ' ')" 2
