@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "1password-skill",
   "description": "Claude Code skill for 1Password CLI — auth recovery, secret retrieval, SSH agent, git commit signing, shell plugins, service accounts, and troubleshooting",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": {
     "name": "Peter McDade",
     "url": "https://github.com/petejm"
