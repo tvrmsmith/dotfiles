@@ -23,7 +23,7 @@ Gives Claude a **decision router** — a lookup table that maps what you're seei
 | You're seeing... | Claude will... |
 |---|---|
 | `Permission denied (publickey)` | Run the auth recovery flow (`op account get` → biometric → retry) |
-| "I need a database password" | Use `op run` to inject it without exposing it in conversation |
+| "I need a database password" | Use `op run` to inject it and mask it in output (best effort, not a guarantee) |
 | Setting up `op://` references | Guide you through `.env` templates and `op inject` |
 | SSH agent not responding | Check socket paths per OS, verify with `ssh-add -l` |
 | Git commit signing failures | Configure `op-ssh-sign` with the right paths |
@@ -35,7 +35,7 @@ Gives Claude a **decision router** — a lookup table that maps what you're seei
 
 The skill enforces 6 rules that align with [1Password's own AI guidance](https://www.1password.dev/get-started/secure-ai-access):
 
-1. **`op run` over `op read`** — the secret never enters Claude's context window
+1. **`op run` over `op read`**: keeps the secret off the command line and masks it in output (best effort, not a guarantee)
 2. **Never run `op` speculatively** — a call that needs authentication raises a biometric prompt on your desktop, away from the terminal, and physically interrupts you. An already-unlocked session answers silently, so Claude cannot know in advance which it will get
 3. **Scope with `--vault`** on `op item get` and `op item list` — prevents exposing item names across all vaults. `op read` and `op run` have no `--vault` flag; there the vault is the first segment of the `op://` reference
 4. **No secrets in files** — use `op run --env-file` or `op inject` for templating
@@ -136,6 +136,15 @@ If you modify `skills/1password/SKILL.md`, regenerate all integration formats:
 Or target a specific tool: `./scripts/convert.sh --tool cursor`
 
 Valid `--tool` values: `gemini-cli`, `cursor`, `aider`, `windsurf`, `all`
+
+### Running the tests
+
+```bash
+/bin/bash tests/run-all.sh
+```
+
+The structural and integration suites parse YAML frontmatter with Python, so `python3` needs
+PyYAML (`pip install pyyaml`). Without it those checks fail on purpose rather than pass unverified.
 
 ## Requirements
 
