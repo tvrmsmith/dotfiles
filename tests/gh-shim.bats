@@ -82,6 +82,19 @@ export GH_KEYRING_BACKEND=security
   equals "$(PATH=/usr/bin:/bin GH_SHIM_EXPLAIN=1 bash "$SHIM" pr list 2>&1 | awk '{print $1}')" "owner"
 }
 
+# On Linux gh comes from mise, whose shims dir is missing from PATH in agent
+# shells and in git's credential helper. Without this fallback every push there
+# fails with "could not read Username".
+@test "the shim finds mise's gh with no gh on PATH" {
+  TMP="$(mktemp -d)"
+  mkdir -p "$TMP/installs/gh/9.9.9/gh_9.9.9_linux_amd64/bin"
+  ln -s ./9.9.9 "$TMP/installs/gh/latest"
+  printf '#!/bin/sh\necho mise-gh\n' >"$TMP/installs/gh/9.9.9/gh_9.9.9_linux_amd64/bin/gh"
+  chmod +x "$TMP/installs/gh/9.9.9/gh_9.9.9_linux_amd64/bin/gh"
+  equals "$(PATH=/usr/bin:/bin HOMEBREW_PREFIX=/nonexistent MISE_DATA_DIR="$TMP" GH_TOKEN=x bash "$SHIM" version)" "mise-gh"
+  rm -rf "$TMP"
+}
+
 @test "the owner comes from the repo remote, in every URL spelling" {
   TMP="$(mktemp -d)"
   cd "$TMP"
