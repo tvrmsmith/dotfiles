@@ -208,36 +208,59 @@ teardown() { _install_test_teardown; }
   [ -z "$output" ]
 }
 
-# Runs link_ssh_push against the scratch home, with $1 as 1Password's agent dir.
-run_link_ssh_push() {
-  run env HOME="$FAKE_HOME" PATH="$PATH" ONEPASSWORD_AGENT_DIR="$1" bash -c \
-    "source '$INSTALL_SH' && SCRIPT_DIR='$FAKE_REPO' && link_ssh_push"
+# Runs one install.sh function against the scratch home and repo.
+run_install_fn() {
+  run env HOME="$FAKE_HOME" PATH="${STUB_PATH:-$PATH}" bash -c \
+    "source '$INSTALL_SH' && SCRIPT_DIR='$FAKE_REPO' && $1"
 }
 
-@test "a machine with 1Password's ssh agent gets the ssh-push gitconfig" {
-  mkdir -p "$FAKE_REPO/extras/git" "$TMP/1password"
-  echo push > "$FAKE_REPO/extras/git/ssh-push.gitconfig"
+@test "an ssh-push link left by an earlier install is removed" {
+  echo push > "$TMP/ssh-push.gitconfig"
+  ln -s "$TMP/ssh-push.gitconfig" "$FAKE_HOME/.gitconfig.ssh-push"
 
-  run_link_ssh_push "$TMP/1password"
-  [ "$status" -eq 0 ]
-  [ "$FAKE_HOME/.gitconfig.ssh-push" -ef "$FAKE_REPO/extras/git/ssh-push.gitconfig" ]
-}
-
-@test "a machine without 1Password's ssh agent loses a stale ssh-push link" {
-  mkdir -p "$FAKE_REPO/extras/git"
-  echo push > "$FAKE_REPO/extras/git/ssh-push.gitconfig"
-  ln -s "$FAKE_REPO/extras/git/ssh-push.gitconfig" "$FAKE_HOME/.gitconfig.ssh-push"
-
-  run_link_ssh_push "$TMP/no-such-dir"
+  run_install_fn remove_ssh_push_link
   [ "$status" -eq 0 ]
   [ ! -e "$FAKE_HOME/.gitconfig.ssh-push" ]
   [ ! -L "$FAKE_HOME/.gitconfig.ssh-push" ]
 }
 
-@test "a hand-written ssh-push file survives a machine without the agent" {
+@test "a hand-written ssh-push file is left alone" {
   echo '[url "git@example:"]' > "$FAKE_HOME/.gitconfig.ssh-push"
 
-  run_link_ssh_push "$TMP/no-such-dir"
+  run_install_fn remove_ssh_push_link
   [ "$status" -eq 0 ]
   grep -qF 'git@example:' "$FAKE_HOME/.gitconfig.ssh-push"
+}
+
+# A stub systemctl records its calls, so the test sees what install would run.
+stub_systemctl() {
+  mkdir -p "$TMP/stub"
+  printf '#!/bin/bash\necho "$*" >> "%s/systemctl.log"\n' "$TMP" > "$TMP/stub/systemctl"
+  chmod +x "$TMP/stub/systemctl"
+  STUB_PATH="$TMP/stub:$PATH"
+  mkdir -p "$FAKE_REPO/extras/gh-token-sync"
+  touch "$FAKE_REPO/extras/gh-token-sync/gh-token-sync.service" "$FAKE_REPO/extras/gh-token-sync/gh-token-sync.timer"
+}
+
+@test "the token sync units are linked into a real systemd user dir, timer off without a credential" {
+  [ "$(uname)" = Linux ] || skip "Linux only"
+  stub_systemctl
+
+  run_install_fn link_gh_token_sync
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"timer not enabled"* ]] || { echo "$output" >&2; exit 1; }
+  [ ! -L "$FAKE_HOME/.config/systemd/user" ] || { echo "user dir is a link" >&2; exit 1; }
+  [ "$FAKE_HOME/.config/systemd/user/gh-token-sync.timer" -ef "$FAKE_REPO/extras/gh-token-sync/gh-token-sync.timer" ] || exit 1
+  ! grep -q enable "$TMP/systemctl.log"
+}
+
+@test "the token sync timer is enabled once the credential and map exist" {
+  [ "$(uname)" = Linux ] || skip "Linux only"
+  stub_systemctl
+  mkdir -p "$FAKE_HOME/.config/gh-token-sync"
+  touch "$FAKE_HOME/.config/gh-token-sync/op-service-account.cred" "$FAKE_HOME/.config/gh-token-sync/tokens"
+
+  run_install_fn link_gh_token_sync
+  [ "$status" -eq 0 ]
+  grep -qx -- "--user enable --now gh-token-sync.timer" "$TMP/systemctl.log"
 }

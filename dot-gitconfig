@@ -85,20 +85,18 @@
 [include]
 	path = ~/.gitconfig.local
 
-# Fetch GitHub over HTTPS with the shim's read-only token. A fetch then never
-# asks the 1Password SSH agent for approval. Pushes ride HTTPS too, with gh's
-# credential, unless ~/.gitconfig.ssh-push moves them to SSH: install.sh links
-# it only on a machine with 1Password's SSH agent to sign them. A per-repo
-# `pushurl` would be rewritten by insteadOf, so don't set one to an SSH URL.
+# GitHub over HTTPS for fetch and push alike, with the gh shim's token for the
+# repo's owner. One credential per account, synced from 1Password by
+# gh-token-sync, and no SSH key. SSH remotes in either spelling are rewritten,
+# so an existing clone needs no change.
 [url "https://github.com/"]
 	insteadOf = git@github.com:
 	insteadOf = git@github-personal:
-[include]
-	path = ~/.gitconfig.ssh-push
 # The empty helper clears the system osxkeychain helper, which holds a GitHub
-# credential and would otherwise answer first. The shim, not the real gh, so
-# git gets the read tier; by absolute path because GUI apps and daemons run
-# git without ~/.local/bin on PATH. The raw gh stays logged out (dotfiles-7wt).
+# credential and would otherwise answer first. The shim, not the real gh, so git
+# gets the token for the repo's owner rather than gh's one active account; by
+# absolute path because GUI apps and daemons run git without ~/.local/bin on
+# PATH.
 [credential "https://github.com"]
 	helper =
 	helper = !\"$HOME/.local/bin/gh\" auth git-credential

@@ -1,6 +1,6 @@
 # 0001: The gh shim stays in bash until a tipping point
 
-Status: accepted, 2026-11-04
+Status: accepted, 2026-11-04. The tiers it describes were retired by 0002.
 
 ## Context
 

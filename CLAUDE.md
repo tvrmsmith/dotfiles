@@ -11,7 +11,7 @@ Each of these is a rule the files themselves do not confess.
 - A `~/.config` subdirectory whose own tool writes into it (`gh` rewrites `hosts.yml`, 1Password drops `telemetry-enabled`) needs BOTH a `mkdir -p` in `install.sh` and the runtime name in `.stow-local-ignore`. The mkdir is load-bearing, not belt-and-braces. With the target absent, stow folds the parent into one symlink and never descends, so a nested ignore pattern is never consulted
 - Work-only config lives in untracked machine-local files, sourced last: `~/.zshenv.local`, `~/.zshrc.local`, `~/.bashrc.local`, `~/.ssh/config.local`. A separate work repo owns them. Keep the work value there and only the guarded source here
 - On a work machine `dot-claude/hooks/work-push-guard.sh` denies pushes and PRs to this repo. Finish there by committing, merging a worktree branch into local `main` after a local review, and leave the push to Trevor
-- `gh` runs through `dot-local/bin/gh`, which picks a credential tier from what the command does. The design and its traps are in that file's header comment; `GH_SHIM_EXPLAIN=1 gh <args>` prints the routing decision and runs nothing. Sourcing `~/.config/op/plugins.sh` after startup restores an alias that shadows the shim
+- `gh` runs through `dot-local/bin/gh`, which hands the real gh the token for the repo's owner from the keyring. `gh-token-sync` fills the keyring from 1Password hourly (`extras/gh-token-sync/README.md`); `GH_SHIM_EXPLAIN=1 gh <args>` prints the owner and token choice and runs nothing. Sourcing `~/.config/op/plugins.sh` after startup restores an alias that shadows the shim
 
 ### Git Conventions
 

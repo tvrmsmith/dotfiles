@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# gh-token-sync — copy each GitHub owner's classic token from 1Password into the
+# OS keyring, where the gh shim reads it (service gh-token, keyed by owner).
+#
+#   gh-token-sync            sync every line of the map, print what changed
+#
+# The map is machine-local, because the vault and items are not ours to publish:
+#
+#   ~/.config/gh-token-sync/tokens
+#   # owner    op:// reference
+#   <owner>    op://<vault>/<item>/<field>
+#
+# A classic token covers every owner its account reaches, so a work user and a
+# work org can share one reference; it is read once per run.
+#
+# It reads 1Password as a service account, never as Trevor, so no run asks for
+# an approval. The token comes from OP_SERVICE_ACCOUNT_TOKEN, or from the
+# systemd credential op-service-account when the timer runs it
+# (extras/gh-token-sync/). A service account can only be given a vault of its
+# own, never Personal, Private or the default Shared one.
+#
+# A keyring entry is written only when the token differs, so a rotation in
+# 1Password reaches this machine on the next run and an unchanged one writes
+# nothing. No token is ever printed.
+set -uo pipefail
+
+canon() {
+	local src="$1" dir
+	while [ -h "$src" ]; do
+		dir="$(cd -P "$(dirname "$src")" && pwd)"
+		src="$(readlink "$src")"
+		[ "${src#/}" = "$src" ] && src="$dir/$src"
+	done
+	printf '%s/%s\n' "$(cd -P "$(dirname "$src")" && pwd)" "$(basename "$src")"
+}
+
+# gh-keyring beside this file's real path, for the same reason the shim looks
+# there: a helper new to dot-local/bin has no link in ~/.local/bin until the
+# next install.
+keyring="$(dirname "$(canon "${BASH_SOURCE[0]}")")/gh-keyring"
+map="${GH_TOKEN_SYNC_MAP:-${XDG_CONFIG_HOME:-$HOME/.config}/gh-token-sync/tokens}"
+service=gh-token
+
+if [ -z "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] && [ -n "${CREDENTIALS_DIRECTORY:-}" ] \
+	&& [ -r "$CREDENTIALS_DIRECTORY/op-service-account" ]; then
+	OP_SERVICE_ACCOUNT_TOKEN="$(tr -d '[:space:]' < "$CREDENTIALS_DIRECTORY/op-service-account")"
+	export OP_SERVICE_ACCOUNT_TOKEN
+fi
+if [ -z "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]; then
+	echo "gh-token-sync: no service account token (OP_SERVICE_ACCOUNT_TOKEN or the op-service-account credential)" >&2
+	exit 1
+fi
+if [ ! -r "$map" ]; then
+	echo "gh-token-sync: no map at $map" >&2
+	exit 1
+fi
+command -v op >/dev/null 2>&1 || { echo "gh-token-sync: op not installed" >&2; exit 1; }
+
+declare -A fetched=()
+failed=0
+while read -r owner ref; do
+	case "$owner" in '' | '#'*) continue ;; esac
+	if [ -z "$ref" ]; then
+		echo "gh-token-sync: $owner has no op:// reference" >&2
+		failed=1
+		continue
+	fi
+	# The rest of the line is the reference: vault and item names may hold spaces.
+	if [ -z "${fetched[$ref]+set}" ]; then
+		if token="$(op read --no-newline "$ref" </dev/null 2>/dev/null | tr -d '[:space:]')" && [ -n "$token" ]; then
+			fetched[$ref]="$token"
+		else
+			echo "gh-token-sync: could not read the token for $owner from 1Password" >&2
+			failed=1
+			continue
+		fi
+	fi
+	token="${fetched[$ref]}"
+
+	current="$("$keyring" get "$service" "$owner" </dev/null 2>/dev/null | tr -d '[:space:]')" || current=""
+	[ "$current" = "$token" ] && continue
+	if printf '%s' "$token" | "$keyring" set "$service" "$owner" "GitHub token"; then
+		echo "gh-token-sync: updated $owner"
+	else
+		echo "gh-token-sync: could not write the keyring entry for $owner" >&2
+		failed=1
+	fi
+done < "$map"
+
+exit "$failed"

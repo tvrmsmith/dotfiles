@@ -1,54 +1,10 @@
-# Connection reuse for GitHub (both identities). Without it, every `git
-# push`/`git fetch` opens its own connection, and every connection is a fresh
-# 1Password SSH agent authorization: the agent binds a remembered approval to
-# the requesting *process*, so the app's "remember key approval for 4 hours"
-# never applies to an agent's short-lived, terminal-less git invocations. One
-# approval now lasts until the master sits idle for 4h, the same window the app
-# grants an interactive approval. See dotfiles-udc.
-#
-# ServerAlive* lets a master whose network vanished exit within ~90s. Without it
-# a push rides the dead socket and hangs until TCP gives up.
-#
-# The two hosts MUST NOT share a ControlPath. %C hashes (localhost, HostName,
-# port, user), and github-personal resolves to exactly the same github.com/git
-# pair as the work host — sharing the path silently routes personal pushes over
-# the work-authenticated master, which then authenticates as the work account.
-# The literal prefix per block is what keeps them apart; %C alone cannot.
-# ~/.ssh/sockets/ must already exist, ssh will not create it (install.sh), and
-# %C keeps the socket path clear of the 104-byte sun_path limit.
+# GitHub has no block here: git reaches it over HTTPS with the gh shim's token
+# (dot-gitconfig), so neither account needs an SSH key. A remote still spelled
+# git@github.com: or git@github-personal: is rewritten to HTTPS before ssh is
+# ever run.
 
 # Machine-local hosts, untracked here. A missing file is not an error.
 Include config.local
-
-Host github-personal
-	HostName github.com
-	User git
-	IdentityFile ~/.ssh/github-personal.pub
-	IdentitiesOnly yes
-	ControlMaster auto
-	ControlPath ~/.ssh/sockets/personal-%C
-	ControlPersist 4h
-	ServerAliveInterval 30
-	ServerAliveCountMax 3
-	# OpenSSH 10's host-bound pubkey extension fails signing through the
-	# 1Password agent ("Load key ...: invalid format"); unbound skips it.
-	PubkeyAuthentication unbound
-
-# IdentityFile is pinned for the same reason the personal block pins one. With no
-# pin this block takes whichever key the 1Password agent offers first, so a master
-# opened while the personal key led kept authenticating as the personal account for
-# the full ControlPersist hour, and every git call riding that socket inherited it.
-# Diagnosed 2026-09-14 against a work repo, where a live socket answered as
-# tvrmsmith and turned `git ls-remote` into "Repository not found".
-Host github.com
-	IdentityFile ~/.ssh/github-work.pub
-	IdentitiesOnly yes
-	ControlMaster auto
-	ControlPath ~/.ssh/sockets/work-%C
-	ControlPersist 4h
-	ServerAliveInterval 30
-	ServerAliveCountMax 3
-	PubkeyAuthentication unbound
 
 Match host * exec "test $(uname) = Darwin"
 	IdentityAgent "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
