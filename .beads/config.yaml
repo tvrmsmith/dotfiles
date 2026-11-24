@@ -1,2 +1,2 @@
 no-git-ops: true
-sync.remote: git+ssh://git@github-personal/tvrmsmith/dotfiles.git
+sync.remote: "git+https://github.com/tvrmsmith/dotfiles.git"
