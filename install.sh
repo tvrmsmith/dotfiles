@@ -3,6 +3,12 @@
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Agent-only mode installs just what coding agents read: ~/.claude,
+# ~/.agents, the slice pipeline and the tools their hooks call. It leaves the
+# machine's shell, git, ssh and ~/.config alone, for a shared workstation
+# whose own dotfiles are not this repo's. Set by main (see resolve_mode).
+AGENT_ONLY=false
+
 install_gnu_stow() {
 	# Install GNU Stow using whatever package manager is available
 
@@ -80,6 +86,10 @@ install_pinned_npm_tools() {
 	if command -v mise >/dev/null 2>&1; then
 		echo "Installing lavish-axi@$want via mise..."
 		mise install "npm:lavish-axi@$want"
+	elif command -v npm >/dev/null 2>&1 && [ "$AGENT_ONLY" = true ]; then
+		# Into ~/.local/bin, the one PATH entry agent-only mode relies on.
+		echo "mise not found; installing lavish-axi@$want with npm into ~/.local..."
+		npm install -g --prefix "$HOME/.local" "lavish-axi@$want"
 	elif command -v npm >/dev/null 2>&1; then
 		echo "mise not found; installing lavish-axi@$want with npm -g (node-version scoped)..."
 		npm install -g "lavish-axi@$want"
@@ -105,6 +115,22 @@ install_no_mistakes() {
 	fi
 	echo "Installing no-mistakes..."
 	curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh
+}
+
+install_rtk() {
+	# rtk: the token-saving CLI proxy several Claude Code hooks call. A full
+	# install leaves it to Homebrew; agent-only mode runs upstream's installer,
+	# which writes ~/.local/bin/rtk. Install-if-missing (idempotent).
+	if command -v rtk >/dev/null 2>&1; then
+		echo "rtk already installed ($(rtk --version 2>/dev/null))."
+		return
+	fi
+	if ! command -v curl >/dev/null 2>&1; then
+		echo "curl not found; skipping rtk install."
+		return
+	fi
+	echo "Installing rtk into ~/.local/bin..."
+	curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
 }
 
 install_tuicr() {
@@ -199,7 +225,9 @@ respell_absolute_self_links() {
 	# link resolves to the same file before and after, so there is no window
 	# where the target is missing.
 	local target rel src link
-	stow -n --dotfiles -d "$SCRIPT_DIR" -t "$HOME" . 2>&1 |
+	local -a stow_opts
+	set_stow_opts
+	stow -n "${stow_opts[@]}" . 2>&1 |
 		sed -n 's/^  \* existing target is not owned by stow: //p' |
 		while IFS= read -r target; do
 			rel=$(printf '%s\n' "$target" | sed -E 's#(^|/)\.#\1dot-#g')
@@ -210,25 +238,9 @@ respell_absolute_self_links() {
 		done
 }
 
-setup_dotfiles() {
-	# ~/.warp must exist as a real directory before stow runs: Warp writes
-	# runtime data into it (worktrees/, typescript-language-server/, generated
-	# tab configs). If ~/.warp didn't exist, stow would fold ~/.warp ->
-	# dot-warp/ and route those runtime writes into this repo. Pre-creating
-	# the writeable subdirs forces per-file linking; themes/ is left absent
-	# so stow folds it (it's a read-only submodule).
-	mkdir -p "$HOME/.warp/tab_configs" "$HOME/.warp/default_tab_configs"
-
-	# ~/.agents must likewise exist as a real directory. Left absent, stow folds
-	# ~/.agents -> dot-agents/, and stow 2.4.1 --dotfiles then re-appends the
-	# translated name when it later needs to unfold, looking for a nonexistent
-	# dot-agents/.agents and aborting the entire install.
-	mkdir -p "$HOME/.agents"
-
-	# ~/.local/bin too. Folded, ~/.local links to dot-local/, and
-	# link_slice_pipeline's slice-wave link lands inside this checkout.
-	mkdir -p "$HOME/.local/bin"
-
+# ~/.ssh and ~/.config must be real directories before a full install's stow,
+# so stow links into them rather than folding them into the repo.
+setup_config_dirs() {
 	# ~/.ssh holds far more runtime state than config (known_hosts, agent
 	# sockets, keys), so it must never fold into a link to dot-ssh/. 700 because
 	# ssh refuses keys and config under a group- or world-writable directory.
@@ -258,15 +270,59 @@ setup_dotfiles() {
 	# links the parent wholesale and never descends. These mkdirs are what make
 	# those patterns do anything at all. See dotfiles-2ft.
 	mkdir -p "$HOME/.config/gh" "$HOME/.config/1Password" "$HOME/.config/glow"
+}
+
+# Sets the caller's stow_opts to the arguments every stow call shares.
+# Agent-only mode adds an allowlist that ignores every dot- entry but
+# dot-claude and dot-agents. Unlike .stow-local-ignore's ^/ patterns, a
+# command-line --ignore matches the end of a path, so this one matches any
+# path component spelled dot-*; nothing below those two is.
+set_stow_opts() {
+	stow_opts=(--dotfiles -d "$SCRIPT_DIR" -t "$HOME")
+	[ "$AGENT_ONLY" != true ] || stow_opts+=('--ignore=(?<![^/])dot-(?!claude$|agents$)[^/]*')
+}
+
+setup_dotfiles() {
+	local -a stow_opts
+	set_stow_opts
+
+	# ~/.claude exists as a real directory in agent-only mode: Claude Code
+	# writes its sessions and projects there, and a folded ~/.claude would
+	# route them into this repo. A full install has always let it fold.
+	[ "$AGENT_ONLY" != true ] || mkdir -p "$HOME/.claude"
+
+	# ~/.warp must exist as a real directory before stow runs: Warp writes
+	# runtime data into it (worktrees/, typescript-language-server/, generated
+	# tab configs). If ~/.warp didn't exist, stow would fold ~/.warp ->
+	# dot-warp/ and route those runtime writes into this repo. Pre-creating
+	# the writeable subdirs forces per-file linking; themes/ is left absent
+	# so stow folds it (it's a read-only submodule).
+	[ "$AGENT_ONLY" = true ] || mkdir -p "$HOME/.warp/tab_configs" "$HOME/.warp/default_tab_configs"
+
+	# ~/.agents must likewise exist as a real directory. Left absent, stow folds
+	# ~/.agents -> dot-agents/, and stow 2.4.1 --dotfiles then re-appends the
+	# translated name when it later needs to unfold, looking for a nonexistent
+	# dot-agents/.agents and aborting the entire install.
+	mkdir -p "$HOME/.agents"
+
+	# ~/.local/bin too. Folded, ~/.local links to dot-local/, and
+	# link_slice_pipeline's slice-wave link lands inside this checkout.
+	mkdir -p "$HOME/.local/bin"
+
+	# The rest of this block is the machine's own config, which agent-only mode
+	# never stows.
+	[ "$AGENT_ONLY" = true ] || setup_config_dirs
 
 	respell_absolute_self_links
 
 	# Reconcile the live-writer files (see LIVE_WRITER_FILES) before stow: drop
 	# the live copy when it's already a link to our file, or a regular file
 	# byte-identical to it. Anything with real drift is left alone so stow
-	# reports the conflict and a human decides.
+	# reports the conflict and a human decides. Agent-only mode stows only
+	# dot-claude's.
 	reconciled=()
 	for rel in "${LIVE_WRITER_FILES[@]}"; do
+		[ "$AGENT_ONLY" != true ] || [ "${rel#dot-claude/}" != "$rel" ] || continue
 		src="$SCRIPT_DIR/$rel"
 		target=$(live_target "$rel")
 		[ -e "$src" ] || continue
@@ -291,7 +347,7 @@ setup_dotfiles() {
 	# settings.json anew and the SessionStart relink hook adopts that stub over
 	# the tracked copy. Put the links back and stop, rather than leaving the
 	# window open. Content was identical, so a link is the same file either way.
-	if ! stow --dotfiles -d "$SCRIPT_DIR" -t "$HOME" .; then
+	if ! stow "${stow_opts[@]}" .; then
 		for rel in "${reconciled[@]}"; do
 			src="$SCRIPT_DIR/$rel"
 			target=$(live_target "$rel")
@@ -312,8 +368,10 @@ setup_dotfiles() {
 # consumers both look in machine-wide locations rather than in whatever repo is
 # the current directory:
 #
-#   ~/.local/bin/              slice-wave, which the workflow shells out to by
-#                              bare name, and wave-status, run by hand
+#   ~/.local/bin/              every script in bin/: slice-wave, which the
+#                              workflow shells out to by bare name,
+#                              wave-status, run by hand, and any validator
+#                              adapter slice-wave finds on PATH
 #   ~/.archon/workflows/...    Archon's global discovery scope
 #
 # The global scope is the point. Archon also reads .archon/workflows/ from the
@@ -329,8 +387,9 @@ link_slice_pipeline() {
 	[ -d "$src" ] || return 0
 
 	mkdir -p "$HOME/.local/bin" "$HOME/.archon/workflows/slice-pipeline"
-	for bin in slice-wave wave-status; do
-		ln -sfn "$src/bin/$bin" "$HOME/.local/bin/$bin"
+	for bin in "$src"/bin/*; do
+		[ -f "$bin" ] || continue
+		ln -sfn "$bin" "$HOME/.local/bin/${bin##*/}"
 	done
 	# Directory symlinks go here rather than through stow: stow 2.4.1 --dotfiles
 	# descends into one and aborts the whole install (the same trap documented
@@ -405,7 +464,59 @@ link_gh_token_sync() {
 	fi
 }
 
+# Sets AGENT_ONLY from the flag $1, and records the choice so a plain rerun
+# keeps it: --agent-only writes the mode file, --full removes it, and no flag
+# reads it. Returns 2 on any other argument.
+resolve_mode() {
+	local file="$HOME/.config/dotfiles/mode"
+	case "${1:-}" in
+		--agent-only)
+			mkdir -p "$(dirname "$file")"
+			printf 'agent-only\n' >"$file"
+			;;
+		--full) rm -f "$file" ;;
+		"") ;;
+		*)
+			echo "usage: install.sh [--agent-only | --full]" >&2
+			return 2
+			;;
+	esac
+	AGENT_ONLY=false
+	[ "$(cat "$file" 2>/dev/null)" != agent-only ] || AGENT_ONLY=true
+}
+
+# Says which commands the agent setup calls that are still missing after
+# agent-only mode's installs, and returns 1 when any is. ~/.local/bin is the
+# PATH entry everything here lands in; Ubuntu's stock ~/.profile adds it.
+check_agent_deps() {
+	local missing=() tool
+	for tool in claude archon jq bd rtk mise lavish-axi no-mistakes; do
+		command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+	done
+	[ -d "$HOME/dev/personal/mattpocock-skills" ] ||
+		echo "install.sh: the mattpocock-skills plugin reads ~/dev/personal/mattpocock-skills; clone https://github.com/tvrmsmith/skills there." >&2
+	[ "${#missing[@]}" -eq 0 ] && return 0
+	echo "install.sh: agent setup is missing: ${missing[*]}. Install them, with ~/.local/bin on PATH." >&2
+	return 1
+}
+
+main_agent_only() {
+	install_gnu_stow
+	install_pinned_npm_tools
+	install_no_mistakes
+	install_rtk
+	setup_dotfiles
+	link_slice_pipeline
+	check_agent_deps
+	echo "Agent dot files installed."
+}
+
 main() {
+	resolve_mode "$@" || exit 2
+	if [ "$AGENT_ONLY" = true ]; then
+		main_agent_only
+		return
+	fi
 	install_gnu_stow
 	init_submodules
 	update_vendored_skills
@@ -424,5 +535,5 @@ main() {
 # Sourcing this file defines the functions without installing anything, so the
 # bats suite can drive setup_dotfiles against a scratch SCRIPT_DIR and HOME.
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
-	main
+	main "$@"
 fi

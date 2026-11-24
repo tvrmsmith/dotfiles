@@ -49,3 +49,17 @@ run_core() { zsh -c "source '$MYSBX_CORE'; _mysbx_load_config; $1"; }
   [ "$status" -eq 0 ]
   [ "$output" = "mysbx-cc-$(basename "$wt")--$(basename "$main")" ]
 }
+
+@test "preset_kits adds the vertex kit only when its directory exists" {
+  run run_core "cd '$TMP' && _MYSBX_KITS_VERTEX='$TMP/no-such-kit' && _mysbx_preset_kits cc"
+  [[ "$output" != *"no-such-kit"* ]]
+  mkdir -p "$TMP/vertex-kit"
+  run run_core "cd '$TMP' && _MYSBX_KITS_VERTEX='$TMP/vertex-kit' && _mysbx_preset_kits cc"
+  [[ "$output" == *"$TMP/vertex-kit"* ]]
+}
+
+@test "preset_kits leaves out atlassian off DEV_PERSONAL when its kit directory is absent" {
+  run run_core "cd '$TMP' && _MYSBX_KITS_ATLASSIAN='$TMP/no-such-kit' && _mysbx_preset_kits cc"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"no-such-kit"* ]]
+}

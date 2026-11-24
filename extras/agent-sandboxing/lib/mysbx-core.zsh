@@ -23,6 +23,9 @@ _mysbx_load_config() {
   : ${GIT_TOKEN:="op://Employee/GitHub Personal Access Token/token"}
   : ${GIT_TOKEN_PERSONAL:="op://Private/GitHub Personal Access Token/token"}
   : ${JIRA_USERNAME:="trevor.smith@wellsky.com"}
+  # The 1Password account holding work tokens. Unset, every repo uses the
+  # personal account.
+  : ${MYSBX_WORK_OP_ACCOUNT:="wellsky.1password.com"}
   : ${MYSBX_SECRET_TTL:=3600}
   _MYSBX_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/mysbx"
   _MYSBX_LOG="$_MYSBX_STATE_DIR/mysbx.log"
@@ -51,7 +54,11 @@ _mysbx_resolve_real_sbx() {
 _MYSBX_KITS_TOOLING="$_AGENT_SBX_ROOT/kits/tooling"
 _MYSBX_KITS_CLAUDE_UPDATE="$_AGENT_SBX_ROOT/kits/claude-code-update"
 _MYSBX_KITS_PERSONAL="$_AGENT_SBX_ROOT/kits/personal"
+# Optional kits, applied only when their directory exists: vertex everywhere,
+# atlassian off-personal. Main ships neither; a private work branch adds them.
+_MYSBX_KITS_VERTEX="$_AGENT_SBX_ROOT/kits/vertex"
 _MYSBX_KITS_ATLASSIAN="$_AGENT_SBX_ROOT/kits/atlassian"
+_mysbx_wants_atlassian() { [[ -d "$_MYSBX_KITS_ATLASSIAN" ]] && ! _mysbx_is_personal; }
 
 _mysbx_is_personal() { [[ "$PWD/" == "$DEV_PERSONAL/"* ]]; }
 
@@ -74,15 +81,16 @@ _mysbx_preset_template() {
   esac
 }
 
-# Echo kit dir paths (one per line) for a preset. atlassian appended only
-# off-personal.
+# Echo kit dir paths (one per line) for a preset, with the optional kits
+# that apply here.
 _mysbx_preset_kits() {
   local preset="$1"
   local -a kits=()
   case "$preset" in
     cc|ruby-cc)
       kits=("$_MYSBX_KITS_TOOLING" "$_MYSBX_KITS_CLAUDE_UPDATE" "$_MYSBX_KITS_PERSONAL")
-      _mysbx_is_personal || kits+=("$_MYSBX_KITS_ATLASSIAN")
+      [[ -d "$_MYSBX_KITS_VERTEX" ]] && kits+=("$_MYSBX_KITS_VERTEX")
+      _mysbx_wants_atlassian && kits+=("$_MYSBX_KITS_ATLASSIAN")
       ;;
     *) return 1 ;;
   esac
@@ -110,7 +118,11 @@ _mysbx_github_identity() {
     "$DEV_PERSONAL/"*)
       printf '%s\t%s\t%s\n' "my.1password.com" "$GIT_TOKEN_PERSONAL" "$sandbox_name" ;;
     *)
-      printf '%s\t%s\t%s\n' "wellsky.1password.com" "$GIT_TOKEN" "-g" ;;
+      if [[ -n "$MYSBX_WORK_OP_ACCOUNT" ]]; then
+        printf '%s\t%s\t%s\n' "$MYSBX_WORK_OP_ACCOUNT" "$GIT_TOKEN" "-g"
+      else
+        printf '%s\t%s\t%s\n' "my.1password.com" "$GIT_TOKEN_PERSONAL" "-g"
+      fi ;;
   esac
 }
 
@@ -155,7 +167,7 @@ _mysbx_sync_atlassian_secret() {
   mkdir -p "$_MYSBX_STATE_DIR/markers"
 
   local token
-  if ! token=$(OP_ACCOUNT="wellsky.1password.com" op read "op://Employee/JIRA CLI Token/credential" 2>>"$_MYSBX_LOG"); then
+  if ! token=$(OP_ACCOUNT="$MYSBX_WORK_OP_ACCOUNT" op read "op://Employee/JIRA CLI Token/credential" 2>>"$_MYSBX_LOG"); then
     echo "[mysbx] failed to read Atlassian token from 1Password" >&2
     return 1
   fi
@@ -171,7 +183,7 @@ _mysbx_sync_atlassian_secret() {
 _mysbx_sync_secrets() {
   local name="$1"
   _mysbx_time "sync-gh-secret($name)" _mysbx_sync_github_secret "$name" || return 1
-  if ! _mysbx_is_personal; then
+  if _mysbx_wants_atlassian; then
     _mysbx_time "sync-atlassian-secret($name)" _mysbx_sync_atlassian_secret "$name" || return 1
   fi
 }
@@ -327,8 +339,7 @@ _mysbx_build() {
 
 _mysbx_update() {
   local -a prefixes=(mysbx-cc mysbx-ruby-cc)
-  local -a kits=("$_MYSBX_KITS_TOOLING" "$_MYSBX_KITS_CLAUDE_UPDATE" "$_MYSBX_KITS_PERSONAL")
-  _mysbx_is_personal || kits+=("$_MYSBX_KITS_ATLASSIAN")
+  local -a kits=(${(f)"$(_mysbx_preset_kits cc)"})
   local found=0 rc=0 prefix name kit
   # Worktree source participates in the create-time name; reproduce it so
   # lookups match (see _mysbx_name — it no longer self-detects).

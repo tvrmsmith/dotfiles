@@ -56,6 +56,11 @@
 [include]
 	path = ~/.gitconfig.sandbox
 
+# Work identity, from the private work branch; absent on main. Before the
+# personal rules below, so a personal repo still gets the personal identity.
+[include]
+	path = ~/.gitconfig-work
+
 # Personal repos under ~/dev/personal/ get personal identity and sandbox signing key
 [includeIf "gitdir:~/dev/personal/"]
 	path = ~/.gitconfig-personal

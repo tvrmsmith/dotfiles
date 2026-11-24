@@ -211,6 +211,18 @@ export GH_KEYRING_BACKEND=security
   rm -rf "$TMP"
 }
 
+@test "outside personal repos the owner is GH_DEFAULT_OWNER, else the machine's default-owner file" {
+  TMP="$(mktemp -d)"
+  export HOME="$TMP/home"   # scratch: the default-owner file lives under $HOME
+  mkdir -p "$HOME/.config/gh-token-sync" "$TMP/elsewhere"
+  cd "$TMP/elsewhere"
+  printf 'file-owner\n' > "$HOME/.config/gh-token-sync/default-owner"
+  equals "$(owner pr list)" "file-owner"
+  equals "$(GH_DEFAULT_OWNER=env-owner owner pr list)" "env-owner"
+
+  rm -rf "$TMP"
+}
+
 @test "outside a repo the owner falls back on the directory rule" {
   TMP="$(mktemp -d)"
   cd "$TMP"

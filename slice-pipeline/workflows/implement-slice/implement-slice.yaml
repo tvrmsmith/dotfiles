@@ -1,8 +1,8 @@
 name: implement-slice
 description: |
   Build one vertical slice from its bead, land its commit on the branch, drive
-  it through the repository's validator (no-mistakes, or imr pr ship where
-  repos.json says so) to a pull request with a findings record, open
+  it through the repository's validator (no-mistakes, or the external adapter
+  repos.json names) to a pull request with a findings record, open
   a review tab on that pull request and wait at a native gate for an
   engineer's empty send,
   merge the head they approved, and close the bead once the forge confirms the
@@ -127,7 +127,7 @@ nodes:
   # fails this dependency. A dependency on claim, to read a validator from it,
   # would fail validate on a failed claim, since Archon refuses a failed
   # node's output; validate reads repos.json itself instead. The long timeout
-  # covers a real no-mistakes drive or imr pr ship:
+  # covers a real no-mistakes drive or an external validator's run:
   # a review, fix rounds and CI, which routinely outruns a short bound.
   # slice-wave stops reattaching to the drive at 3.5 hours, so it
   # still reports delivered false before this timeout kills it.

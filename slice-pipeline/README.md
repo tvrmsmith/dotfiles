@@ -74,21 +74,55 @@ from the file, or the file itself absent, gets the defaults: no-mistakes and
 squash.
 
 ```json
-{"owner/name": {"validator": "imr-ship", "merge_queue": true}}
+{"owner/name": {"validator": "my-gate", "merge_queue": true}}
 ```
 
-`validator` is `no-mistakes` (the default) or `imr-ship`. A no-mistakes
-target needs an initialized no-mistakes, and `validate` drives it under
-`--yes` to a checks-passed or passed pull request. An imr-ship target needs
-`imr` on PATH, and `validate` runs `imr pr ship --autofix-review`, which
-stops before ci, so review and merge stay the pipeline's. It delivers once
-that exits 0 with a pull request open. Any other exit is a halt that needs a
-person: the run reports it undelivered and hands the bead back, the reason
-names the line the ship stopped on, and the ship waits in the run's worktree
-for `imr pr ship --resume --autofix-review`. Never start a fresh
-`imr pr ship` over it. A validator the file names but slice-wave has no
-adapter for, or a file jq cannot read, fails `claim` and `validate` rather
-than guess.
+`validator` is `no-mistakes` (the default) or the name of an external
+adapter. A no-mistakes target needs an initialized no-mistakes, and
+`validate` drives it under `--yes` to a checks-passed or passed pull
+request. A validator the file names but no adapter answers for, or a file
+jq cannot read, fails `claim` and `validate` rather than guess.
+
+### Validators
+
+Every validator but no-mistakes is an adapter on PATH named
+`slice-wave-validator-<name>`, where the name is lowercase letters, digits
+and hyphens. `install.sh` links every script in `bin/` onto PATH, so an
+adapter dropped there is found. slice-wave runs it in the target checkout
+with one of two subcommands:
+
+- `check`, from `claim` before any branch switch or tracker call. Exit 0
+  when the target is ready; otherwise exit non-zero with the reason on
+  stderr, which `claim` passes on.
+- `validate --intent <text>`, from `validate` on the committed slice branch.
+  The intent is the bead's text. The adapter pushes the branch and opens
+  the pull request, then prints one JSON object on stdout:
+
+  ```json
+  {"outcome": "opened", "delivered": true, "reason": "", "record": "markdown"}
+  ```
+
+  `delivered` is true once the pull request is ready for review. `reason`
+  says why not when it is false. `record` is the body of the findings
+  record. slice-wave finds the open pull request, adds the record's marker
+  and heading and the build's decisions, and posts it. Past
+  `SLICE_WAVE_DRIVE_LIMIT_SECONDS` (3.5 hours) slice-wave sends SIGTERM.
+  Trap it from the start, stop the validator so it can resume, and still
+  print the object.
+
+slice-wave owns everything around the adapter: the intent, the time limit,
+the pull request lookup, the record and the JSON `validate` reports. An
+adapter that halts on a decision only a person can make reports
+undelivered, and its reason names how to resume. The bead goes back to the
+tracker with the halted run still in its worktree.
+
+This repository ships one adapter, `imr-ship`, which runs
+`imr pr ship --autofix-review` and needs `imr` on PATH. The ship stops
+before ci, so review and merge stay the pipeline's, and it delivers once
+that exits 0 with a pull request open. Any other exit is a halt: the reason
+names the line the ship stopped on, and the ship waits in the run's
+worktree for `imr pr ship --resume --autofix-review`. Never start a fresh
+`imr pr ship` over it.
 
 `merge` squashes unless `merge_queue` is true. A queued repository is
 enqueued with no strategy flag. `merge` fails if the
@@ -228,10 +262,10 @@ names the live wave to wait on next. `archon workflow attention` lists
 every open gate across runs, which covers a wave and its slices' review
 gates together.
 
-On an `imr-ship` target, a slice whose ship halted hands its bead back with
-the halted ship still in its worktree. The chain will not dispatch that bead
-again, but a fresh dispatch of the same parent will, and a fresh ship over a
-halted one is what the ship rules forbid. Resume the halted ship first.
+A slice whose external validator halted hands its bead back with the halted
+run still in its worktree. The chain will not dispatch that bead again, but a
+fresh dispatch of the same parent will, and would start a fresh run over the
+halted one. Resume the halted run first.
 
 ## Test it
 

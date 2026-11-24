@@ -148,7 +148,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.claude/hooks/work-push-guard.sh",
+            "command": "[ -x \"$HOME/.claude/hooks/work-push-guard.sh\" ] || exit 0; exec \"$HOME/.claude/hooks/work-push-guard.sh\"",
             "timeout": 10
           }
         ]
@@ -502,7 +502,7 @@
     "mattpocock-skills": {
       "source": {
         "source": "directory",
-        "path": "/Users/trevor.smith/dev/personal/mattpocock-skills"
+        "path": "~/dev/personal/mattpocock-skills"
       }
     },
     "wshp.claude-plugins": {

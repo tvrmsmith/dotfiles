@@ -205,46 +205,55 @@ write_repos_config() {
   printf '%s\n' "$1" > "$XDG_CONFIG_HOME/slice-pipeline/repos.json"
 }
 
-@test "claim on an imr-ship target checks imr instead of no-mistakes and claims the bead" {
-  write_repos_config '{"owner/repo":{"validator":"imr-ship"}}'
+@test "claim on a target with an external validator runs its adapter's check instead of no-mistakes and claims the bead" {
+  write_repos_config '{"owner/repo":{"validator":"fake"}}'
   out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "/tmp/beads-foo" )"
   equals "$(printf '%s' "$out" | jq -r .branch)" "slice/foo"
   contains "$(cat "$BD_LOG")" "$(printf '%s\t%s' "/tmp/beads-foo" "update foo --claim")"
+  contains "$(cat "$CALL_LOG")" "$(printf 'slice-wave-validator-fake\tcheck')"
   lacks "$(cat "$CALL_LOG")" "no-mistakes"
 }
 
 @test "claim keeps no-mistakes for a repository repos.json gives no validator" {
-  write_repos_config '{"owner/repo":{"merge_queue":true},"other/repo":{"validator":"imr-ship"}}'
+  write_repos_config '{"owner/repo":{"merge_queue":true},"other/repo":{"validator":"fake"}}'
   ( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" ) >/dev/null
   contains "$(cat "$CALL_LOG")" "$(printf 'no-mistakes\taxi')"
+  lacks "$(cat "$CALL_LOG")" "slice-wave-validator-fake"
 }
 
-@test "claim exits 1 without touching the tracker when an imr-ship target has no imr on PATH" {
-  write_repos_config '{"owner/repo":{"validator":"imr-ship"}}'
-  rm "$STUB_BIN/imr"
-  no_imr_path="$STUB_BIN"
-  IFS=: read -ra dirs <<<"$OLD_PATH"
-  for dir in "${dirs[@]}"; do
-    [ -x "$dir/imr" ] || no_imr_path="$no_imr_path:$dir"
-  done
+@test "claim exits 1 without touching the tracker when the adapter's check fails, passing on its reason" {
+  write_repos_config '{"owner/repo":{"validator":"fake"}}'
+  export FAKE_VALIDATOR_CHECK_EXIT=1
   rc=0
-  out="$( cd "$REPO" && PATH="$no_imr_path" "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err" )" || rc=$?
+  out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err" )" || rc=$?
   equals "$rc" 1
   is_empty "$out"
-  contains "$(cat "$STUB_BIN/err")" "no imr is on PATH"
+  contains "$(cat "$STUB_BIN/err")" "slice-wave-validator-fake: target not ready"
   is_empty "$(cat "$BD_LOG")"
   equals "$(git -C "$REPO" symbolic-ref --short HEAD)" "main"
 }
 
-@test "claim exits 1 without touching the tracker when repos.json names a validator it has no adapter for" {
+@test "claim exits 1 without touching the tracker when repos.json names a validator with no adapter on PATH" {
   write_repos_config '{"owner/repo":{"validator":"ship-it"}}'
   rc=0
   out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err" )" || rc=$?
   equals "$rc" 1
   is_empty "$out"
   contains "$(cat "$STUB_BIN/err")" "names validator 'ship-it' for owner/repo"
+  contains "$(cat "$STUB_BIN/err")" "no slice-wave-validator-ship-it on PATH"
   is_empty "$(cat "$BD_LOG")"
   lacks "$(cat "$CALL_LOG")" "no-mistakes"
+}
+
+@test "claim exits 1 without running anything when repos.json names a validator that is not a command name" {
+  write_repos_config '{"owner/repo":{"validator":"../fake"}}'
+  rc=0
+  out="$( cd "$REPO" && "$HELPER" claim --bead foo --beads-dir "$STUB_BIN" 2>"$STUB_BIN/err" )" || rc=$?
+  equals "$rc" 1
+  is_empty "$out"
+  contains "$(cat "$STUB_BIN/err")" "is not a validator name"
+  is_empty "$(cat "$BD_LOG")"
+  lacks "$(cat "$CALL_LOG")" "slice-wave-validator"
 }
 
 @test "claim exits 1 without touching the tracker when repos.json is unreadable" {

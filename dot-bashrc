@@ -15,7 +15,9 @@ fi
 # shellcheck source=.config/nvim-Lazyman/.nvimsbind
 [ -f ~/.config/nvim-Lazyman/.nvimsbind ] && source ~/.config/nvim-Lazyman/.nvimsbind
 
-# Machine-local config, untracked here; mirrors ~/.zshrc.local in dot-zshrc.
+# Work config from the private work branch, then machine-local config,
+# untracked here; mirrors ~/.zshrc.work and ~/.zshrc.local in dot-zshrc.
+[ -f "$HOME/.bashrc.work" ] && source "$HOME/.bashrc.work"
 [ -f "$HOME/.bashrc.local" ] && source "$HOME/.bashrc.local"
 
 if command -v just &>/dev/null; then

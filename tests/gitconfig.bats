@@ -41,3 +41,14 @@ push_url() { git -C "$repo" remote get-url --push "${1:-origin}"; }
   equals "$(printf '%s\n' "$helpers" | head -1)" ""
   contains "$(printf '%s\n' "$helpers" | tail -1)" '.local/bin/gh" auth git-credential'
 }
+
+# The work branch's ~/.gitconfig-work sets the identity everywhere, and the
+# personal includeIf rules still win under ~/dev/personal/.
+@test "a work include sets the email outside personal repos and personal still wins inside them" {
+  printf '[user]\n\temail = work@example.com\n' > "$HOME/.gitconfig-work"
+  printf '[user]\n\temail = personal@example.com\n' > "$HOME/.gitconfig-personal"
+  equals "$(git -C "$repo" config user.email)" work@example.com
+  mkdir -p "$HOME/dev/personal/r"
+  git init -q "$HOME/dev/personal/r"
+  equals "$(git -C "$HOME/dev/personal/r" config user.email)" personal@example.com
+}

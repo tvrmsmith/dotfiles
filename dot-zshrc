@@ -245,8 +245,12 @@ unfunction gh 2>/dev/null
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
-# Machine-local config, untracked: work-only functions and values that
-# must stay out of this public repo. Mirrors ~/.zshenv.local.
+# Work config, owned by the private work branch and absent on main. Mirrors
+# ~/.zshenv.work.
+[ -f "$HOME/.zshrc.work" ] && source "$HOME/.zshrc.work"
+
+# Machine-local config, untracked: values for this one machine. Mirrors
+# ~/.zshenv.local.
 [ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"
 
 # Last line on purpose. mise, bun and anything sourced above prepend to PATH,

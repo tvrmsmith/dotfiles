@@ -199,11 +199,18 @@ gh_owner() {
 
 # Outside a repo: `gh api /user`, `gh search`. The same directory rule
 # ~/.gitconfig uses for identity, and the borrowed-token fallback below.
+# Outside ~/dev/personal the owner is GH_DEFAULT_OWNER, else the first line of
+# the machine's default-owner file, which the private work branch writes, else
+# the personal account. A file rather than only the env var, because git runs
+# this shim as its credential helper from GUI apps that never read a shell rc.
 dir_owner() {
+	local file="$HOME/.config/gh-token-sync/default-owner" owner=""
 	case "$PWD/" in
-		"$HOME"/dev/personal/*) printf 'tvrmsmith\n' ;;
-		*) printf '%s\n' "${GH_DEFAULT_OWNER:-TrevorSmith-Wellsky}" ;;
+		"$HOME"/dev/personal/*) printf 'tvrmsmith\n'; return ;;
 	esac
+	owner="${GH_DEFAULT_OWNER:-}"
+	[ -n "$owner" ] || [ ! -r "$file" ] || IFS= read -r owner <"$file"
+	printf '%s\n' "${owner:-TrevorSmith-Wellsky}"
 }
 
 # Which keyring (macOS keychain, Linux Secret Service) is gh-keyring's business,

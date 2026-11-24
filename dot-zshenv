@@ -74,5 +74,8 @@ unset _ONEP_SSH_SOCK
 export NO_MISTAKES_NO_UPDATE_CHECK=1
 
 
+# Work config, owned by the private work branch and absent on main.
+[ -f "$HOME/.zshenv.work" ] && source "$HOME/.zshenv.work"
+
 LOCAL="$HOME/.zshenv.local"
 [ -f "$LOCAL" ] && source "$LOCAL"

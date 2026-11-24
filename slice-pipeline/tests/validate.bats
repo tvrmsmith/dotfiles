@@ -569,75 +569,75 @@ write_repos_config() {
   out="$(validate --verified true)"
   equals "$(printf '%s' "$out" | jq -r .outcome)" checks-passed
   equals "$(printf '%s' "$out" | jq -r .delivered)" true
-  lacks "$(cat "$CALL_LOG")" "$(printf 'imr\t')"
+  lacks "$(cat "$CALL_LOG")" "slice-wave-validator"
 }
 
-@test "validate delivers an imr-ship target once imr pr ship opens its pull request" {
-  write_repos_config '{"owner/repo":{"validator":"imr-ship"}}'
+@test "validate delivers a target whose external adapter reports its pull request delivered" {
+  write_repos_config '{"owner/repo":{"validator":"fake"}}'
   export GH_PR_LIST_JSON='[{"number":42,"url":"https://github.com/owner/repo/pull/42"}]'
   out="$(validate --verified true)"
   equals "$(printf '%s' "$out" | jq -c .)" \
     '{"delivered":true,"outcome":"opened","pr_number":42,"pr_url":"https://github.com/owner/repo/pull/42","repo":"owner/repo","fix_rounds":0,"record_posted":true,"reason":""}'
-  contains "$(cat "$CALL_LOG")" "$(printf 'imr\tpr ship --autofix-review --plain --intent Demo slice')"
+  contains "$(cat "$CALL_LOG")" "$(printf 'slice-wave-validator-fake\tvalidate --intent Demo slice')"
   lacks "$(cat "$CALL_LOG")" "no-mistakes"
   body="$(cat "$STUB_BIN/pr-comment-body")"
   equals "$(printf '%s\n' "$body" | head -1)" "<!-- slice-pipeline:findings-record -->"
-  contains "$body" "Validator: imr pr ship --autofix-review"
-  contains "$body" "Outcome: opened"
+  contains "$body" "## slice-pipeline findings record"
+  contains "$body" "Validator: fake"
 }
 
-@test "validate copies the slice commit's trailers into an imr-ship findings record" {
-  write_repos_config '{"owner/repo":{"validator":"imr-ship"}}'
+@test "validate copies the slice commit's trailers into an external adapter's findings record" {
+  write_repos_config '{"owner/repo":{"validator":"fake"}}'
   export GH_PR_LIST_JSON='[{"number":42,"url":"https://github.com/owner/repo/pull/42"}]'
   commit_slice_with_decisions
   validate --verified true >/dev/null
   body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "$(printf 'Validator: fake\n\n### Build decisions')"
   contains "$body" "$(printf 'Seams:\n- Store.save (planned)\n')"
   contains "$body" "$(printf 'Assumptions:\n- retries are idempotent\n')"
 }
 
-@test "validate reports a halted imr pr ship as undelivered and names the line it stopped on and how to resume" {
-  write_repos_config '{"owner/repo":{"validator":"imr-ship"}}'
-  export IMR_EXIT=1
-  export IMR_OUTPUT="$(printf '▶ review\n⏸ review: 2 findings need a decision\nstopped: halted at gate "review", asking: fix or file?')"
+@test "validate reports undelivered with the adapter's reason and still records it on an open pull request" {
+  write_repos_config '{"owner/repo":{"validator":"fake"}}'
+  export GH_PR_LIST_JSON='[{"number":42,"url":"https://github.com/owner/repo/pull/42"}]'
+  export FAKE_VALIDATOR_RESULT='{"outcome":"halted","delivered":false,"reason":"halted at review; resume it by hand","record":"Outcome: halted"}'
   out="$(validate --verified true)"
   equals "$(printf '%s' "$out" | jq -r .delivered)" false
   equals "$(printf '%s' "$out" | jq -r .outcome)" halted
-  reason="$(printf '%s' "$out" | jq -r .reason)"
-  contains "$reason" "imr pr ship exited 1 on 'stopped: halted at gate \"review\", asking: fix or file?'"
-  contains "$reason" "imr pr ship --resume --autofix-review"
-  contains "$reason" "no open pull request"
+  equals "$(printf '%s' "$out" | jq -r .record_posted)" true
+  equals "$(printf '%s' "$out" | jq -r .reason)" "halted at review; resume it by hand"
+  contains "$(cat "$STUB_BIN/pr-comment-body")" "Outcome: halted"
 }
 
-@test "validate records a halted imr pr ship on a pull request it already opened" {
-  write_repos_config '{"owner/repo":{"validator":"imr-ship"}}'
+@test "validate reports undelivered when the adapter prints no result it can read" {
+  write_repos_config '{"owner/repo":{"validator":"fake"}}'
   export GH_PR_LIST_JSON='[{"number":42,"url":"https://github.com/owner/repo/pull/42"}]'
-  export IMR_EXIT=1
-  export IMR_OUTPUT='✗ open: title check failed'
+  export FAKE_VALIDATOR_RESULT='opened'
   out="$(validate --verified true)"
   equals "$(printf '%s' "$out" | jq -r .delivered)" false
-  equals "$(printf '%s' "$out" | jq -r .record_posted)" true
-  contains "$(cat "$STUB_BIN/pr-comment-body")" "Stopped on: ✗ open: title check failed"
+  contains "$(printf '%s' "$out" | jq -r .reason)" "slice-wave-validator-fake printed no result slice-wave can read"
+  lacks "$(cat "$CALL_LOG")" "pr comment"
 }
 
-@test "validate stops an imr pr ship still running at its time limit and reports it undelivered" {
-  write_repos_config '{"owner/repo":{"validator":"imr-ship"}}'
-  export IMR_SLEEP=30 SLICE_WAVE_DRIVE_LIMIT_SECONDS=0
+@test "validate stops an adapter still running at its time limit and reports what it printed on SIGTERM" {
+  write_repos_config '{"owner/repo":{"validator":"fake"}}'
+  export FAKE_VALIDATOR_SLEEP=30 SLICE_WAVE_DRIVE_LIMIT_SECONDS=2 SLICE_WAVE_VALIDATOR_POLL_SECONDS=2
   SECONDS=0
   out="$(validate --verified true)"
-  [ "$SECONDS" -lt 20 ] || { echo "validate waited out the ship instead of stopping it" >&2; exit 1; }
+  [ "$SECONDS" -lt 20 ] || { echo "validate waited out the adapter instead of stopping it" >&2; exit 1; }
   equals "$(printf '%s' "$out" | jq -r .delivered)" false
-  equals "$(printf '%s' "$out" | jq -r .outcome)" halted
+  equals "$(printf '%s' "$out" | jq -r .outcome)" stopped
   contains "$(printf '%s' "$out" | jq -r .reason)" "still running when validate reached its time limit"
+  contains "$(printf '%s' "$out" | jq -r .reason)" "fake stopped on SIGTERM"
 }
 
-@test "validate reports undelivered without running imr when the bead has no intent text" {
-  write_repos_config '{"owner/repo":{"validator":"imr-ship"}}'
+@test "validate reports undelivered without running the adapter when the bead has no intent text" {
+  write_repos_config '{"owner/repo":{"validator":"fake"}}'
   export BD_SHOW_JSON='[{"id":"demo-1","title":"","description":""}]'
   out="$(validate --verified true)"
   equals "$(printf '%s' "$out" | jq -r .delivered)" false
-  contains "$(printf '%s' "$out" | jq -r .reason)" "so imr pr ship never ran"
-  lacks "$(cat "$CALL_LOG")" "$(printf 'imr\t')"
+  contains "$(printf '%s' "$out" | jq -r .reason)" "so slice-wave-validator-fake never ran"
+  lacks "$(cat "$CALL_LOG")" "slice-wave-validator-fake"
 }
 
 @test "validate reports undelivered without running either validator when repos.json is unreadable" {
@@ -646,15 +646,15 @@ write_repos_config() {
   equals "$(printf '%s' "$out" | jq -r .delivered)" false
   contains "$(printf '%s' "$out" | jq -r .reason)" "cannot read $XDG_CONFIG_HOME/slice-pipeline/repos.json"
   lacks "$(cat "$CALL_LOG")" "no-mistakes"
-  lacks "$(cat "$CALL_LOG")" "$(printf 'imr\t')"
+  lacks "$(cat "$CALL_LOG")" "slice-wave-validator"
 }
 
 @test "validate reports undelivered without running either validator when gh cannot name the repository repos.json is keyed by" {
-  write_repos_config '{"owner/repo":{"validator":"imr-ship"}}'
+  write_repos_config '{"owner/repo":{"validator":"fake"}}'
   export GH_EXIT_CODE=1
   out="$(validate --verified true)"
   equals "$(printf '%s' "$out" | jq -r .delivered)" false
   contains "$(printf '%s' "$out" | jq -r .reason)" "gh repo view failed"
   lacks "$(cat "$CALL_LOG")" "no-mistakes"
-  lacks "$(cat "$CALL_LOG")" "$(printf 'imr\t')"
+  lacks "$(cat "$CALL_LOG")" "slice-wave-validator"
 }

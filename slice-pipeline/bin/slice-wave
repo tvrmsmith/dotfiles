@@ -146,14 +146,10 @@ check_target_no_mistakes() {
 	fi
 }
 
-# Fails a claim on a target repository whose validator is imr-ship when no
-# `imr` is on PATH. Runs before any branch switch or bd call, same as
-# check_target_forge.
-check_target_imr() {
-	command -v imr >/dev/null || {
-		echo "slice-wave: repos.json names imr-ship as this target's validator, but no imr is on PATH" >&2
-		return 1
-	}
+# Prints the command name of the external adapter for validator $1. Every
+# validator but the built-in no-mistakes is one, found on PATH.
+validator_adapter() {
+	printf 'slice-wave-validator-%s' "$1"
 }
 
 # Prints the path of the machine-local repos.json, which says how each target
@@ -166,9 +162,10 @@ repos_config() {
 
 # Sets the caller's validator to the one repos.json names for repository $1,
 # and no-mistakes when the file, the repository or its validator key is
-# absent. A file jq cannot read, or a validator with no adapter here, sets
-# validator_error and returns 1 instead, since guessing would drive the slice
-# through gates its repository never chose.
+# absent. A file jq cannot read, a name that is not lowercase letters, digits
+# and hyphens, or a validator with no adapter on PATH (see validator_adapter)
+# sets validator_error and returns 1 instead, since guessing would drive the
+# slice through gates its repository never chose.
 repo_validator() {
 	local config named
 	config="$(repos_config)"
@@ -180,12 +177,19 @@ repo_validator() {
 		return 1
 	}
 	case "$named" in
-		no-mistakes | imr-ship) validator="$named" ;;
-		*)
-			validator_error="$config names validator '$named' for $1, which slice-wave has no adapter for (no-mistakes, imr-ship)"
+		no-mistakes) ;;
+		"" | -* | *[!a-z0-9-]*)
+			validator_error="$config names validator '$named' for $1, which is not a validator name (lowercase letters, digits and hyphens)"
 			return 1
 			;;
+		*)
+			command -v "$(validator_adapter "$named")" >/dev/null || {
+				validator_error="$config names validator '$named' for $1, which slice-wave has no adapter for (no $(validator_adapter "$named") on PATH)"
+				return 1
+			}
+			;;
 	esac
+	validator="$named"
 }
 
 # Sets the caller's validator for the repository gh resolves in the cwd, as
@@ -332,9 +336,10 @@ cmd_claim() {
 		return 1
 	}
 	check_target_push "$branch" || return 1
+	# An adapter's check says on stderr why its target is not ready.
 	case "$validator" in
 		no-mistakes) check_target_no_mistakes || return 1 ;;
-		imr-ship) check_target_imr || return 1 ;;
+		*) "$(validator_adapter "$validator")" check || return 1 ;;
 	esac
 
 	# Built before the switch and the claim, so a failure here strands neither
@@ -933,66 +938,59 @@ validate_slice() {
 	fi
 }
 
-# Prints the findings record of an imr pr ship that ended with outcome $1,
-# the line $2 it stopped on, if any, and the build decisions section $3.
-ship_record() {
-	local outcome="$1" stop="$2" decisions="$3"
-	printf '%s\n' '<!-- slice-pipeline:findings-record -->' '## slice-pipeline findings record' ''
-	printf 'Validator: imr pr ship --autofix-review\nOutcome: %s\n' "$outcome"
-	[ -z "$stop" ] || printf 'Stopped on: %s\n' "$stop"
-	printf '\n%s\n' 'imr pr ship writes its review findings, its decisions and anything it left unfiled into this pull request'"'"'s description.'
-	[ -z "$decisions" ] || printf '\n%s\n' "$decisions"
-}
-
 # Sets the caller's outcome, pr_number, pr_url, repo, record_posted and reason
-# locals from one `imr pr ship --autofix-review` of bead $1's committed slice,
-# and posts the findings record, with build decisions section $3, on its pull
-# request. --autofix-review stops the ship before ci, so review and merge stay
-# the pipeline's, and outcome reads opened once it exits 0.
+# locals from one `validate` run of validator $1's external adapter over bead
+# $2's committed slice, and posts the findings record, with build decisions
+# section $4, on its pull request. Records the adapter's verdict in
+# adapter_delivered for delivered_outcome.
 #
-# Any other exit is a halt or a failure, and outcome reads halted. The ship
-# waits there for a person: its gates take a decision the pipeline cannot
-# make, and a fresh `imr pr ship` must never restart it, so the reason names
-# the resume command and where to run it. Past $SLICE_WAVE_DRIVE_LIMIT_SECONDS
-# (3.5 hours) the ship gets SIGTERM, which imr handles as it does Ctrl-C and
-# leaves resumable, so validate still reports ahead of its node's 4 h
-# timeout. Not SIGINT: bash starts a background job with SIGINT ignored.
-ship_slice() {
-	local bead="$1" beads_dir="$2" decisions="$3" intent log pid rc=0 stop limit="${SLICE_WAVE_DRIVE_LIMIT_SECONDS:-12600}"
+# The adapter prints one JSON object: outcome, delivered (true once its pull
+# request is ready for review), reason (why not, empty when delivered) and
+# record (the markdown this record carries between its heading and the build
+# decisions). Past $SLICE_WAVE_DRIVE_LIMIT_SECONDS (3.5 hours) the adapter
+# gets SIGTERM, so validate still reports ahead of its node's 4 h timeout; the
+# adapter stops its validator resumably and prints its object anyway. Not
+# SIGINT: bash starts a background job with SIGINT ignored.
+adapter_slice() {
+	local name="$1" bead="$2" beads_dir="$3" decisions="$4" adapter intent out pid result record
+	local limit="${SLICE_WAVE_DRIVE_LIMIT_SECONDS:-12600}"
+	adapter="$(validator_adapter "$name")"
 	intent="$(bead_intent "$bead" "$beads_dir")" || {
-		add_reason "cannot read bead $bead with bd show, so imr pr ship never ran"
+		add_reason "cannot read bead $bead with bd show, so $adapter never ran"
 		return
 	}
 	[ -n "$intent" ] || {
-		add_reason "bead $bead has no title, description, design, acceptance criteria or notes to give imr pr ship as its intent, so imr pr ship never ran"
+		add_reason "bead $bead has no title, description, design, acceptance criteria or notes to give $adapter as its intent, so $adapter never ran"
 		return
 	}
 
-	log="$(mktemp)" || {
-		add_reason "cannot create a log file, so imr pr ship never ran"
+	out="$(mktemp)" || {
+		add_reason "cannot create a file for its result, so $adapter never ran"
 		return
 	}
-	imr pr ship --autofix-review --plain --intent "$intent" >"$log" 2>&1 &
+	"$adapter" validate --intent "$intent" >"$out" &
 	pid=$!
 	while kill -0 "$pid" 2>/dev/null; do
 		if [ "$SECONDS" -ge "$limit" ]; then
 			kill -TERM "$pid" 2>/dev/null
-			add_reason "imr pr ship was still running when validate reached its time limit, so it was interrupted"
+			add_reason "$adapter was still running when validate reached its time limit, so it was interrupted"
 			break
 		fi
-		sleep "${SLICE_WAVE_SHIP_POLL_SECONDS:-5}"
+		sleep "${SLICE_WAVE_VALIDATOR_POLL_SECONDS:-5}"
 	done
-	wait "$pid" || rc=$?
-	stop="$(grep -E '^(stopped:|⏸|✗)' "$log" | tail -1)"
-	rm -f "$log"
+	wait "$pid"
+	result="$(cat "$out")"
+	rm -f "$out"
 
-	if [ "$rc" -eq 0 ]; then
-		outcome=opened
-	else
-		outcome=halted
-		# shellcheck disable=SC2016 # the quotes sit inside a double-quoted string, so $stop expands
-		add_reason "imr pr ship exited $rc${stop:+ on '$stop'}; read the halt and run 'imr pr ship --resume --autofix-review' in $PWD"
-	fi
+	jq -e 'type == "object" and (.outcome | type == "string") and (.delivered | type == "boolean")' \
+		<<<"$result" >/dev/null 2>&1 || {
+		add_reason "$adapter printed no result slice-wave can read, so no findings record was posted"
+		return
+	}
+	outcome="$(jq -r .outcome <<<"$result")"
+	adapter_delivered="$(jq -r .delivered <<<"$result")"
+	[ "$adapter_delivered" = true ] || add_reason "$(jq -r '.reason // "" | if . == "" then "the validator did not deliver" else . end' <<<"$result")"
+	record="$(jq -r '.record // ""' <<<"$result")"
 
 	repo="$(gh repo view --json nameWithOwner | jq -r '.nameWithOwner // empty')" || repo=""
 	[ -n "$repo" ] || {
@@ -1002,7 +1000,11 @@ ship_slice() {
 	find_open_pr "$repo"
 	[ "$pr_number" -gt 0 ] || return
 
-	if ship_record "$outcome" "$stop" "$decisions" | gh pr comment "$pr_url" --body-file - >/dev/null; then
+	if {
+		printf '%s\n' '<!-- slice-pipeline:findings-record -->' '## slice-pipeline findings record' ''
+		[ -z "$record" ] || printf '%s\n' "$record"
+		[ -z "$decisions" ] || printf '\n%s\n' "$decisions"
+	} | gh pr comment "$pr_url" --body-file - >/dev/null; then
 		record_posted=true
 	else
 		add_reason "cannot post the findings record on pull request $pr_url"
@@ -1010,12 +1012,12 @@ ship_slice() {
 }
 
 # True when validator $1 ended on outcome $2 with a pull request ready for
-# review.
+# review. An external adapter's own verdict sits in adapter_delivered.
 delivered_outcome() {
 	case "$1" in
 		no-mistakes) green_outcome "$2" ;;
-		imr-ship) [ "$2" = opened ] ;;
-		*) return 1 ;;
+		"") return 1 ;;
+		*) [ "$adapter_delivered" = true ] ;;
 	esac
 }
 
@@ -1033,17 +1035,17 @@ cmd_validate() {
 	}
 
 	local outcome="" pr_number=0 pr_url="" repo="" fix_rounds=0 record_posted=false reason=""
-	local validator="" validator_error="" decisions
+	local validator="" validator_error="" adapter_delivered=false decisions
 	# Read before the validator runs, while HEAD is still the slice commit.
 	decisions="$(build_decisions_section)"
 	case "$verified" in
 		true)
 			if ! cwd_validator; then
 				reason="$validator_error, so nothing was validated"
-			elif [ "$validator" = imr-ship ]; then
-				ship_slice "$bead" "$beads_dir" "$decisions"
-			else
+			elif [ "$validator" = no-mistakes ]; then
 				validate_slice "$bead" "$beads_dir" "$decisions"
+			else
+				adapter_slice "$validator" "$bead" "$beads_dir" "$decisions"
 			fi
 			;;
 		false) reason="verification did not pass, so validation was skipped" ;;

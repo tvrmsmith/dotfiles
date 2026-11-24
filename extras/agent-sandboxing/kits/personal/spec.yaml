@@ -9,9 +9,3 @@ commands:
     - command: ["bash", "/home/agent/setup-dotfiles.sh"]
       user: "1000"
       description: Link host dotfiles, set up credentials, restore settings.json
-
-environment:
-  variables:
-    CLAUDE_CODE_USE_VERTEX: "1"
-    CLOUD_ML_REGION: "global"
-    ANTHROPIC_VERTEX_PROJECT_ID: "consolo-dev-vertex-wsky"

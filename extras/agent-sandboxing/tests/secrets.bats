@@ -49,3 +49,8 @@ run_core() { zsh -c "source '$MYSBX_CORE'; _mysbx_load_config; _mysbx_resolve_re
   [ "$status" -eq 0 ]
   grep -qx atlassian "$STUB_SBX_LOG"
 }
+
+@test "github sync off-personal falls back on the personal account when no work account is set" {
+  run run_core "cd '$TMP' && MYSBX_WORK_OP_ACCOUNT='' && _mysbx_github_identity box1"
+  [ "$output" = "$(printf 'my.1password.com\t%s\t-g' 'op://Private/GitHub Personal Access Token/token')" ]
+}

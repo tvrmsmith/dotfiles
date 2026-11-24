@@ -26,6 +26,10 @@ _mysbx_test_setup() {
   # and other env vars the tests set). Point ZDOTDIR at an empty temp dir.
   export ZDOTDIR="$TMP/zdotdir"
   mkdir -p "$ZDOTDIR"
+
+  # The work values a work machine's ~/.zshenv.work exports reach the tests
+  # through the caller's environment, which the empty ZDOTDIR doesn't clear.
+  unset MYSBX_WORK_OP_ACCOUNT JIRA_USERNAME
 }
 _mysbx_test_teardown() { rm -rf "$TMP"; }
 # Read recorded sbx argv as a newline string.

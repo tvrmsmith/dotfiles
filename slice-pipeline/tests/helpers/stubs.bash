@@ -1,5 +1,6 @@
 # Shared fakes for slice-wave's external tools: bd (the issue tracker), gh
-# (the forge), no-mistakes and imr (the validation gates), orca (the editor
+# (the forge), no-mistakes and a fake external validator adapter (the
+# validation gates), orca (the editor
 # hosting the review tab), tuicr (the review tool) and archon (the review
 # gate). Every stub appends one line per call, tool name then argv
 # tab-separated, to $CALL_LOG, so a test can assert the order calls happened
@@ -30,7 +31,7 @@ install_stubs() {
 		ORCA_REPO_LIST_JSON ORCA_REPO_LIST_EXIT ORCA_REPO_ADD_EXIT \
 		ORCA_TERMINAL_CREATE_EXIT ORCA_TERMINAL_CREATE_SURFACE \
 		TUICR_LIST_SEQUENCE TUICR_COMMENTS_JSON TUICR_COMMENTS_EXIT \
-		IMR_EXIT IMR_OUTPUT IMR_SLEEP
+		FAKE_VALIDATOR_CHECK_EXIT FAKE_VALIDATOR_RESULT FAKE_VALIDATOR_SLEEP
 
 	cat > "$STUB_BIN/bd" <<'EOF'
 #!/bin/bash
@@ -203,18 +204,32 @@ esac
 EOF
 	chmod +x "$STUB_BIN/no-mistakes"
 
-	# Default: an `imr pr ship` that opens its pull request and exits 0.
-	# IMR_OUTPUT replaces what it prints, IMR_EXIT its exit status, and
-	# IMR_SLEEP makes it run that many seconds first, exec'd so a signal to
-	# the stub reaches the sleep.
-	cat > "$STUB_BIN/imr" <<'EOF'
+	# The external adapter for a validator named "fake" (see "Validators" in
+	# the README). Default: `check` passes and `validate` prints a delivered
+	# result. FAKE_VALIDATOR_CHECK_EXIT fails the check with a reason on
+	# stderr, FAKE_VALIDATOR_RESULT replaces the printed result, and
+	# FAKE_VALIDATOR_SLEEP makes validate run that many seconds first. On
+	# SIGTERM it prints an undelivered result, as the interface asks.
+	cat > "$STUB_BIN/slice-wave-validator-fake" <<'EOF'
 #!/bin/bash
-printf 'imr\t%s\n' "$*" >> "$CALL_LOG"
-printf '%s\n' "${IMR_OUTPUT:-$(printf '▶ open\n✓ open (1m2s)')}"
-[ -z "${IMR_SLEEP:-}" ] || exec sleep "$IMR_SLEEP"
-exit "${IMR_EXIT:-0}"
+printf 'slice-wave-validator-fake\t%s\n' "$*" >> "$CALL_LOG"
+case "$1" in
+	check)
+		[ "${FAKE_VALIDATOR_CHECK_EXIT:-0}" -eq 0 ] || echo "slice-wave-validator-fake: target not ready" >&2
+		exit "${FAKE_VALIDATOR_CHECK_EXIT:-0}"
+		;;
+	validate)
+		if [ -n "${FAKE_VALIDATOR_SLEEP:-}" ]; then
+			sleep "$FAKE_VALIDATOR_SLEEP" &
+			trap 'kill $!; printf "%s\n" "{\"outcome\":\"stopped\",\"delivered\":false,\"reason\":\"fake stopped on SIGTERM\",\"record\":\"\"}"; exit 0' TERM
+			wait
+		fi
+		delivered='{"outcome":"opened","delivered":true,"reason":"","record":"Validator: fake"}'
+		printf '%s\n' "${FAKE_VALIDATOR_RESULT:-$delivered}"
+		;;
+esac
 EOF
-	chmod +x "$STUB_BIN/imr"
+	chmod +x "$STUB_BIN/slice-wave-validator-fake"
 
 	# Default: an Orca with no tabs and no registered repositories, whose
 	# `repo add` and `terminal create` succeed, the create landing as a

@@ -3,7 +3,9 @@
 # git@github.com: or git@github-personal: is rewritten to HTTPS before ssh is
 # ever run.
 
-# Machine-local hosts, untracked here. A missing file is not an error.
+# Work hosts from the private work branch, then machine-local hosts, untracked
+# here. A missing file is not an error.
+Include config.work
 Include config.local
 
 Match host * exec "test $(uname) = Darwin"

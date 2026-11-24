@@ -153,17 +153,18 @@ teardown() { _install_test_teardown; }
   [ "$FAKE_HOME/.local/bin/slice-wave" -ef "$FAKE_REPO/slice-pipeline/bin/slice-wave" ]
 }
 
-@test "link_slice_pipeline links both scripts onto PATH and both workflows into Archon's global pack" {
+@test "link_slice_pipeline links every bin script onto PATH and both workflows into Archon's global pack" {
   mkdir -p "$FAKE_REPO/slice-pipeline/bin" \
     "$FAKE_REPO/slice-pipeline/workflows/implement-slice" \
     "$FAKE_REPO/slice-pipeline/workflows/implement-in-waves"
   printf '#!/bin/sh\n' > "$FAKE_REPO/slice-pipeline/bin/slice-wave"
   printf '#!/bin/sh\n' > "$FAKE_REPO/slice-pipeline/bin/wave-status"
+  printf '#!/bin/sh\n' > "$FAKE_REPO/slice-pipeline/bin/slice-wave-validator-demo"
 
   run env HOME="$FAKE_HOME" PATH="$PATH" bash -c \
     "source '$INSTALL_SH' && SCRIPT_DIR='$FAKE_REPO' && link_slice_pipeline"
   [ "$status" -eq 0 ]
-  for bin in slice-wave wave-status; do
+  for bin in slice-wave wave-status slice-wave-validator-demo; do
     [ "$FAKE_HOME/.local/bin/$bin" -ef "$FAKE_REPO/slice-pipeline/bin/$bin" ]
   done
   for workflow in implement-slice implement-in-waves; do
@@ -263,4 +264,68 @@ stub_systemctl() {
   run_install_fn link_gh_token_sync
   [ "$status" -eq 0 ]
   grep -qx -- "--user enable --now gh-token-sync.timer" "$TMP/systemctl.log"
+}
+
+# Run setup_dotfiles in agent-only mode, in its own bash like run_setup_dotfiles.
+run_agent_only_setup() {
+  run env HOME="$FAKE_HOME" PATH="$PATH" bash -c \
+    "source '$INSTALL_SH' && SCRIPT_DIR='$FAKE_REPO' && AGENT_ONLY=true && setup_dotfiles"
+}
+
+@test "agent-only setup stows dot-claude and dot-agents and nothing else" {
+  seed_config_dirs
+  mkdir -p "$FAKE_REPO/dot-agents/other" "$FAKE_REPO/dot-claude/skills"
+  printf 'agents file\n' > "$FAKE_REPO/dot-agents/other/file"
+  printf 'zshrc\n' > "$FAKE_REPO/dot-zshrc"
+  mkdir -p "$FAKE_REPO/dot-ssh"; printf 'ssh\n' > "$FAKE_REPO/dot-ssh/config"
+
+  run_agent_only_setup
+  [ "$status" -eq 0 ]
+  [ -d "$FAKE_HOME/.claude" ] && [ ! -L "$FAKE_HOME/.claude" ]
+  [ "$FAKE_HOME/.claude/settings.json" -ef "$FAKE_REPO/$REL_SETTINGS" ]
+  [ "$FAKE_HOME/.agents/other/file" -ef "$FAKE_REPO/dot-agents/other/file" ]
+  [ "$FAKE_HOME/.agents/skills" -ef "$FAKE_REPO/dot-claude/skills" ]
+  [ ! -e "$FAKE_HOME/.zshrc" ]
+  [ ! -e "$FAKE_HOME/.ssh" ]
+  [ ! -e "$FAKE_HOME/.config" ]
+  [ ! -e "$FAKE_HOME/.warp" ]
+}
+
+@test "agent-only setup reconciles only dot-claude's live-writer files" {
+  seed_config_dirs
+  mkdir -p "$FAKE_HOME/.config/gh"
+  cp "$FAKE_REPO/$REL_HOSTS" "$FAKE_HOME/.config/gh/hosts.yml"
+  mkdir -p "$FAKE_HOME/.claude"
+  cp "$FAKE_REPO/$REL_SETTINGS" "$FAKE_HOME/.claude/settings.json"
+
+  run_agent_only_setup
+  [ "$status" -eq 0 ]
+  [ -L "$FAKE_HOME/.claude/settings.json" ]
+  [ -f "$FAKE_HOME/.config/gh/hosts.yml" ] && [ ! -L "$FAKE_HOME/.config/gh/hosts.yml" ]
+}
+
+@test "--agent-only is remembered by a plain rerun until --full clears it" {
+  mode() {
+    env HOME="$FAKE_HOME" bash -c "source '$INSTALL_SH' && resolve_mode $1 && echo \$AGENT_ONLY"
+  }
+  [ "$(mode '')" = false ]
+  [ "$(mode --agent-only)" = true ]
+  [ "$(mode '')" = true ]
+  [ "$(mode --full)" = false ]
+  [ "$(mode '')" = false ]
+}
+
+@test "install.sh rejects an unknown flag with its usage and installs nothing" {
+  run env HOME="$FAKE_HOME" bash "$INSTALL_SH" --agnet-only
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"usage: install.sh [--agent-only | --full]"* ]]
+  [ -z "$(ls -A "$FAKE_HOME")" ]
+}
+
+@test "the agent dependency check names each missing tool" {
+  run env HOME="$FAKE_HOME" PATH=/usr/bin:/bin bash -c "source '$INSTALL_SH' && check_agent_deps"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"missing: claude archon"* ]]
+  [[ "$output" == *"no-mistakes"* ]]
+  [[ "$output" == *"clone https://github.com/tvrmsmith/skills"* ]]
 }

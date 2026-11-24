@@ -12,6 +12,8 @@ cd ~/dev/personal/dotfiles
 
 Files and directories prefixed with `dot-` are symlinked into `$HOME` with the prefix replaced by `.` (e.g. `dot-zshrc` becomes `~/.zshrc`).
 
+On a shared machine whose own shell and git config should stay as they are, `./install.sh --agent-only` installs only what coding agents read: `~/.claude`, `~/.agents`, the slice pipeline, and the tools their hooks call (no-mistakes, lavish-axi, rtk) into `~/.local/bin`. A plain rerun remembers the mode; `./install.sh --full` switches back.
+
 ## What's included
 
 | Category | Configs |
