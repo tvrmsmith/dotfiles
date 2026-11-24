@@ -264,6 +264,14 @@ run_until_bash() {
   done
 }
 
+@test "the build prompt opens with the skill's slash command" {
+  # The skill refuses model invocation and `skills:` only scopes the catalog,
+  # so a slash command as the prompt's first text is the only thing that
+  # loads it before the agent reads the rest.
+  prompt="$(bun "$NODE" prompt "$WORKFLOW" build)"
+  equals "${prompt%%$'\n'*}" '/implement-with-subagents --unattended $INPUTS.bead'
+}
+
 @test "the build prompt files follow-ups under the slice's parent, not the slice" {
   # A child of the slice bead is never dispatched, since a wave lists only its
   # parent's direct children, and while it stays open `bd close` refuses the

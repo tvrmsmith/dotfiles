@@ -261,8 +261,9 @@ run_map_next() {
   run_map_next "$map"
   equals "$status" 0
   equals "$(kinds "$output")" "handoff"
-  contains "$(jq -r '.actions[0].prompt' <<<"$output")" "/to-spec-to-tickets"
-  contains "$(jq -r '.actions[0].prompt' <<<"$output")" "$map"
+  prompt="$(jq -r '.actions[0].prompt' <<<"$output")"
+  equals "${prompt%% *}" "/to-spec-to-tickets"
+  contains "$prompt" "$map"
 }
 
 @test "fog left in Not yet specified with no open tickets is fog, not a handoff" {
@@ -395,7 +396,8 @@ run_map_next() {
   equals "$status" 0
   equals "$(bd show "$map" --json | jq -r '.[0].assignee')" tester
   equals "$(jq -r '.[1]' "$ORCA_LOG")" "$map-handoff"
-  contains "$(jq -r '.[5]' "$ORCA_LOG")" "/to-spec-to-tickets"
+  prompt="$(jq -r '.[5]' "$ORCA_LOG")"
+  equals "${prompt%% *}" "/to-spec-to-tickets"
   equals "$(jq -r '.actions[0].result' <<<"$output")" launched
 }
 

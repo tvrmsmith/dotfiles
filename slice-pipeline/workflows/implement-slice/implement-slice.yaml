@@ -51,7 +51,9 @@ nodes:
         branch: {type: string}
       required: [bead, beads_dir, branch]
 
-  # Prompt node, not exec: this is the one node judgment lives in. Denies
+  # Prompt node, not exec: this is the one node judgment lives in. `skills:`
+  # only scopes the node's skill catalog, and the skill refuses model
+  # invocation, so the prompt's leading slash command is what loads it. Denies
   # AskUserQuestion because Archon has no in-node human channel. The tool is
   # permitted by default, and a node that calls it has no way for an answer to
   # come back, so it hangs until a timeout. That denial is what makes the
@@ -65,7 +67,7 @@ nodes:
     skills: [implement-with-subagents]
     denied_tools: [AskUserQuestion]
     prompt: |
-      Build the slice on bead $INPUTS.bead. Run unattended.
+      /implement-with-subagents --unattended $INPUTS.bead
 
       This checkout has no beads database of its own. Read the bead with
       `BEADS_DIR=$INPUTS.beads_dir bd show $INPUTS.bead`, and set
