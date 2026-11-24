@@ -1,16 +1,10 @@
 {
   "meta": {
     "name": "claude-code-mise",
-    "description": "Claude Code profile for WellSky work with Atlassian and GitHub access"
+    "description": "Claude Code profile with GitHub access"
   },
   "extends": "claude-code-base",
   "env_credentials": {
-    "op://Employee/JIRA CLI Token/credential": "JIRA_API_TOKEN",
     "op://Employee/GitHub Personal Access Token/token": "GH_TOKEN"
-  },
-  "filesystem": {
-    "read": [
-      "$HOME/.config/acli"
-    ]
   }
 }

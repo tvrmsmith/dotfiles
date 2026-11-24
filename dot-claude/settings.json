@@ -397,25 +397,13 @@
     "pr-review-toolkit@claude-plugins-official": false,
     "ruby-lsp@claude-plugins-official": false,
     "security-guidance@claude-plugins-official": false,
-    "security-screener@wellsky-plugins": false,
-    "shared@wellsky-plugins": false,
     "skill-creator@claude-plugins-official": false,
     "sourcegraph@claude-plugins-official": false,
     "superpowers@claude-plugins-official": false,
     "typescript-lsp@claude-plugins-official": false,
-    "unit-gen@wellsky-plugins": false,
-    "workflow@wellsky-plugins": false,
     "zapier@claude-plugins-official": false,
-    "architect@wellsky-plugins": false,
-    "bug-fix@wellsky-plugins": false,
-    "iac-assistant@wellsky-plugins": false,
-    "otel-telemetry@wellsky-plugins": false,
-    "product-management@wellsky-plugins": false,
-    "ws-atlassian@wellsky-plugins": false,
     "terraform-code-generation@hashicorp": false,
     "terraform-module-generation@hashicorp": false,
-    "wsh-data@wellsky-home": false,
-    "wsh-infra@wellsky-home": false,
     "dotnet@dotnet-agent-skills": false,
     "dotnet-ai@dotnet-agent-skills": false,
     "dotnet-aspnet@dotnet-agent-skills": false,
@@ -434,7 +422,6 @@
     "terrashark@terrashark": false,
     "warp@claude-code-warp": false,
     "playwright@claude-plugins-official": false,
-    "wshp@wshp.claude-plugins": false,
     "mattpocock-skills@mattpocock-skills": true
   },
   "extraKnownMarketplaces": {
@@ -480,19 +467,6 @@
       },
       "autoUpdate": true
     },
-    "wellsky-plugins": {
-      "source": {
-        "source": "git",
-        "url": "git@github.com:mediwareinc/wellsky-claude-code-plugins.git",
-        "ref": "fix/combined-skill-descriptions"
-      }
-    },
-    "wellsky-home": {
-      "source": {
-        "source": "directory",
-        "path": "/Users/trevor.smith/dev/wellsky/wellsky-home-ai-hub"
-      }
-    },
     "claude-code-warp": {
       "source": {
         "source": "github",
@@ -503,12 +477,6 @@
       "source": {
         "source": "directory",
         "path": "~/dev/personal/mattpocock-skills"
-      }
-    },
-    "wshp.claude-plugins": {
-      "source": {
-        "source": "directory",
-        "path": "/Users/trevor.smith/dev/wellsky/wshp.claude-plugins"
       }
     }
   },

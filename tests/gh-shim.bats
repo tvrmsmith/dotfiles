@@ -5,6 +5,15 @@ load helpers/assert
 SHIM="${BATS_TEST_DIRNAME}/../dot-local/bin/gh"
 
 routes() { GH_SHIM_EXPLAIN=1 bash "$SHIM" "$@"; }
+
+# Points HOME at a scratch dir whose default-owner file names work-owner, as a
+# work branch's install writes it, so the fallback owner differs from the
+# personal account.
+scratch_home_with_work_owner() {
+  export HOME="$TMP/home"
+  mkdir -p "$HOME/.config/gh-token-sync"
+  printf 'work-owner\n' > "$HOME/.config/gh-token-sync/default-owner"
+}
 owner() { routes "$@" | awk '{print $2}'; }
 
 # The token tests stub `security`, so pin gh-keyring to the macOS backend
@@ -179,12 +188,13 @@ export GH_KEYRING_BACKEND=security
 
 @test "a filesystem remote is skipped for one that names GitHub" {
   TMP="$(mktemp -d)"
+  scratch_home_with_work_owner
   cd "$TMP"
   git init -q .
 
   # A gate-repo clone: origin is a path on disk, which must not parse as an owner.
   git remote add origin /Users/someone/.no-mistakes/repos/abc123.git
-  equals "$(owner pr list)" "TrevorSmith-Wellsky"
+  equals "$(owner pr list)" "work-owner"
 
   git remote add upstream git@github-personal:tvrmsmith/thing.git
   equals "$(owner pr list)" "tvrmsmith"
@@ -211,11 +221,12 @@ export GH_KEYRING_BACKEND=security
   rm -rf "$TMP"
 }
 
-@test "outside personal repos the owner is GH_DEFAULT_OWNER, else the machine's default-owner file" {
+@test "outside personal repos the owner is GH_DEFAULT_OWNER, else the machine's default-owner file, else the personal account" {
   TMP="$(mktemp -d)"
   export HOME="$TMP/home"   # scratch: the default-owner file lives under $HOME
   mkdir -p "$HOME/.config/gh-token-sync" "$TMP/elsewhere"
   cd "$TMP/elsewhere"
+  equals "$(owner pr list)" "tvrmsmith"
   printf 'file-owner\n' > "$HOME/.config/gh-token-sync/default-owner"
   equals "$(owner pr list)" "file-owner"
   equals "$(GH_DEFAULT_OWNER=env-owner owner pr list)" "env-owner"
@@ -225,12 +236,12 @@ export GH_KEYRING_BACKEND=security
 
 @test "outside a repo the owner falls back on the directory rule" {
   TMP="$(mktemp -d)"
-  cd "$TMP"
-  equals "$(owner pr list)" "TrevorSmith-Wellsky"
-
   # A scratch HOME: the directory rule reads $HOME, and a repo left under the
   # real ~/dev/personal by a failed run broke every run after it.
-  export HOME="$TMP/home"
+  scratch_home_with_work_owner
+  cd "$TMP"
+  equals "$(owner pr list)" "work-owner"
+
   mkdir -p "$HOME/dev/personal/gh-shim-test" && cd "$HOME/dev/personal/gh-shim-test"
   equals "$(owner pr list)" "tvrmsmith"
 
@@ -304,8 +315,8 @@ stub_security() {
 }
 
 @test "a third-party owner falls back on the directory's account" {
-  TMP="$(mktemp -d)"; stub_bin; stub_security tvrmsmith=personal-token TrevorSmith-Wellsky=work-token
-  export HOME="$TMP/home"   # scratch: the directory rule reads $HOME
+  TMP="$(mktemp -d)"; stub_bin; stub_security tvrmsmith=personal-token work-owner=work-token
+  scratch_home_with_work_owner   # the directory rule reads $HOME
   mkdir -p "$HOME/dev/personal/gh-shim-borrow" && cd "$HOME/dev/personal/gh-shim-borrow"
   git init -q .
   git remote add origin git@github.com:third-party/thing.git

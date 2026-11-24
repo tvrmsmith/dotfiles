@@ -183,7 +183,7 @@ network:
   allowedDomains:
     - "*.atlassian.net"
   serviceDomains:
-    "wellsky.atlassian.net": atlassian
+    "example.atlassian.net": atlassian
   serviceAuth:
     atlassian:
       headerName: Authorization
@@ -199,7 +199,7 @@ credentials:
 environment:
   variables:
     JIRA_USERNAME: "proxy-managed"
-    JIRA_BASE_URL: "https://wellsky.atlassian.net"
+    JIRA_BASE_URL: "https://example.atlassian.net"
   proxyManaged:
     - JIRA_API_TOKEN
 ```

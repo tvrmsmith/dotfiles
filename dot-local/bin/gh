@@ -210,7 +210,7 @@ dir_owner() {
 	esac
 	owner="${GH_DEFAULT_OWNER:-}"
 	[ -n "$owner" ] || [ ! -r "$file" ] || IFS= read -r owner <"$file"
-	printf '%s\n' "${owner:-TrevorSmith-Wellsky}"
+	printf '%s\n' "${owner:-tvrmsmith}"
 }
 
 # Which keyring (macOS keychain, Linux Secret Service) is gh-keyring's business,

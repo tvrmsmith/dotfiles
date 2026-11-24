@@ -128,7 +128,7 @@ _mysbx_load_config() {
   : ${DEV_PERSONAL:="$HOME/dev/personal"}
   : ${GIT_TOKEN:="op://Employee/GitHub Personal Access Token/token"}
   : ${GIT_TOKEN_PERSONAL:="op://Private/GitHub Personal Access Token/token"}
-  : ${JIRA_USERNAME:="trevor.smith@wellsky.com"}
+  : ${JIRA_USERNAME:="you@example.com"}
   : ${MYSBX_SECRET_TTL:=3600}
   _MYSBX_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/mysbx"
   _MYSBX_LOG="$_MYSBX_STATE_DIR/mysbx.log"
@@ -175,7 +175,7 @@ mysbx_dispatch() {
 : ${DEV_PERSONAL:="$HOME/dev/personal"}
 : ${GIT_TOKEN:="op://Employee/GitHub Personal Access Token/token"}
 : ${GIT_TOKEN_PERSONAL:="op://Private/GitHub Personal Access Token/token"}
-: ${JIRA_USERNAME:="trevor.smith@wellsky.com"}
+: ${JIRA_USERNAME:="you@example.com"}
 : ${MYSBX_SECRET_TTL:=3600}
 # Leave REAL_SBX unset to auto-resolve via `command -v sbx`.
 # : ${REAL_SBX:="/opt/homebrew/bin/sbx"}
@@ -527,7 +527,7 @@ _mysbx_github_identity() {
     "$DEV_PERSONAL/"*)
       printf '%s\t%s\t%s\n' "my.1password.com" "$GIT_TOKEN_PERSONAL" "$sandbox_name" ;;
     *)
-      printf '%s\t%s\t%s\n' "wellsky.1password.com" "$GIT_TOKEN" "-g" ;;
+      printf '%s\t%s\t%s\n' "example.1password.com" "$GIT_TOKEN" "-g" ;;
   esac
 }
 
@@ -572,7 +572,7 @@ _mysbx_sync_atlassian_secret() {
   mkdir -p "$_MYSBX_STATE_DIR/markers"
 
   local token
-  if ! token=$(OP_ACCOUNT="wellsky.1password.com" op read "op://Employee/JIRA CLI Token/credential" 2>>"$_MYSBX_LOG"); then
+  if ! token=$(OP_ACCOUNT="example.1password.com" op read "op://Employee/JIRA CLI Token/credential" 2>>"$_MYSBX_LOG"); then
     echo "[mysbx] failed to read Atlassian token from 1Password" >&2
     return 1
   fi

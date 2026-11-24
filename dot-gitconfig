@@ -16,7 +16,6 @@
 	gpgsign = false
 [user]
 	name = Trevor Smith
-	email = trevor.smith@wellsky.com
 [alias]
 	up = pull --rebase
 	# Advance the base branch from its remote, then rebase the current branch

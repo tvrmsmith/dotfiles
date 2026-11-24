@@ -116,14 +116,6 @@ adapter that halts on a decision only a person can make reports
 undelivered, and its reason names how to resume. The bead goes back to the
 tracker with the halted run still in its worktree.
 
-This repository ships one adapter, `imr-ship`, which runs
-`imr pr ship --autofix-review` and needs `imr` on PATH. The ship stops
-before ci, so review and merge stay the pipeline's, and it delivers once
-that exits 0 with a pull request open. Any other exit is a halt: the reason
-names the line the ship stopped on, and the ship waits in the run's
-worktree for `imr pr ship --resume --autofix-review`. Never start a fresh
-`imr pr ship` over it.
-
 `merge` squashes unless `merge_queue` is true. A queued repository is
 enqueued with no strategy flag. `merge` fails if the
 queue drops the pull request after holding it, once a re-read

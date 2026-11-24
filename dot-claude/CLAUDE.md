@@ -1,6 +1,6 @@
 # Global Agent Instructions
 
-- My name is Trevor, I'm a Staff Software Engineer for WellSky, a healthcare technology company. I'm a member of the Home Health business unit and the hospice squad within it.
+- My name is Trevor, I'm a Staff Software Engineer.
 - Laptop leaves network coverage, so network failures are transient. Retry, don't blame creds/remote/config.
 
 @~/.claude/CLAUDE.work.md

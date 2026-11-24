@@ -67,7 +67,7 @@ bd -C <repo-path> create --title "..." --body-file <file> --type=task --priority
 gh issue create -R <owner>/<repo> --title "..." --body-file <file>
 ```
 
-**Any other tracker** (Jira through the `acli` skill, for one). Use its own CLI with the same
+**Any other tracker** (Jira through its CLI, for one). Use its own CLI with the same
 title and body, and name to the human the command you ran.
 
 Read the row back before going on: `bd -C <repo-path> show <id> --json`,

@@ -22,10 +22,9 @@ _mysbx_load_config() {
   : ${DEV_PERSONAL:="$HOME/dev/personal"}
   : ${GIT_TOKEN:="op://Employee/GitHub Personal Access Token/token"}
   : ${GIT_TOKEN_PERSONAL:="op://Private/GitHub Personal Access Token/token"}
-  : ${JIRA_USERNAME:="trevor.smith@wellsky.com"}
-  # The 1Password account holding work tokens. Unset, every repo uses the
-  # personal account.
-  : ${MYSBX_WORK_OP_ACCOUNT:="wellsky.1password.com"}
+  # JIRA_USERNAME and MYSBX_WORK_OP_ACCOUNT (the 1Password account holding
+  # work tokens) have no default here; a work branch sets them. With no work
+  # account, every repo uses the personal account.
   : ${MYSBX_SECRET_TTL:=3600}
   _MYSBX_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/mysbx"
   _MYSBX_LOG="$_MYSBX_STATE_DIR/mysbx.log"

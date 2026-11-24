@@ -14,7 +14,7 @@ Two stacks. Edit the source files directly — don't duplicate aliases elsewhere
 
 Shared helpers: `extras/agent-sandboxing/00-shared.zsh`. Sourced via `extras/agent-sandboxing/init.zsh` from `.zshrc`.
 
-Kits: `extras/agent-sandboxing/kits/` — personal (static configs + install.sh), atlassian (proxy-managed creds).
+Kits: `extras/agent-sandboxing/kits/`. `_mysbx_preset_kits` applies the shipped ones plus any optional kit whose directory a work branch adds.
 
 ## `sbx` runs in an embedded containerd
 

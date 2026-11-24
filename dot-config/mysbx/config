@@ -4,7 +4,8 @@
 # : ${DEV_PERSONAL:="$HOME/dev/personal"}
 # : ${GIT_TOKEN:="op://Employee/GitHub Personal Access Token/token"}
 # : ${GIT_TOKEN_PERSONAL:="op://Private/GitHub Personal Access Token/token"}
-# : ${JIRA_USERNAME:="trevor.smith@wellsky.com"}
+# : ${JIRA_USERNAME:="you@example.com"}
+# : ${MYSBX_WORK_OP_ACCOUNT:="example.1password.com"}
 # : ${MYSBX_SECRET_TTL:=3600}
 # Leave REAL_SBX unset to auto-resolve via `command -v sbx`.
 # : ${REAL_SBX:="/opt/homebrew/bin/sbx"}

@@ -71,7 +71,7 @@ Also check `extraKnownMarketplaces` for registered marketplaces whose plugins ar
 For each enabled plugin, classify:
 - **General-purpose** — useful in any repo regardless of tech stack
 - **Organization-specific** — only relevant in work repos (e.g. architecture docs, JIRA integration, OTEL telemetry)
-- **Platform-specific** — only relevant for a subset of work repos (e.g. WellSky Home ecosystem plugins)
+- **Platform-specific** — only relevant for a subset of work repos (e.g. one product line's plugins)
 - **Tech-stack-specific** — only relevant for repos using a specific language/framework (e.g. .NET, Ruby, Terraform)
 
 ### Step 1.3 — Check existing per-project settings
@@ -88,8 +88,8 @@ Group non-general plugins into tiers based on scope. Example tier structure:
 
 | Tier | Scope | Example |
 |------|-------|---------|
-| 1 | All work repos | architect, bug-fix, otel-telemetry, atlassian |
-| 2 | Platform repos | ecosystem-specific plugins (e.g. wsh-*, hp) |
+| 1 | All work repos | architecture, issue-tracker and telemetry plugins |
+| 2 | Platform repos | ecosystem-specific plugins |
 | 3 | Tech-stack repos | dotnet-*, ruby-lsp, csharp-lsp, terraform-* |
 
 Present tier groupings via `AskUserQuestion`. Let user adjust which plugins go in which tier.

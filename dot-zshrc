@@ -207,9 +207,6 @@ alias kanata-restart='sudo launchctl kickstart -k system/com.kanata.daemon'
 # clc = interactive convenience: claude-launcher with permission prompts skipped.
 alias clc='claude-launcher --dangerously-skip-permissions'
 alias clca='clc agents'
-# clc-sec = clc with the security-screener plugin enabled for this session only;
-# it stays disabled in settings.json so other sessions don't carry its skills.
-clc-sec() { clc --settings '{"enabledPlugins":{"security-screener@wellsky-plugins":true}}' "$@"; }
 
 # CLAUDE_CODE_PROCESS_WRAPPER lives in ~/.claude/settings.json's `env` block, not
 # here: the background service starts on demand, outlives this shell, and never

@@ -21,18 +21,6 @@ run_core() { zsh -c "source '$MYSBX_CORE'; _mysbx_load_config; $1"; }
   [ "$(run_core '_mysbx_preset_template ruby-cc')" = "claude-sandbox-ruby-2.6.10:latest" ]
 }
 
-@test "preset_kits omits atlassian under DEV_PERSONAL" {
-  cd "$DEV_PERSONAL"
-  run run_core "cd '$DEV_PERSONAL' && _mysbx_preset_kits cc"
-  [[ "$output" != *atlassian* ]]
-  [[ "$output" == *"/kits/personal"* ]]
-}
-
-@test "preset_kits includes atlassian off DEV_PERSONAL" {
-  run run_core "cd '$TMP' && _mysbx_preset_kits cc"
-  [[ "$output" == *"/kits/atlassian"* ]]
-}
-
 @test "name uses prefix + cwd basename" {
   run run_core "cd '$TMP' && _mysbx_name mysbx-cc"
   [ "$output" = "mysbx-cc-$(basename "$TMP")" ]
