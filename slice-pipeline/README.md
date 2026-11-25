@@ -149,10 +149,14 @@ bd would refuse to close after its slice merged. `--input max_slices=N` caps a w
 slices and leaves the rest for later waves. The default of 0 means no cap.
 
 Before any slice starts, the wave pauses on a seam gate. An agent reads each
-candidate bead and the code on `origin/<base>`, and proposes the modules
-each slice touches, the interfaces where slices meet, and the pairs that
-would edit the same code. Each seam cites the bead text or code it comes
-from. A slice that neither constrains gets no invented boundary, because
+candidate bead and the code on `origin/<base>`, and proposes each slice's
+seams by the rules the build itself follows (implement-with-subagents'
+`DESIGN.md`, with `codebase-design` and `contract-approval` loaded), plus the
+pairs of slices that would edit the same code. For a slice that trips the
+design gate, the proposal carries the full design, so the engineer approves
+it here instead of the build settling it unattended. Each seam cites the
+bead text or code it comes from. A slice that neither constrains gets no
+invented seam, because
 approved seams become precedent for later waves. The gate's text says what
 each bead is, where each seam came from, and what Approve will do. Choose
 `approve`, or `revise` with comments in the text. A revise can also say

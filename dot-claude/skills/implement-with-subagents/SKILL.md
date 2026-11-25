@@ -52,13 +52,11 @@ Every run is one sample in an A/B experiment on how many implementers a slice ge
 
 ## 1. Seams and assignments
 
-**Load `codebase-design` before anything else.** Its vocabulary and seam rules govern this section and §2: the interface is the test surface, and one adapter means a hypothetical seam. Placing a seam where no test can live is the failure this catches.
-
-**Start from the planned seams**: the Testing Decisions of the slice's spec, on the slice bead or on the parent spec its `## Parent` names, plus any wave design appended to the bead's `notes`. They are guidance, never a contract. Derive the seams they leave open, and move one when the code shows it belongs elsewhere. Each seam carries its **source**: planned, moved (with the reason) or derived.
+**Read `DESIGN.md` before anything else.** Its *Seams* rules govern this section, and its *Design gate* governs §2.
 
 Parent reads the slice and the relevant code, then produces:
 
-- The **seams** to test at, public boundaries only, each with its source.
+- The **seams** to test at, placed and sourced per `DESIGN.md` *Seams*.
 - The **assignments** each seam yields.
 - An **order**, so each assignment's cycles teach the next.
 - A **parallel tag** per assignment, under split only; single's one worker runs them in order. **Parallel when truth is independent:** one assignment can proceed beside another exactly when its expected values come from outside the sibling work, the spec, an agreed contract, a worked example. An assignment whose correctness can only be judged against what another worker is producing is sequential. Disjoint files is not the test; parallel workers need disjoint **import graphs**, or a sibling's half-written code reds their run. A suite's shared step-definition file is one such graph: assignments landing in the same suite either run sequentially or each take their own step file.
@@ -75,22 +73,13 @@ Per `tdd`: a seam is confirmed before its first test. Parent's job, before any m
 
 **Default**. Present the §1 seam list, confirm (unattended: *Unattended mode*).
 
-**Design gate**. Fires when the slice does any of: introduces a **new module**; adds an **internal seam** (one `contract-approval` doesn't already gate); or spans **≥4 hops across ≥2 existing modules**. These are the decompositions TDD can't reach. It drives what an assignment contains, never where the seam goes.
+**Design gate**. Fires on any trigger `DESIGN.md` *Design gate* lists.
 
-1. Parent drafts the design below.
+1. Parent drafts the design `DESIGN.md` *What the design carries* spells out, at its resolution gradient.
 2. **Red-team**: dispatch one reviewer worker (Agent, `general-purpose`), instructed to **load `codebase-design` itself** (subagents don't inherit the parent's loaded skills): flag every hop that only forwards arguments, every seam nothing actually varies across ("one adapter means a hypothetical seam"), and every cited existing symbol it can't find in the repo. Parent revises.
 3. Present, and wait for the answer (unattended: *Unattended mode*).
 
-The design carries:
-
-- **Seam signatures**. Real typed signatures, living as text in the review artifact; the repo stays untouched until §4. Seams only, never every hop. A cross-boundary seam cites its `contract-approval` record instead of re-litigating shape.
-- **Module ownership**. Which module owns each new piece of behaviour.
-- **Failure semantics**. Per seam: what throws, what catches it, what partial state survives.
-- **One-way doors**. Each seam tagged reversible or expensive-to-change, so review attention lands on the ones that matter.
-- **Flow**. Entry point through the hops, as a diagram, marked **illustrative and non-binding**: interior structure belongs to the refactor step, and a worker stays free to deviate from it.
-- **Assumptions**. Every place the spec was silent and the parent chose.
-
-**Resolution gradient:** the first seam in full detail, later seams coarse. A seam a later cycle teaches you is in the wrong place re-enters this gate (unattended: *Unattended mode*); a seam never moves silently.
+A seam a later cycle teaches you is in the wrong place re-enters this gate (unattended: *Unattended mode*); a seam never moves silently.
 
 Done, on the **Default** path, when the seam list is confirmed, or, unattended, when the parent proceeds on the §1 seam list unchanged. Done, when the gate fired, when the first seam has a confirmed signature, owning module, failure semantics and one-way/reversible tag, and every later seam has at least the coarse version of those. Unattended, the step 2 red-team stands in for the confirmation, and every assumption goes into the §8 report; attended, every assumption is either approved or replaced.
 

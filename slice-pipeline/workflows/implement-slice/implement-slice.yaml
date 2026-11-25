@@ -60,11 +60,19 @@ nodes:
   # skill's unattended mode survivable. Archon pauses idle_timeout while a
   # tool call or background work is open, so the subagents this node waits on
   # do not count against it; the 90 minutes bounds only a node gone silent
-  # with nothing open.
+  # with nothing open. A node exposes no skill it does not list and loads no
+  # plugin it does not name, so the rest are declared here: codebase-design
+  # and tdd, which implement-with-subagents loads by name, and
+  # engineering-principles, rather than leaving it to the host's CLAUDE.md.
   - id: build
     depends_on: [claim]
     idle_timeout: 5400000
-    skills: [implement-with-subagents]
+    plugins: [mattpocock-skills@mattpocock]
+    skills:
+      - implement-with-subagents
+      - mattpocock-skills:codebase-design
+      - mattpocock-skills:tdd
+      - engineering-principles
     denied_tools: [AskUserQuestion]
     prompt: |
       /implement-with-subagents --unattended $INPUTS.bead
