@@ -20,11 +20,12 @@ _mysbx_load_config() {
   local cfg="${XDG_CONFIG_HOME:-$HOME/.config}/mysbx/config"
   [[ -r "$cfg" ]] && source "$cfg"
   : ${DEV_PERSONAL:="$HOME/dev/personal"}
-  : ${GIT_TOKEN:="op://Employee/GitHub Personal Access Token/token"}
   : ${GIT_TOKEN_PERSONAL:="op://Private/GitHub Personal Access Token/token"}
-  # JIRA_USERNAME and MYSBX_WORK_OP_ACCOUNT (the 1Password account holding
-  # work tokens) have no default here; a work branch sets them. With no work
-  # account, every repo uses the personal account.
+  # The work values have no default here; a work branch sets them:
+  # MYSBX_WORK_OP_ACCOUNT (the 1Password account holding work tokens), GIT_TOKEN
+  # (the work GitHub PAT's op:// reference), and JIRA_USERNAME plus
+  # JIRA_TOKEN_REF for the atlassian kit. With no work account, every repo uses
+  # the personal account.
   : ${MYSBX_SECRET_TTL:=3600}
   _MYSBX_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/mysbx"
   _MYSBX_LOG="$_MYSBX_STATE_DIR/mysbx.log"
@@ -118,6 +119,10 @@ _mysbx_github_identity() {
       printf '%s\t%s\t%s\n' "my.1password.com" "$GIT_TOKEN_PERSONAL" "$sandbox_name" ;;
     *)
       if [[ -n "$MYSBX_WORK_OP_ACCOUNT" ]]; then
+        if [[ -z "$GIT_TOKEN" ]]; then
+          echo "[mysbx] MYSBX_WORK_OP_ACCOUNT is set but GIT_TOKEN (the work PAT's op:// reference) is not" >&2
+          return 1
+        fi
         printf '%s\t%s\t%s\n' "$MYSBX_WORK_OP_ACCOUNT" "$GIT_TOKEN" "-g"
       else
         printf '%s\t%s\t%s\n' "my.1password.com" "$GIT_TOKEN_PERSONAL" "-g"
@@ -143,8 +148,9 @@ _mysbx_sync_github_secret() {
   _mysbx_secret_fresh "$marker" && return 0
   mkdir -p "$_MYSBX_STATE_DIR/markers"
 
-  local op_account op_path scope
-  IFS=$'\t' read -r op_account op_path scope <<< "$(_mysbx_github_identity "$sandbox_name")"
+  local identity op_account op_path scope
+  identity=$(_mysbx_github_identity "$sandbox_name") || return 1
+  IFS=$'\t' read -r op_account op_path scope <<< "$identity"
 
   local token
   if ! token=$(OP_ACCOUNT="$op_account" op read "$op_path" 2>>"$_MYSBX_LOG"); then
@@ -165,8 +171,12 @@ _mysbx_sync_atlassian_secret() {
   _mysbx_secret_fresh "$marker" && return 0
   mkdir -p "$_MYSBX_STATE_DIR/markers"
 
+  if [[ -z "$JIRA_TOKEN_REF" ]]; then
+    echo "[mysbx] JIRA_TOKEN_REF (the Jira token's op:// reference) is not set" >&2
+    return 1
+  fi
   local token
-  if ! token=$(OP_ACCOUNT="$MYSBX_WORK_OP_ACCOUNT" op read "op://Employee/JIRA CLI Token/credential" 2>>"$_MYSBX_LOG"); then
+  if ! token=$(OP_ACCOUNT="$MYSBX_WORK_OP_ACCOUNT" op read "$JIRA_TOKEN_REF" 2>>"$_MYSBX_LOG"); then
     echo "[mysbx] failed to read Atlassian token from 1Password" >&2
     return 1
   fi

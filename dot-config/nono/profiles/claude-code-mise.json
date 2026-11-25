@@ -3,8 +3,5 @@
     "name": "claude-code-mise",
     "description": "Claude Code profile with GitHub access"
   },
-  "extends": "claude-code-base",
-  "env_credentials": {
-    "op://Employee/GitHub Personal Access Token/token": "GH_TOKEN"
-  }
+  "extends": "claude-code-base"
 }

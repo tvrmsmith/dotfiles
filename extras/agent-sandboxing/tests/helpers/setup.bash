@@ -29,7 +29,7 @@ _mysbx_test_setup() {
 
   # The work values a work machine's ~/.zshenv.work exports reach the tests
   # through the caller's environment, which the empty ZDOTDIR doesn't clear.
-  unset MYSBX_WORK_OP_ACCOUNT JIRA_USERNAME
+  unset MYSBX_WORK_OP_ACCOUNT JIRA_USERNAME GIT_TOKEN JIRA_TOKEN_REF
 }
 _mysbx_test_teardown() { rm -rf "$TMP"; }
 # Read recorded sbx argv as a newline string.

@@ -126,7 +126,7 @@ _mysbx_load_config() {
   local cfg="${XDG_CONFIG_HOME:-$HOME/.config}/mysbx/config"
   [[ -r "$cfg" ]] && source "$cfg"
   : ${DEV_PERSONAL:="$HOME/dev/personal"}
-  : ${GIT_TOKEN:="op://Employee/GitHub Personal Access Token/token"}
+  : ${GIT_TOKEN:="op://WorkVault/GitHub Personal Access Token/token"}
   : ${GIT_TOKEN_PERSONAL:="op://Private/GitHub Personal Access Token/token"}
   : ${JIRA_USERNAME:="you@example.com"}
   : ${MYSBX_SECRET_TTL:=3600}
@@ -173,7 +173,7 @@ mysbx_dispatch() {
 # ~/.config/mysbx/config — sourced by mysbx. Environment variables take
 # precedence (each line only sets the value if currently unset).
 : ${DEV_PERSONAL:="$HOME/dev/personal"}
-: ${GIT_TOKEN:="op://Employee/GitHub Personal Access Token/token"}
+: ${GIT_TOKEN:="op://WorkVault/GitHub Personal Access Token/token"}
 : ${GIT_TOKEN_PERSONAL:="op://Private/GitHub Personal Access Token/token"}
 : ${JIRA_USERNAME:="you@example.com"}
 : ${MYSBX_SECRET_TTL:=3600}
@@ -572,7 +572,7 @@ _mysbx_sync_atlassian_secret() {
   mkdir -p "$_MYSBX_STATE_DIR/markers"
 
   local token
-  if ! token=$(OP_ACCOUNT="example.1password.com" op read "op://Employee/JIRA CLI Token/credential" 2>>"$_MYSBX_LOG"); then
+  if ! token=$(OP_ACCOUNT="example.1password.com" op read "op://WorkVault/JIRA CLI Token/credential" 2>>"$_MYSBX_LOG"); then
     echo "[mysbx] failed to read Atlassian token from 1Password" >&2
     return 1
   fi
