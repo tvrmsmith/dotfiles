@@ -110,6 +110,24 @@ commit_slice_with_decisions() {
   lacks "$body" "Co-Authored-By"
 }
 
+@test "validate lists the slice commit's Unapproved-Scenario trailers under their own heading in the findings record" {
+  git -C "$REPO" -c user.email=t@example.com -c user.name=Test commit --quiet --allow-empty \
+    -m "feat: demo slice" \
+    -m "$(printf '%s\n' 'Seam: Store.save (planned)' 'Unapproved-Scenario: features/save.feature: Save twice, new' 'Unapproved-Scenario: api suite: Retry on 503, changed: now retries three times')"
+  validate --verified true >/dev/null
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  contains "$body" "$(printf '### Scenarios to approve\n\nThe build added these beyond the scenarios the seam gate approved. Approve or reject each before merge.\n\n- features/save.feature: Save twice, new\n- api suite: Retry on 503, changed: now retries three times\n')"
+}
+
+@test "validate writes a findings record for a commit carrying only Unapproved-Scenario trailers" {
+  git -C "$REPO" -c user.email=t@example.com -c user.name=Test commit --quiet --allow-empty \
+    -m "feat: demo slice" -m "Unapproved-Scenario: features/save.feature: Save twice, new"
+  validate --verified true >/dev/null
+  body="$(cat "$STUB_BIN/pr-comment-body")"
+  lacks "$body" "Seams:"
+  contains "$body" "$(printf '### Scenarios to approve\n')"
+}
+
 @test "validate lists every ask-user finding verbatim and tallies every finding by step" {
   export NO_MISTAKES_RUN_SEQUENCE="$FIXTURES_DIR/findings-history.toon:0"
   out="$(validate --verified true)"

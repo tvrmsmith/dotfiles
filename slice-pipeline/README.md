@@ -154,7 +154,10 @@ seams by the rules the build itself follows (implement-with-subagents'
 `DESIGN.md`, with `codebase-design` and `contract-approval` loaded), plus the
 pairs of slices that would edit the same code. For a slice that trips the
 design gate, the proposal carries the full design, so the engineer approves
-it here instead of the build settling it unattended. Each seam cites the
+it here instead of the build settling it unattended. The proposal also
+carries each slice's new and changed scenarios in Gherkin, the spec the build
+tests against, grouped by feature file. A suite with no `.feature` files
+still gets Gherkin, marked not persisted. Each seam cites the
 bead text or code it comes from. A slice that neither constrains gets no
 invented seam, because
 approved seams become precedent for later waves. The gate's text says what
@@ -162,14 +165,16 @@ each bead is, where each seam came from, and what Approve will do. Choose
 `approve`, or `revise` with comments in the text. A revise can also say
 `drop <id>` to hold a bead for the next wave, or `not this epic <id>` to take
 it out of the parent. On approval, `apply-seams` appends each dispatched
-bead's seams to its notes and clears each not-this-epic bead's parent. It
+bead's seams and scenarios to its notes and clears each not-this-epic bead's parent. It
 then fixes the wave and the chain's tried list. A dropped bead is in
 neither, so the next wave offers it again. That needs a next wave, though,
 and a wave that dispatches nothing ends the chain. A wave with no candidates
 skips the gate.
 
 Then the wave runs one implement-slice for each approved child, all at once,
-each in its own worktree.
+each in its own worktree. A build that adds a scenario or changes one's
+meaning goes ahead. It lists the scenario under its own heading in the
+findings record, so you approve or reject it at review before merge.
 
 A wave ends once every one of its slices has finished, and a slice waiting in
 review counts as unfinished. So the next wave starts only when every slice of

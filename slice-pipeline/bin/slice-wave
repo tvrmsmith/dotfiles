@@ -846,18 +846,23 @@ find_open_pr() {
 	esac
 }
 
-# Prints the findings-record section listing the build's decisions: the
-# Seam and Assumption trailers an unattended implement-with-subagents build
-# writes on the slice commit at HEAD. Prints nothing when it carries neither,
-# as an attended or hand-written slice does.
+# Prints the findings-record sections listing the build's decisions: the
+# Seam, Assumption and Unapproved-Scenario trailers an unattended
+# implement-with-subagents build writes on the slice commit at HEAD. The
+# unapproved scenarios get their own heading, since the engineer rules on each
+# at review. Prints nothing when it carries none, as an attended or
+# hand-written slice does.
 build_decisions_section() {
-	local seams assumptions
+	local seams assumptions scenarios
 	seams="$(git log -1 --format='%(trailers:key=Seam,valueonly,unfold)' HEAD 2>/dev/null | sed '/^$/d')"
 	assumptions="$(git log -1 --format='%(trailers:key=Assumption,valueonly,unfold)' HEAD 2>/dev/null | sed '/^$/d')"
-	[ -n "$seams$assumptions" ] || return 0
-	printf '### Build decisions\n\n'
-	[ -z "$seams" ] || printf 'Seams:\n%s\n\n' "$(printf '%s\n' "$seams" | sed 's/^/- /')"
-	[ -z "$assumptions" ] || printf 'Assumptions:\n%s\n\n' "$(printf '%s\n' "$assumptions" | sed 's/^/- /')"
+	scenarios="$(git log -1 --format='%(trailers:key=Unapproved-Scenario,valueonly,unfold)' HEAD 2>/dev/null | sed '/^$/d')"
+	if [ -n "$seams$assumptions" ]; then
+		printf '### Build decisions\n\n'
+		[ -z "$seams" ] || printf 'Seams:\n%s\n\n' "$(printf '%s\n' "$seams" | sed 's/^/- /')"
+		[ -z "$assumptions" ] || printf 'Assumptions:\n%s\n\n' "$(printf '%s\n' "$assumptions" | sed 's/^/- /')"
+	fi
+	[ -z "$scenarios" ] || printf '### Scenarios to approve\n\nThe build added these beyond the scenarios the seam gate approved. Approve or reject each before merge.\n\n%s\n\n' "$(printf '%s\n' "$scenarios" | sed 's/^/- /')"
 }
 
 # Prints the markdown comment that records a drive on its pull request, from

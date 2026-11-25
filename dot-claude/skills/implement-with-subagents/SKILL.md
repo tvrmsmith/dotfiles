@@ -18,7 +18,7 @@ Each word sits at one level. Keep it there.
 - **slice**. One vertical slice, arriving already sliced from planning. The skill's input, never something this skill produces.
 - **seam**. A public boundary inside the slice: the *location* where an interface lives. §1 finds them, §2 agrees them. A seam is placed, never built, owned or run green.
 - **assignment**. A body of code that meets a seam's interface, and the unit that gets its own contract, expected values and tests. Under **split** it is also the unit one worker owns. A seam yields **one assignment per participant**, however many that is; several participants at one seam is the parallel case (§1).
-- **scenario**. One behaviour of one assignment, as Gherkin at that assignment's seam and in that suite's language, where the suite expresses its tests that way. §1 derives them from the ticket's slice-wide acceptance criteria. Many scenarios per assignment.
+- **scenario**. One behaviour of one assignment, as Gherkin at that assignment's seam: the slice's spec. `DESIGN.md` *Scenarios* says where they come from, where they live, and which need the engineer's approval. Many scenarios per assignment.
 - **cycle**. One failing test plus the minimum code to green it. One scenario is one cycle's red test. Many cycles per assignment: the first trivially small, each one after building on what the last taught.
 
 ## Arms
@@ -37,6 +37,7 @@ Every run is one sample in an A/B experiment on how many implementers a slice ge
 | Gate | Unattended default |
 | --- | --- |
 | §1, adopting scenarios in a suite that has none | Skip the recommendation, take §1's no-scenario path. File a bead recommending adoption. |
+| §1 or §4, a new scenario, or a change of meaning to an approved one | Proceed. Record it as `DESIGN.md` *Scenarios* *In the build* says. |
 | §1, composition left unobserved by the union of scenarios | Write no cross-service test. File a bead naming the gap. |
 | §1 or §4, the slice itself doesn't fit | File a bead recording the overflow and the suggested split, leave the tree uncommitted, and end the run by emitting the §8 report with `status: aborted` and `reason` naming the overflow. Covers both §1's slice-level fit check and a §4 re-split that still overflows. |
 | §2 default, seam list | Proceed on the §1 seam list unchanged. |
@@ -52,7 +53,7 @@ Every run is one sample in an A/B experiment on how many implementers a slice ge
 
 ## 1. Seams and assignments
 
-**Read `DESIGN.md` before anything else.** Its *Seams* rules govern this section, and its *Design gate* governs §2.
+**Read `DESIGN.md` before anything else.** Its *Seams* and *Scenarios* rules govern this section, and its *Design gate* governs §2.
 
 Parent reads the slice and the relevant code, then produces:
 
@@ -61,11 +62,11 @@ Parent reads the slice and the relevant code, then produces:
 - An **order**, so each assignment's cycles teach the next.
 - A **parallel tag** per assignment, under split only; single's one worker runs them in order. **Parallel when truth is independent:** one assignment can proceed beside another exactly when its expected values come from outside the sibling work, the spec, an agreed contract, a worked example. An assignment whose correctness can only be judged against what another worker is producing is sequential. Disjoint files is not the test; parallel workers need disjoint **import graphs**, or a sibling's half-written code reds their run. A suite's shared step-definition file is one such graph: assignments landing in the same suite either run sequentially or each take their own step file.
 - A **fit check** per assignment: it must comfortably fit one worker context window. An assignment that doesn't fit splits, adding a seam if the split needs one. A *slice* that doesn't fit goes back to planning to be split there (unattended: *Unattended mode*). Under single, the one worker carrying a slice whose assignments each fit is §4's *Fit overflow* to handle at run time, so it is no reason to send the slice back.
-- The **scenarios** per assignment, where the suite expresses its tests as scenarios. One glob for `**/*.feature` settles it, per suite, and hands §4 the file it matches against. Derived from the ticket's behavioural acceptance criteria, which are slice-wide and mechanism-free by construction: here each is realised at the seam that can observe it. A criterion spanning several assignments splits across the ones that can, plus a `@contract` scenario at each boundary it crosses, cited against the `contract-approval` record. A `@contract` scenario pins semantics the contract artifact cannot express: idempotent replay, retry thresholds, state transitions, ordering, emission obligations. One needing a mock response the artifact does not yet describe extends the artifact in the same slice. Where the union still leaves the composition itself unobserved, say so and raise it: that gap is the one thing earning a cross-service test, and it is the parent's call, not a worker's (unattended: *Unattended mode*).
+- The **scenarios** per assignment, per `DESIGN.md` *Scenarios*: the approved set first, each one realised at an assignment's seam, then any the slice still needs. Each hands §4 the feature file it matches against, or is marked not persisted. A composition gap is the parent's to raise (unattended: *Unattended mode*).
 
-**A suite carrying no scenarios yet** keeps the repo's existing test idiom, and §4 runs plain cycles. Where the slice looks like a good place to adopt them, recommend it via `AskUserQuestion` and wait (unattended: *Unattended mode*): on yes, the layout, runner wiring and shared step file become their own assignment, ordered first and sequential, since every later assignment reads the conventions it establishes. Once that lands the suite carries its own signal and later slices detect it.
+**A suite carrying no `.feature` files yet** keeps the repo's existing test idiom: its scenarios stay unpersisted Gherkin, each one cycle's spec. Where the slice looks like a good place to adopt them, recommend it via `AskUserQuestion` and wait (unattended: *Unattended mode*): on yes, the layout, runner wiring and shared step file become their own assignment, ordered first and sequential, since every later assignment reads the conventions it establishes. Once that lands the suite carries its own signal and later slices detect it.
 
-Done when every seam has its source and its assignments, and every assignment an order position, under split a parallel/sequential tag, a fit check, and, where the suite carries scenarios, its scenarios.
+Done when every seam has its source and its assignments, and every assignment an order position, under split a parallel/sequential tag, a fit check, and its scenarios, with every one beyond the approved set marked unapproved.
 
 ## 2. Agree the design
 
@@ -102,7 +103,7 @@ The parent is the **loop driver**: it invokes the `tdd` skill itself to carry th
 
 **When the §2 gate fired:** the signature and failure semantics of the assignment's seam are part of the contract the worker must hold. The flow diagram is not.
 
-**Scenarios in the loop:** one scenario per cycle. A worker matches the suite's conventions against the feature file §1 hands it, reuses an existing step definition wherever one fits, and adds genuinely new steps to the suite's shared file.
+**Scenarios in the loop:** one scenario per cycle. In a suite with `.feature` files, a worker matches the suite's conventions against the feature file §1 hands it, reuses an existing step definition wherever one fits, and adds genuinely new steps to the suite's shared file. In a suite without, the worker implements the scenario's Gherkin as a test in the suite's idiom. A worker that needs a scenario changed in meaning escalates it like a wrong contract.
 
 **In-loop verification:** each cycle runs the worker's own test file, nothing wider. Project-wide typecheck and the full suite wait for §5. A wide check run under parallel workers reports a sibling's unfinished code as your own failure.
 
@@ -118,9 +119,9 @@ Every assignment green, parent runs the project-wide checks the workers deferred
 
 Commit on a **feature branch** (create one if on the default branch, since the ship flow validates committed history on a non-default branch).
 
-Unattended, the commit message ends in git trailers: one `Seam:` per §8 `seams` line and one `Assumption:` per §8 `assumptions` entry, each on a single line. The report itself reaches no reviewer; slice-pipeline copies these trailers into the findings record on the pull request.
+Unattended, the commit message ends in git trailers: one `Seam:` per §8 `seams` line, one `Assumption:` per §8 `assumptions` entry and one `Unapproved-Scenario:` per §8 `unapproved scenarios` entry, each on a single line. The report itself reaches no reviewer; slice-pipeline copies these trailers into the findings record on the pull request.
 
-Done when the whole slice is one commit on a feature branch, its message ending in the `Seam:` and `Assumption:` trailers when unattended.
+Done when the whole slice is one commit on a feature branch, its message ending in the `Seam:`, `Assumption:` and `Unapproved-Scenario:` trailers when unattended.
 
 ## 7. Metrics
 
@@ -141,6 +142,8 @@ Stop at the commit. Review, lint, push, PR and CI belong to the repo's **ship fl
 - `gate defaults taken`, one line each, naming the gate and the default.
 - `seams`, one line each: the seam, its §1 source, and for a moved seam the reason.
 - `assumptions`, every §2 assumption the parent recorded rather than presented.
+- `unapproved scenarios`, one line each: the feature file or suite, the scenario's name, and `new` or `changed:` with what its meaning gained or lost.
+- `scenario map`, for each suite without `.feature` files, one line per test: the test, then the scenario it implements.
 - `beads filed`, one id and title each.
 - `notices`, every `ab.sh` warning (stderr) and `finish`'s stopping-point line.
 

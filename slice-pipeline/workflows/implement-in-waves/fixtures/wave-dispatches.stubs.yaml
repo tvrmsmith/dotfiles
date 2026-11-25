@@ -22,8 +22,8 @@ propose:
   question: "demo.2 and demo.3 dispatch with the seams below; demo.4 leaves the epic."
   wave: [demo.2, demo.3]
   seams:
-    - {id: demo.2, seams: "touches src/a.ts (bead description)"}
-    - {id: demo.3, seams: "nothing in the bead or the code constrains this slice"}
+    - {id: demo.2, seams: "touches src/a.ts (bead description)", scenarios: "src/a.feature: Scenario: a greets the user"}
+    - {id: demo.3, seams: "nothing in the bead or the code constrains this slice", scenarios: "the bead has no behavioural acceptance criteria"}
   not_this_epic: [demo.4]
 seam-gate:
   decision: approve

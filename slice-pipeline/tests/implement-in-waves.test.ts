@@ -240,7 +240,7 @@ describe("next", () => {
 });
 
 describe("apply-seams", () => {
-  const seams = (id: string) => ({ id, seams: `seams for ${id}` });
+  const seams = (id: string) => ({ id, seams: `seams for ${id}`, scenarios: `scenarios for ${id}` });
   const inputs = (proposal: object | null, extra: Record<string, string> = {}) => ({
     INPUTS_BEADS_DIR: "/tracker/.beads",
     INPUTS_TRIED: '["p.1"]',
@@ -252,8 +252,9 @@ describe("apply-seams", () => {
   });
   const writes = () => calls("bd").filter((line) => line.includes("\tupdate "));
   const header = "Seams agreed in implement-in-waves run wave-run:";
+  const scenariosHeader = "Scenarios agreed in implement-in-waves run wave-run:";
 
-  test("appends each dispatched bead's seams to its notes, in the tracker the wave names", () => {
+  test("appends each dispatched bead's seams and scenarios to its notes, in the tracker the wave names", () => {
     const r = run(["bun", APPLY_SEAMS], inputs({ wave: ["p.2", "p.3"], seams: [seams("p.2"), seams("p.3")], not_this_epic: [] }));
     expect(r.code).toBe(0);
     // The notes span lines, so the log is read whole rather than per call.
@@ -262,8 +263,8 @@ describe("apply-seams", () => {
       `/tracker/.beads\tupdate p.3 --append-notes ${header}`,
     ]);
     const log = readFileSync(join(bin, "bd.log"), "utf8");
-    expect(log).toContain(`update p.2 --append-notes ${header}\nseams for p.2\n`);
-    expect(log).toContain(`update p.3 --append-notes ${header}\nseams for p.3\n`);
+    expect(log).toContain(`update p.2 --append-notes ${header}\nseams for p.2\n\n${scenariosHeader}\nscenarios for p.2\n`);
+    expect(log).toContain(`update p.3 --append-notes ${header}\nseams for p.3\n\n${scenariosHeader}\nscenarios for p.3\n`);
   });
 
   test("settles the wave and adds it to the chain's tried list, leaving a dropped bead in neither", () => {
@@ -299,6 +300,7 @@ describe("apply-seams", () => {
     ["a bead ready did not offer", { wave: ["p.2", "q.9"], seams: [seams("p.2"), seams("q.9")], not_this_epic: [] }, "q.9 is not a candidate"],
     ["a bead both dispatched and out of the epic", { wave: ["p.2"], seams: [seams("p.2")], not_this_epic: ["p.2"] }, "p.2 is both"],
     ["a dispatched bead with no seams", { wave: ["p.2", "p.3"], seams: [seams("p.2")], not_this_epic: [] }, "no seams for p.3"],
+    ["a dispatched bead with no scenarios", { wave: ["p.2"], seams: [{ ...seams("p.2"), scenarios: " " }], not_this_epic: [] }, "no scenarios for p.2"],
     ["a not-this-epic bead ready did not offer", { wave: [], seams: [], not_this_epic: ["q.9"] }, "q.9 is not a candidate"],
   ])("refuses %s before writing anything", (_name, proposal, message) => {
     const r = run(["bun", APPLY_SEAMS], inputs(proposal));
@@ -491,11 +493,12 @@ describe("implement-in-waves.yaml wiring", () => {
     expect(gate.wait.options.map((o: any) => o.id)).toEqual(["approve", "revise"]);
     expect(group.until_bash).toContain("$seam-gate.output.decision");
     expect(propose.output_format.required).toEqual(expect.arrayContaining(["wave", "seams", "not_this_epic"]));
+    expect(propose.output_format.properties.seams.items.required).toEqual(["id", "seams", "scenarios"]);
     expect(node("apply-seams").with.proposal).toEqual({ from: "$seams.output", if_skipped: "{}" });
 
     const r = run(["bun", APPLY_SEAMS], {
       INPUTS_BEADS_DIR: "/b", INPUTS_TRIED: "[]", INPUTS_CANDIDATES: '["p.1"]',
-      INPUTS_PROPOSAL: JSON.stringify({ wave: ["p.1"], seams: [{ id: "p.1", seams: "s" }], not_this_epic: [] }),
+      INPUTS_PROPOSAL: JSON.stringify({ wave: ["p.1"], seams: [{ id: "p.1", seams: "s", scenarios: "c" }], not_this_epic: [] }),
       WORKFLOW_ID: "w", BD_OUT_show: output("bd-show", '[{"notes":""}]'),
     });
     expect(Object.keys(r.json()).sort()).toEqual([...node("apply-seams").output_format.required].sort());

@@ -17,8 +17,8 @@ propose:
   question: "demo.1 and demo.2 dispatch."
   wave: [demo.1, demo.2]
   seams:
-    - {id: demo.1, seams: "nothing in the bead or the code constrains this slice"}
-    - {id: demo.2, seams: "nothing in the bead or the code constrains this slice"}
+    - {id: demo.1, seams: "nothing in the bead or the code constrains this slice", scenarios: "the bead has no behavioural acceptance criteria"}
+    - {id: demo.2, seams: "nothing in the bead or the code constrains this slice", scenarios: "the bead has no behavioural acceptance criteria"}
   not_this_epic: []
 seam-gate:
   decision: approve

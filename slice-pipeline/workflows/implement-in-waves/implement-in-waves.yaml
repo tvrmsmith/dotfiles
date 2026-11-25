@@ -73,10 +73,12 @@ nodes:
   # The seam gate, skipped on an empty wave. An agent proposes seams for every
   # candidate against the code on origin as it stands now, citing the bead
   # text or code each seam comes from, plus the design for any slice that
-  # trips implement-with-subagents' design gate, and the engineer approves or answers
+  # trips implement-with-subagents' design gate and the new and changed
+  # Gherkin scenarios that specify the slice, and the engineer approves or answers
   # with comments that revise it: drop a bead from this wave (the next wave
-  # offers it again), or take a bead out of the epic. Approved seams land in
-  # the beads' notes, where later waves read them as precedent, which is why
+  # offers it again), or take a bead out of the epic. Approved seams and
+  # scenarios land in the beads' notes, where the build reads the scenarios
+  # as its spec and later waves read the seams as precedent, which is why
   # an uncited seam is never proposed. The body's session carries across
   # rounds, and the group's output is the last proposal, read past the gate.
   - id: seams
@@ -93,7 +95,7 @@ nodes:
           plugins: [mattpocock-skills@mattpocock]
           skills: [mattpocock-skills:codebase-design, contract-approval]
           prompt: |
-            You propose the seams for one wave of slices. Each slice will be
+            You propose the seams and scenarios for one wave of slices. Each slice will be
             built in parallel by an unattended agent in its own worktree cut
             from origin/$BASE_BRANCH. An engineer reads your proposal and
             approves it or answers with comments. Change nothing yourself:
@@ -101,8 +103,8 @@ nodes:
 
             Load the codebase-design and contract-approval skills, then read
             ~/.claude/skills/implement-with-subagents/DESIGN.md. The build
-            follows the same rules, so the seams and designs you propose are
-            the ones it starts from.
+            follows the same rules, so the seams, designs and scenarios you
+            propose are the ones it starts from.
 
             Candidate beads this wave: $ready.output.beads
             Read each with: BEADS_DIR=$INPUTS.beads_dir bd show <id>
@@ -132,6 +134,13 @@ nodes:
                spells out, at its resolution gradient. The engineer approves
                that design at this gate; otherwise the build drafts it alone,
                with nobody watching.
+            4. Draft its new and changed scenarios per DESIGN.md's
+               Scenarios: derived from the bead's behavioural acceptance
+               criteria, grouped by the feature file they belong in, or by
+               suite marked not persisted where the suite has no .feature
+               files. Each in full; an existing scenario it keeps, by name.
+               Where the bead has no behavioural acceptance criteria, say so
+               and propose no scenario.
 
             Then the collisions: every pair of candidates that would edit the
             same code or meet at the same seam, each naming the file and
@@ -147,16 +156,18 @@ nodes:
               who has not read the beads. For each candidate: its id and
               what it is in one line, then its seams, each with its source,
               then any unapproved contract, then, where the gate fired, the
-              trigger and the design. Then the collisions. End with what
-              Approve does, by bead id: whose notes get which seams and
-              designs, which beads are dispatched now, which are taken out
+              trigger and the design, then its scenarios. Then the
+              collisions. End with what Approve does, by bead id: whose
+              notes get which seams, designs and scenarios, which beads are dispatched now, which are taken out
               of the epic, and which wait for the next wave. Last, tell them
               how to revise: comment in the text, "drop <id>" to hold a bead
               to the next wave, or "not this epic <id>".
             - wave: the bead ids to dispatch now.
-            - seams: one {id, seams} per bead in wave. seams is the text
-              appended to that bead's notes: each seam with its source, and
-              the design where the gate fired.
+            - seams: one {id, seams, scenarios} per bead in wave, each the
+              text appended to that bead's notes. seams: each seam with its
+              source, and the design where the gate fired. scenarios: the
+              scenarios as the question shows them, Gherkin grouped by
+              feature file or suite, or the line saying it has none.
             - not_this_epic: the bead ids to take out of the epic.
           output_format:
             type: object
@@ -170,7 +181,8 @@ nodes:
                   properties:
                     id: {type: string}
                     seams: {type: string}
-                  required: [id, seams]
+                    scenarios: {type: string}
+                  required: [id, seams, scenarios]
               not_this_epic: {type: array, items: {type: string}}
             required: [question, wave, seams, not_this_epic]
 
@@ -182,13 +194,13 @@ nodes:
             options:
               - id: approve
                 label: Approve
-                does: Appends the seams to the beads' notes, takes not-this-epic beads out of the epic, and dispatches the wave.
+                does: Appends the seams and scenarios to the beads' notes, takes not-this-epic beads out of the epic, and dispatches the wave.
               - id: revise
                 label: Revise
                 does: Revises the proposal from the text. Say "drop <id>" to hold a bead to the next wave, or "not this epic <id>".
 
-  # Settles the wave: appends the approved seams to each dispatched bead's
-  # notes, takes not-this-epic beads out of the parent, and prints the wave
+  # Settles the wave: appends the approved seams and scenarios to each
+  # dispatched bead's notes, takes not-this-epic beads out of the parent, and prints the wave
   # with the chain's tried list. A dropped bead is in neither, so a later
   # wave offers it again. Runs on an empty wave too, with no proposal, so
   # slices and next always have their inputs. wave-status reads the wave
