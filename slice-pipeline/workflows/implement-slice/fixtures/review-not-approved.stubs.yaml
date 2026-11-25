@@ -44,7 +44,7 @@ review-round:
   outcome: waiting
   approved: false
   head_sha: ""
-  question: ""
+  question: "Review owner/repo#42 at 1f0c6a4e2b7d9c3a5e8f10b2d4c6a8e0f2b4d6c8."
   reason: ""
 review-gate:
   decision: comments
